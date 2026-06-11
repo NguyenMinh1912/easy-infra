@@ -72,6 +72,12 @@ func (p *Profile) Save(path string) error {
 	return nil
 }
 
+// Remove deletes the profile file at path. A missing file yields an
+// fs.ErrNotExist error so callers can surface an actionable message.
+func Remove(path string) error {
+	return os.Remove(path)
+}
+
 // List returns the names of the profiles defined in dir, sorted. A missing
 // directory yields an empty list rather than an error.
 func List(dir string) ([]string, error) {

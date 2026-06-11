@@ -125,3 +125,38 @@ func (p *Project) SetActiveProfile(name string) error {
 func (p *Project) SaveProfile(name string, prof *profile.Profile) error {
 	return prof.Save(p.Paths.ProfilePath(name))
 }
+
+// AddProfile scaffolds a new profile with default environment config for every
+// service the project defines, then saves it. It errors if a profile with that
+// name already exists.
+func (p *Project) AddProfile(name string) (*profile.Profile, error) {
+	path := p.Paths.ProfilePath(name)
+	if _, err := profile.Load(path); err == nil {
+		return nil, fmt.Errorf("profile %q already exists", name)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	prof, err := profile.Scaffold(p.Registry, p.Config.ServiceNames()...)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.SaveProfile(name, prof); err != nil {
+		return nil, err
+	}
+	return prof, nil
+}
+
+// RemoveProfile deletes the named profile. It refuses to remove the active
+// profile and reports a missing profile as an actionable error.
+func (p *Project) RemoveProfile(name string) error {
+	if p.State.ActiveProfile == name {
+		return fmt.Errorf("cannot remove active profile %q; switch with `easy-infra use <other>` first", name)
+	}
+	if err := profile.Remove(p.Paths.ProfilePath(name)); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("profile %q does not exist", name)
+		}
+		return err
+	}
+	return nil
+}
