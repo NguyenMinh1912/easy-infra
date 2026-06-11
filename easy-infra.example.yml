@@ -1,0 +1,25 @@
+# Example easy-infra PROJECT config.
+#
+# This file (easy-infra.yml) defines WHICH services the project uses and their
+# environment-independent definition — image/version. It is the source of truth
+# and is tracked in git; it contains no credentials.
+#
+# Per-environment settings (host, port, user, password, database URL) live in
+# PROFILE files under .easy-infra/profiles/<name>.yml — see
+# easy-infra.profile.example.yml. Those hold secrets and are gitignored.
+#
+# Run `easy-infra init` to scaffold both this file and a default profile.
+
+version: 1
+
+services:
+  postgres:
+    version: "16"
+  redis:
+    version: "7"
+  minio:
+    version: latest
+  localstack:
+    version: latest
+    # Which AWS APIs to emulate is a property of the service, not the env.
+    services: s3,sqs,sns

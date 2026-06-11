@@ -1,0 +1,7 @@
+# Compiled binary
+/easy-infra
+
+# Tool-owned state and credential-bearing profile env files.
+# The project config (easy-infra.yml, service definitions) IS tracked;
+# profiles under .easy-infra/profiles/ hold secrets and are not.
+/.easy-infra/
