@@ -1,6 +1,10 @@
 package service
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"testing"
+)
 
 func TestDefaultRegistryHasBuiltins(t *testing.T) {
 	reg := DefaultRegistry()
@@ -60,6 +64,29 @@ func TestValidateEnvPortRange(t *testing.T) {
 	env["port"] = "abc"
 	if err := (Redis{}).ValidateEnv(env); err == nil {
 		t.Error("expected non-numeric port to fail validation")
+	}
+}
+
+// TestLifecycleSeam asserts every registered service exposes the four
+// lifecycle operations and, until Docker providers land, reports
+// ErrNotImplemented so callers can degrade gracefully.
+func TestLifecycleSeam(t *testing.T) {
+	reg := DefaultRegistry()
+	ctx := context.Background()
+	spec := Spec{}
+	for _, name := range reg.Names() {
+		svc, _ := reg.Get(name)
+		ops := map[string]func(context.Context, Spec) error{
+			"apply":  svc.Apply,
+			"health": svc.Health,
+			"backup": svc.Backup,
+			"clean":  svc.Clean,
+		}
+		for op, fn := range ops {
+			if err := fn(ctx, spec); !errors.Is(err, ErrNotImplemented) {
+				t.Errorf("%s %s: got %v, want ErrNotImplemented", name, op, err)
+			}
+		}
 	}
 }
 

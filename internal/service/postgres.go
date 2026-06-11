@@ -1,5 +1,7 @@
 package service
 
+import "context"
+
 // Postgres provisions a PostgreSQL database service.
 type Postgres struct{}
 
@@ -44,3 +46,18 @@ func (Postgres) ValidateEnv(cfg Config) error {
 	}
 	return nil
 }
+
+// Lifecycle operations are the per-service seam for Docker-backed provisioning,
+// which is future work; until a provider lands they report ErrNotImplemented.
+
+// Apply implements Service.
+func (Postgres) Apply(context.Context, Spec) error { return notImplemented("postgres", "apply") }
+
+// Health implements Service.
+func (Postgres) Health(context.Context, Spec) error { return notImplemented("postgres", "health") }
+
+// Backup implements Service.
+func (Postgres) Backup(context.Context, Spec) error { return notImplemented("postgres", "backup") }
+
+// Clean implements Service.
+func (Postgres) Clean(context.Context, Spec) error { return notImplemented("postgres", "clean") }

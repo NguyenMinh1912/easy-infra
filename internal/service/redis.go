@@ -1,5 +1,7 @@
 package service
 
+import "context"
+
 // Redis provisions a Redis in-memory data store service.
 type Redis struct{}
 
@@ -35,3 +37,18 @@ func (Redis) ValidateEnv(cfg Config) error {
 	}
 	return nil
 }
+
+// Lifecycle operations are the per-service seam for Docker-backed provisioning,
+// which is future work; until a provider lands they report ErrNotImplemented.
+
+// Apply implements Service.
+func (Redis) Apply(context.Context, Spec) error { return notImplemented("redis", "apply") }
+
+// Health implements Service.
+func (Redis) Health(context.Context, Spec) error { return notImplemented("redis", "health") }
+
+// Backup implements Service.
+func (Redis) Backup(context.Context, Spec) error { return notImplemented("redis", "backup") }
+
+// Clean implements Service.
+func (Redis) Clean(context.Context, Spec) error { return notImplemented("redis", "clean") }

@@ -9,6 +9,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"sort"
 )
@@ -28,7 +29,8 @@ type Config map[string]any
 // Service is the common interface every supported service implements. Each
 // service owns the schema for both halves of its config — the project-level
 // definition and the per-profile environment — keeping that knowledge in one
-// place rather than scattered across the codebase.
+// place rather than scattered across the codebase. It also owns its lifecycle:
+// how to bring itself up, check its health, back it up, and tear it down.
 type Service interface {
 	// Name is the stable identifier used in config and state, e.g. "postgres".
 	Name() string
@@ -48,6 +50,23 @@ type Service interface {
 	// ValidateEnv checks a service's per-profile environment config and returns
 	// an actionable error if it is invalid.
 	ValidateEnv(cfg Config) error
+
+	// Apply reconciles the service so it matches spec: provisioning and starting
+	// it if absent, and bringing a running instance into line otherwise. It is
+	// the per-service half of `easy-infra apply`.
+	Apply(ctx context.Context, spec Spec) error
+
+	// Health reports whether the running service described by spec is reachable
+	// and ready. It returns nil when healthy and an actionable error otherwise.
+	Health(ctx context.Context, spec Spec) error
+
+	// Backup captures the service's current data for the instance described by
+	// spec. It is the per-service half of `easy-infra backup`.
+	Backup(ctx context.Context, spec Spec) error
+
+	// Clean tears the service down and removes its data, returning it to a clean
+	// (un-provisioned) state.
+	Clean(ctx context.Context, spec Spec) error
 }
 
 // Registry holds the set of known services keyed by name. It is the single
