@@ -267,6 +267,53 @@ func TestLatestSnapshotDir(t *testing.T) {
 	}
 }
 
+// schemaRow scans a single *string (the current_schema() result, which may be
+// NULL when search_path resolves to no existing schema).
+type schemaRow struct{ schema *string }
+
+func (r schemaRow) Scan(dest ...any) error {
+	if len(dest) == 1 {
+		if p, ok := dest[0].(**string); ok {
+			*p = r.schema
+		}
+	}
+	return nil
+}
+
+type schemaConn struct {
+	fakeConn
+	schema *string
+}
+
+func (c *schemaConn) QueryRow(context.Context, string, ...any) pgx.Row {
+	return schemaRow{schema: c.schema}
+}
+
+func TestCurrentSchema(t *testing.T) {
+	dyn := "kot_asean_dynamic"
+	empty := ""
+	cases := []struct {
+		name   string
+		schema *string
+		want   string
+	}{
+		{"configured schema", &dyn, "kot_asean_dynamic"},
+		{"null falls back to public", nil, "public"},
+		{"empty falls back to public", &empty, "public"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := currentSchema(context.Background(), &schemaConn{schema: tc.schema})
+			if err != nil {
+				t.Fatalf("currentSchema: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("currentSchema = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestRestoreReplay(t *testing.T) {
 	dumpText := `-- easy-infra postgres backup
 SET client_encoding = 'UTF8';

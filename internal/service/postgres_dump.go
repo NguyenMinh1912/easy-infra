@@ -22,24 +22,39 @@ func dump(ctx context.Context, conn pgConn, w io.Writer) error {
 	out.printf("-- easy-infra postgres backup\n")
 	out.printf("SET client_encoding = 'UTF8';\n\n")
 
-	seqs, err := listSequences(ctx, conn)
+	// Dump the schema the connection actually resolves unqualified names
+	// against, not a hardcoded "public": a profile may point the connection at
+	// another schema via a JDBC currentSchema (translated to search_path), and
+	// that is where its objects live.
+	schema, err := currentSchema(ctx, conn)
 	if err != nil {
 		return err
 	}
-	tables, err := listTables(ctx, conn)
+	qSchema := quoteIdent(schema)
+	if schema != "public" {
+		// So a restore into a freshly-created database lands the objects in the
+		// right place even when the schema does not exist yet.
+		out.printf("CREATE SCHEMA IF NOT EXISTS %s;\n\n", qSchema)
+	}
+
+	seqs, err := listSequences(ctx, conn, schema)
+	if err != nil {
+		return err
+	}
+	tables, err := listTables(ctx, conn, schema)
 	if err != nil {
 		return err
 	}
 
 	for _, s := range seqs {
-		out.printf("%s\n", s.createSQL())
+		out.printf("%s\n", s.createSQL(qSchema))
 	}
 	if len(seqs) > 0 {
 		out.printf("\n")
 	}
 
 	for _, t := range tables {
-		ddl, err := tableDDL(ctx, conn, t)
+		ddl, err := tableDDL(ctx, conn, qSchema, t)
 		if err != nil {
 			return err
 		}
@@ -47,7 +62,7 @@ func dump(ctx context.Context, conn pgConn, w io.Writer) error {
 	}
 
 	for _, t := range tables {
-		if err := dumpTableData(ctx, conn, out, t); err != nil {
+		if err := dumpTableData(ctx, conn, out, qSchema, t); err != nil {
 			return err
 		}
 	}
@@ -58,7 +73,7 @@ func dump(ctx context.Context, conn pgConn, w io.Writer) error {
 			return err
 		}
 		for _, c := range cons {
-			out.printf("ALTER TABLE public.%s ADD CONSTRAINT %s %s;\n", quoteIdent(t.name), quoteIdent(c.name), c.def)
+			out.printf("ALTER TABLE %s.%s ADD CONSTRAINT %s %s;\n", qSchema, quoteIdent(t.name), quoteIdent(c.name), c.def)
 		}
 	}
 
@@ -74,11 +89,27 @@ func dump(ctx context.Context, conn pgConn, w io.Writer) error {
 
 	for _, s := range seqs {
 		if s.lastValue != nil {
-			out.printf("SELECT pg_catalog.setval('public.%s', %d, true);\n", quoteIdent(s.name), *s.lastValue)
+			out.printf("SELECT pg_catalog.setval('%s.%s', %d, true);\n", qSchema, quoteIdent(s.name), *s.lastValue)
 		}
 	}
 
 	return out.err
+}
+
+// currentSchema returns the schema the connection resolves unqualified names
+// against. current_schema() honors the search_path set from the profile's
+// connection string (e.g. a JDBC currentSchema), so this follows the profile to
+// wherever its objects actually live. It falls back to "public" when the
+// search_path resolves to no existing schema.
+func currentSchema(ctx context.Context, conn pgConn) (string, error) {
+	var schema *string
+	if err := conn.QueryRow(ctx, "SELECT current_schema()").Scan(&schema); err != nil {
+		return "", fmt.Errorf("resolving current schema: %w", err)
+	}
+	if schema == nil || *schema == "" {
+		return "public", nil
+	}
+	return *schema, nil
 }
 
 // sqlWriter accumulates writes and remembers the first error, so dump can emit
@@ -101,13 +132,13 @@ type table struct {
 	name string
 }
 
-func listTables(ctx context.Context, conn pgConn) ([]table, error) {
+func listTables(ctx context.Context, conn pgConn, schema string) ([]table, error) {
 	rows, err := conn.Query(ctx, `
 		SELECT c.oid, c.relname
 		FROM pg_class c
 		JOIN pg_namespace n ON n.oid = c.relnamespace
-		WHERE n.nspname = 'public' AND c.relkind = 'r'
-		ORDER BY c.relname`)
+		WHERE n.nspname = $1 AND c.relkind = 'r'
+		ORDER BY c.relname`, schema)
 	if err != nil {
 		return nil, fmt.Errorf("listing tables: %w", err)
 	}
@@ -125,7 +156,7 @@ func listTables(ctx context.Context, conn pgConn) ([]table, error) {
 
 // tableDDL builds the CREATE TABLE statement (columns only; constraints and
 // indexes are emitted separately).
-func tableDDL(ctx context.Context, conn pgConn, t table) (string, error) {
+func tableDDL(ctx context.Context, conn pgConn, qSchema string, t table) (string, error) {
 	rows, err := conn.Query(ctx, `
 		SELECT a.attname,
 		       format_type(a.atttypid, a.atttypmod) AS type,
@@ -161,7 +192,7 @@ func tableDDL(ctx context.Context, conn pgConn, t table) (string, error) {
 		return "", err
 	}
 
-	out := fmt.Sprintf("CREATE TABLE public.%s (\n", quoteIdent(t.name))
+	out := fmt.Sprintf("CREATE TABLE %s.%s (\n", qSchema, quoteIdent(t.name))
 	for i, c := range cols {
 		out += c
 		if i < len(cols)-1 {
@@ -227,8 +258,8 @@ func tableIndexes(ctx context.Context, conn pgConn, t table) ([]string, error) {
 // dumpTableData emits a COPY block for one table: the COPY ... FROM stdin
 // header, the table's rows in PostgreSQL text COPY format (as produced by COPY
 // ... TO stdout), and the terminating \. marker.
-func dumpTableData(ctx context.Context, conn pgConn, out *sqlWriter, t table) error {
-	qname := "public." + quoteIdent(t.name)
+func dumpTableData(ctx context.Context, conn pgConn, out *sqlWriter, qSchema string, t table) error {
+	qname := qSchema + "." + quoteIdent(t.name)
 	out.printf("COPY %s FROM stdin;\n", qname)
 	if out.err != nil {
 		return out.err
@@ -252,22 +283,22 @@ type sequence struct {
 	lastValue   *int64
 }
 
-func (s sequence) createSQL() string {
+func (s sequence) createSQL(qSchema string) string {
 	cycle := "NO CYCLE"
 	if s.cycle {
 		cycle = "CYCLE"
 	}
 	return fmt.Sprintf(
-		"CREATE SEQUENCE IF NOT EXISTS public.%s AS %s INCREMENT BY %d MINVALUE %d MAXVALUE %d START WITH %d %s;",
-		quoteIdent(s.name), s.dataType, s.incrementBy, s.minValue, s.maxValue, s.startValue, cycle)
+		"CREATE SEQUENCE IF NOT EXISTS %s.%s AS %s INCREMENT BY %d MINVALUE %d MAXVALUE %d START WITH %d %s;",
+		qSchema, quoteIdent(s.name), s.dataType, s.incrementBy, s.minValue, s.maxValue, s.startValue, cycle)
 }
 
-func listSequences(ctx context.Context, conn pgConn) ([]sequence, error) {
+func listSequences(ctx context.Context, conn pgConn, schema string) ([]sequence, error) {
 	rows, err := conn.Query(ctx, `
 		SELECT sequencename, data_type::text, start_value, min_value, max_value, increment_by, cycle, last_value
 		FROM pg_sequences
-		WHERE schemaname = 'public'
-		ORDER BY sequencename`)
+		WHERE schemaname = $1
+		ORDER BY sequencename`, schema)
 	if err != nil {
 		return nil, fmt.Errorf("listing sequences: %w", err)
 	}
