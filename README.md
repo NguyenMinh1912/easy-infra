@@ -39,14 +39,33 @@ for worked examples.
 > `apply` and `backup` currently report the per-service actions they would take;
 > Docker-based provisioning is the next step (see `CLAUDE.md`).
 
+## Install
+
+Install `easy-infra` as a global command (drops the binary in `go env GOPATH`'s
+`bin`):
+
+```sh
+make install
+```
+
+Make sure that directory is on your `PATH`, then run `easy-infra` from anywhere:
+
+```sh
+export PATH="$(go env GOPATH)/bin:$PATH"   # add to your shell profile to persist
+easy-infra --help
+```
+
+`make uninstall` removes it.
+
 ## Build, test, run
 
 ```sh
-go build ./...        # build
-go test ./...         # run tests
-go vet ./...          # static checks
-gofmt -l .            # formatting (must be clean)
-go run . init         # run locally
+make build            # compile the binary into ./easy-infra
+make test             # run tests
+make vet              # static checks
+make fmt              # format the code
+make clean            # remove build artifacts
+go run . init         # run locally without installing
 ```
 
 ## Contributing
