@@ -14,6 +14,7 @@ Supported services:
 - **postgres**
 - **minio**
 - **redis**
+- **localstack**
 
 ### Configuration & state
 
