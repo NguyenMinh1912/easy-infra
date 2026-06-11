@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
 	"path/filepath"
 	"strings"
 
@@ -66,11 +67,32 @@ func (p *pgxConn) CopyFrom(ctx context.Context, r io.Reader, sql string) (pgconn
 
 func (p *pgxConn) Close(ctx context.Context) error { return p.c.Close(ctx) }
 
-// connString builds a libpq keyword/value connection string from a profile's
-// environment config. When database is non-empty it overrides the configured
-// dbname — used to reach the "postgres" maintenance database when creating the
-// target database.
+// connString builds a libpq connection string from a profile's environment
+// config. When database is non-empty it overrides the configured dbname — used
+// to reach the "postgres" maintenance database when creating the target
+// database.
+//
+// A profile may instead supply the whole DSN as a single "url" field
+// (e.g. postgres://user:pass@host:port/db?sslmode=require), in which case the
+// URL is used, with only the database overridden when requested. JDBC-style
+// URLs (jdbc:postgresql://...) and their schema query parameter are normalized
+// by postgresURL.
 func connString(env Config, database string) (string, error) {
+	if raw, ok := env["url"]; ok {
+		s, err := urlString(raw)
+		if err != nil {
+			return "", err
+		}
+		u, err := postgresURL(s)
+		if err != nil {
+			return "", err
+		}
+		if database != "" {
+			u.Path = "/" + database
+		}
+		return u.String(), nil
+	}
+
 	host, err := requireString(env, "host")
 	if err != nil {
 		return "", err
@@ -103,6 +125,61 @@ func connString(env Config, database string) (string, error) {
 		parts = append(parts, "password="+quoteDSN(password))
 	}
 	return strings.Join(parts, " "), nil
+}
+
+// urlString returns the validated, non-empty "url" DSN value.
+func urlString(raw any) (string, error) {
+	s, ok := raw.(string)
+	if !ok {
+		return "", fmt.Errorf("%q must be a string, got %v", "url", raw)
+	}
+	if s == "" {
+		return "", fmt.Errorf("%q must not be empty", "url")
+	}
+	return s, nil
+}
+
+// databaseName returns the target database for env: parsed from the "url" DSN
+// when one is given, and otherwise read from the "database" field.
+func databaseName(env Config) (string, error) {
+	raw, ok := env["url"]
+	if !ok {
+		return requireString(env, "database")
+	}
+	s, err := urlString(raw)
+	if err != nil {
+		return "", err
+	}
+	u, err := postgresURL(s)
+	if err != nil {
+		return "", err
+	}
+	name := strings.TrimPrefix(u.Path, "/")
+	if name == "" {
+		return "", fmt.Errorf("%q must include a database name", "url")
+	}
+	return name, nil
+}
+
+// postgresURL parses a profile "url" DSN into a pgx-acceptable URL. It accepts
+// JDBC-style URLs by stripping the leading "jdbc:" prefix, and translates
+// JDBC's "currentSchema" query parameter into PostgreSQL's "search_path"
+// runtime parameter so the configured schema is applied on connect (pgx rejects
+// the unknown "currentSchema" parameter otherwise).
+func postgresURL(s string) (*url.URL, error) {
+	u, err := url.Parse(strings.TrimPrefix(s, "jdbc:"))
+	if err != nil {
+		return nil, fmt.Errorf("%q is not a valid connection URL: %w", "url", err)
+	}
+	q := u.Query()
+	if schema := q.Get("currentSchema"); schema != "" {
+		q.Del("currentSchema")
+		if q.Get("search_path") == "" {
+			q.Set("search_path", schema)
+		}
+		u.RawQuery = q.Encode()
+	}
+	return u, nil
 }
 
 // quoteDSN wraps a connection-string value in single quotes, escaping the

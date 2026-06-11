@@ -16,6 +16,12 @@ postgres:
   user: app
   password: change-me
   database: app
+  # Alternatively, give the whole connection as a single URL instead of the
+  # discrete fields above (extra query params like sslmode are preserved):
+  #   url: postgres://app:change-me@db.staging.internal:5432/app?sslmode=require
+  # JDBC-style URLs work too — the "jdbc:" prefix is stripped and JDBC's
+  # currentSchema is mapped to PostgreSQL's search_path:
+  #   url: jdbc:postgresql://app:change-me@db.staging.internal:5432/app?currentSchema=app_dynamic
 
 redis:
   host: cache.staging.internal
