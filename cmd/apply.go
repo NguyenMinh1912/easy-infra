@@ -36,6 +36,7 @@ func newApplyCmd(reg *service.Registry, paths project.Paths) *cobra.Command {
 					return fmt.Errorf("unknown service %q", svcName)
 				}
 				spec := service.Spec{
+					Profile:    name,
 					Definition: proj.Config.Services[svcName],
 					Env:        prof.Services[svcName],
 				}
@@ -45,7 +46,7 @@ func newApplyCmd(reg *service.Registry, paths project.Paths) *cobra.Command {
 				case err != nil:
 					return fmt.Errorf("applying %s: %w", svcName, err)
 				default:
-					fmt.Fprintf(out, "  - %s: provisioned at %s\n", svcName, endpoint(spec.Env))
+					fmt.Fprintf(out, "  - %s: applied at %s\n", svcName, endpoint(spec.Env))
 				}
 			}
 			return nil

@@ -11,6 +11,9 @@ import (
 // lifecycle methods act on a Spec rather than re-reading config, so they stay
 // independent of where the two halves are loaded from.
 type Spec struct {
+	// Profile is the active profile's name. It organises per-profile artifacts
+	// such as the backup directory and selects which backup Apply restores.
+	Profile string
 	// Definition is the project-level (easy-infra.yml) service definition.
 	Definition Config
 	// Env is the active profile's environment config for the service.

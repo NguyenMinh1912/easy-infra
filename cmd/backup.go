@@ -36,6 +36,7 @@ func newBackupCmd(reg *service.Registry, paths project.Paths) *cobra.Command {
 					return fmt.Errorf("unknown service %q", svcName)
 				}
 				spec := service.Spec{
+					Profile:    name,
 					Definition: proj.Config.Services[svcName],
 					Env:        prof.Services[svcName],
 				}

@@ -67,14 +67,18 @@ func TestValidateEnvPortRange(t *testing.T) {
 	}
 }
 
-// TestLifecycleSeam asserts every registered service exposes the four
-// lifecycle operations and, until Docker providers land, reports
-// ErrNotImplemented so callers can degrade gracefully.
+// TestLifecycleSeam asserts the services whose providers are not yet
+// implemented expose the four lifecycle operations and report
+// ErrNotImplemented so callers can degrade gracefully. Postgres is implemented
+// (see postgres_test.go) and is excluded.
 func TestLifecycleSeam(t *testing.T) {
 	reg := DefaultRegistry()
 	ctx := context.Background()
 	spec := Spec{}
 	for _, name := range reg.Names() {
+		if name == "postgres" {
+			continue
+		}
 		svc, _ := reg.Get(name)
 		ops := map[string]func(context.Context, Spec) error{
 			"apply":  svc.Apply,
