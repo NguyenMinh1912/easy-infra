@@ -4,20 +4,22 @@ import (
 	"fmt"
 
 	"github.com/minhnc/easy-infra/internal/config"
+	"github.com/minhnc/easy-infra/internal/profile"
 	"github.com/minhnc/easy-infra/internal/project"
 	"github.com/minhnc/easy-infra/internal/service"
 	"github.com/minhnc/easy-infra/internal/state"
 	"github.com/spf13/cobra"
 )
 
-// scaffoldServices are the services included in the scaffolded default profile.
+// scaffoldServices are the services included in the scaffolded project and its
+// default profile.
 var scaffoldServices = []string{"postgres", "redis"}
 
 func newInitCmd(reg *service.Registry, paths project.Paths) *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
 		Short: "Initialize a project in the current folder",
-		Long:  "Scaffold the YAML config and create the JSON state file for a new project.",
+		Long:  "Scaffold the project config (service definitions), a default profile (env settings), and the state file.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runInit(cmd, reg, paths)
@@ -30,11 +32,20 @@ func runInit(cmd *cobra.Command, reg *service.Registry, paths project.Paths) err
 		return fmt.Errorf("project already initialized (%s exists)", paths.Config)
 	}
 
-	cfg, err := config.Scaffold(reg, "default", scaffoldServices...)
+	cfg, err := config.Scaffold(reg, scaffoldServices...)
 	if err != nil {
 		return err
 	}
 	if err := cfg.Save(paths.Config); err != nil {
+		return err
+	}
+
+	prof, err := profile.Scaffold(reg, scaffoldServices...)
+	if err != nil {
+		return err
+	}
+	defaultProfilePath := paths.ProfilePath("default")
+	if err := prof.Save(defaultProfilePath); err != nil {
 		return err
 	}
 
@@ -43,6 +54,8 @@ func runInit(cmd *cobra.Command, reg *service.Registry, paths project.Paths) err
 		return err
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "Initialized easy-infra project:\n  config: %s\n  state:  %s\nActive profile: default\n", paths.Config, paths.State)
+	fmt.Fprintf(cmd.OutOrStdout(),
+		"Initialized easy-infra project:\n  project config: %s\n  default profile: %s\n  state:          %s\nActive profile: default\n",
+		paths.Config, defaultProfilePath, paths.State)
 	return nil
 }

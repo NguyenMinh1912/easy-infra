@@ -1,7 +1,7 @@
-// Package project ties together config, state, and the service registry into
-// a single facade for the command layer. Commands depend on this package
-// rather than re-implementing the load/validate/resolve sequence, keeping the
-// cmd/ layer thin and the workflow logic in one place.
+// Package project ties together the project config, profiles, state, and the
+// service registry into a single facade for the command layer. Commands depend
+// on this package rather than re-implementing the load/validate/resolve
+// sequence, keeping the cmd/ layer thin and the workflow logic in one place.
 package project
 
 import (
@@ -10,6 +10,7 @@ import (
 	"io/fs"
 
 	"github.com/minhnc/easy-infra/internal/config"
+	"github.com/minhnc/easy-infra/internal/profile"
 	"github.com/minhnc/easy-infra/internal/service"
 	"github.com/minhnc/easy-infra/internal/state"
 )
@@ -18,20 +19,30 @@ import (
 // Commands surface it as a hint to run `easy-infra init`.
 var ErrNotInitialized = errors.New("project not initialized")
 
-// Paths locates a project's config and state files.
+// Paths locates a project's config, state, and profile files.
 type Paths struct {
-	Config string
-	State  string
+	Config      string
+	State       string
+	ProfilesDir string
 }
 
 // DefaultPaths returns the conventional file locations for a project rooted at
 // the current working directory.
 func DefaultPaths() Paths {
-	return Paths{Config: config.DefaultPath, State: state.DefaultPath}
+	return Paths{
+		Config:      config.DefaultPath,
+		State:       state.DefaultPath,
+		ProfilesDir: profile.DefaultDir,
+	}
 }
 
-// Project is a loaded, validated project: its config, its current state, and
-// the registry used to interpret service configuration.
+// ProfilePath returns the file path for the named profile.
+func (p Paths) ProfilePath(name string) string {
+	return profile.Path(p.ProfilesDir, name)
+}
+
+// Project is a loaded, validated project config plus its current state and the
+// registry used to interpret service config. Profiles are loaded on demand.
 type Project struct {
 	Config   *config.Config
 	State    *state.State
@@ -39,8 +50,8 @@ type Project struct {
 	Paths    Paths
 }
 
-// Load reads and validates the config, then loads (or initializes) the state.
-// It returns ErrNotInitialized if the config is absent.
+// Load reads and validates the project config, then loads (or initializes) the
+// state. It returns ErrNotInitialized if the config is absent.
 func Load(paths Paths, reg *service.Registry) (*Project, error) {
 	cfg, err := config.Load(paths.Config)
 	if err != nil {
@@ -65,27 +76,52 @@ func Load(paths Paths, reg *service.Registry) (*Project, error) {
 	return &Project{Config: cfg, State: st, Registry: reg, Paths: paths}, nil
 }
 
-// ActiveProfile resolves the currently active profile from state and config.
-// It returns an actionable error when no profile is active or the active
-// profile no longer exists in config.
-func (p *Project) ActiveProfile() (string, config.Profile, error) {
-	name := p.State.ActiveProfile
-	if name == "" {
-		return "", config.Profile{}, fmt.Errorf("no active profile; run `easy-infra use <profile>` first")
-	}
-	profile, ok := p.Config.Profile(name)
-	if !ok {
-		return "", config.Profile{}, fmt.Errorf("active profile %q no longer exists in config", name)
-	}
-	return name, profile, nil
+// Profiles lists the available profile names.
+func (p *Project) Profiles() ([]string, error) {
+	return profile.List(p.Paths.ProfilesDir)
 }
 
-// SetActiveProfile records name as the active profile, validating that it
-// exists in config, and persists the state.
+// LoadProfile loads and validates the named profile against the project's
+// service definitions.
+func (p *Project) LoadProfile(name string) (*profile.Profile, error) {
+	prof, err := profile.Load(p.Paths.ProfilePath(name))
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("profile %q does not exist", name)
+		}
+		return nil, err
+	}
+	if err := prof.Validate(p.Registry, p.Config.ServiceNames()); err != nil {
+		return nil, fmt.Errorf("profile %q: %w", name, err)
+	}
+	return prof, nil
+}
+
+// ActiveProfile resolves and loads the currently active profile. It returns an
+// actionable error when no profile is active.
+func (p *Project) ActiveProfile() (string, *profile.Profile, error) {
+	name := p.State.ActiveProfile
+	if name == "" {
+		return "", nil, fmt.Errorf("no active profile; run `easy-infra use <profile>` first")
+	}
+	prof, err := p.LoadProfile(name)
+	if err != nil {
+		return "", nil, err
+	}
+	return name, prof, nil
+}
+
+// SetActiveProfile records name as the active profile after confirming the
+// profile exists and is valid, then persists the state.
 func (p *Project) SetActiveProfile(name string) error {
-	if _, ok := p.Config.Profile(name); !ok {
-		return fmt.Errorf("unknown profile %q (available: %v)", name, p.Config.ProfileNames())
+	if _, err := p.LoadProfile(name); err != nil {
+		return err
 	}
 	p.State.ActiveProfile = name
 	return p.State.Save(p.Paths.State)
+}
+
+// SaveProfile writes a profile to its conventional path.
+func (p *Project) SaveProfile(name string, prof *profile.Profile) error {
+	return prof.Save(p.Paths.ProfilePath(name))
 }

@@ -13,27 +13,41 @@ import (
 	"sort"
 )
 
-// Config is the raw, per-service configuration block taken from a profile in
-// the YAML config. Each Service implementation decodes and validates it into
-// its own typed shape, so the rest of the codebase can stay service-agnostic.
+// Config is a raw, per-service configuration block. Each Service implementation
+// decodes and validates it into its own typed shape, so the rest of the
+// codebase can stay service-agnostic.
+//
+// A service has two kinds of config, owned by two different files:
+//
+//   - a definition (project config, easy-infra.yml) — what the service is:
+//     image/version and other environment-independent settings;
+//   - an environment (profile config, .easy-infra/profiles/<name>.yml) — how to
+//     reach it in a given environment: host, port, credentials, database URL.
 type Config map[string]any
 
-// Service is the common interface every supported service implements.
-//
-// Keeping the surface small (Interface Segregation) lets callers depend only
-// on the behaviour they need, and lets new services satisfy the contract
-// without inheriting unrelated concerns.
+// Service is the common interface every supported service implements. Each
+// service owns the schema for both halves of its config — the project-level
+// definition and the per-profile environment — keeping that knowledge in one
+// place rather than scattered across the codebase.
 type Service interface {
 	// Name is the stable identifier used in config and state, e.g. "postgres".
 	Name() string
 
-	// DefaultConfig returns a sensible starter configuration, used when
-	// scaffolding a new profile.
-	DefaultConfig() Config
+	// DefaultDefinition returns a starter definition (project-level) config,
+	// used when scaffolding the project config.
+	DefaultDefinition() Config
 
-	// Validate checks a profile's configuration block for this service and
+	// ValidateDefinition checks a service's project-level definition config and
 	// returns an actionable error if it is invalid.
-	Validate(cfg Config) error
+	ValidateDefinition(cfg Config) error
+
+	// DefaultEnv returns a starter environment (profile-level) config, used when
+	// scaffolding a profile.
+	DefaultEnv() Config
+
+	// ValidateEnv checks a service's per-profile environment config and returns
+	// an actionable error if it is invalid.
+	ValidateEnv(cfg Config) error
 }
 
 // Registry holds the set of known services keyed by name. It is the single

@@ -1,0 +1,33 @@
+# Example easy-infra PROFILE config.
+#
+# A profile describes how to reach each service in one environment (local, ci,
+# staging, a VPS, ...). It is keyed by service name; the services must be the
+# ones defined in the project config (easy-infra.yml).
+#
+# Real profiles live at .easy-infra/profiles/<name>.yml and are gitignored
+# because they carry credentials. Copy this file there, e.g.:
+#
+#   cp easy-infra.profile.example.yml .easy-infra/profiles/staging.yml
+#   easy-infra use staging
+
+postgres:
+  host: db.staging.internal   # VPS / host info
+  port: 5432
+  user: app
+  password: change-me
+  database: app
+
+redis:
+  host: cache.staging.internal
+  port: 6379
+
+minio:
+  host: storage.staging.internal
+  port: 9000
+  consolePort: 9001
+  user: minioadmin
+  password: change-me
+
+localstack:
+  host: localhost
+  port: 4566

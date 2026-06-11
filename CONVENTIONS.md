@@ -10,18 +10,34 @@ prefer the surrounding code and raise the discrepancy.
 The codebase follows a strict, one-directional dependency flow:
 
 ```
-main.go  ->  cmd/  ->  internal/project  ->  internal/{config,state,service}
+main.go  ->  cmd/  ->  internal/project  ->  internal/{config,profile,state,service}
 ```
 
 - **`cmd/` is thin.** A command parses flags and delegates. No business logic,
   file I/O, or validation lives in `cmd/` — it calls into `internal/`.
 - **`internal/service`** is the lowest layer and depends on nothing else in the
-  repo. `config` may import `service`; `service` must never import `config`.
+  repo. `config` and `profile` may import `service`; `service` must never
+  import them.
 - **`internal/project`** is the facade the command layer talks to. It wires
-  config, state, and the service registry together so commands have a single
-  dependency.
+  config, profiles, state, and the service registry together so commands have a
+  single dependency.
 - Dependencies point inward/downward only. If you need an upward reference,
   invert it with an interface instead of creating an import cycle.
+
+### Project config vs. profile config
+
+A service's configuration is split across two files, owned by two packages:
+
+- **`internal/config`** — the project config (`easy-infra.yml`): which services
+  exist and their environment-independent *definition* (image/version). Tracked
+  in git; no secrets.
+- **`internal/profile`** — per-profile *environment* config
+  (`.easy-infra/profiles/<name>.yml`): host, port, user, password, database URL
+  for one environment. Holds credentials, so it is gitignored.
+
+Each `service.Service` owns the schema for *both* halves
+(`DefaultDefinition`/`ValidateDefinition` and `DefaultEnv`/`ValidateEnv`). Keep
+definition fields and environment fields on the correct side of that line.
 
 ## SOLID in this codebase
 
@@ -32,8 +48,9 @@ main.go  ->  cmd/  ->  internal/project  ->  internal/{config,state,service}
   `switch` on service names elsewhere; discover services through the registry.
 - **Liskov** — every service is interchangeable behind `service.Service`;
   callers must not type-assert to a concrete service.
-- **Interface segregation** — keep interfaces small (`Service` exposes only
-  `Name`, `DefaultConfig`, `Validate`). Don't add methods a caller won't use.
+- **Interface segregation** — `Service` exposes only what a service must
+  describe: its name plus the default/validate pair for each config half
+  (definition and environment). Don't add methods a caller won't use.
 - **Dependency inversion** — high-level code depends on abstractions. Commands
   receive a `*service.Registry` and `project.Paths` by injection
   (see `newRootCmd`); they don't construct global singletons.
@@ -59,8 +76,11 @@ main.go  ->  cmd/  ->  internal/project  ->  internal/{config,state,service}
 
 ## Config vs. state
 
-- **Config (YAML)** is user-authored and the source of truth. Validate it on
-  load and never silently rewrite it.
+- **Project config (YAML)** is user-authored and the source of truth for
+  service definitions. Validate it on load and never silently rewrite it.
+- **Profile config (YAML)** is user-authored per-environment settings; it holds
+  credentials and is gitignored. Validate it against the project's defined
+  services on load.
 - **State (JSON)** is tool-owned. Never require users to hand-edit it. Write it
   indented so diffs stay readable.
 - Commands operate on the **active profile** unless one is passed explicitly.

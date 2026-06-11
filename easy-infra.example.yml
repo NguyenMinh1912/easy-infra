@@ -1,33 +1,25 @@
-# Example easy-infra configuration.
+# Example easy-infra PROJECT config.
 #
-# Copy to `easy-infra.yml` (or run `easy-infra init` to scaffold one) and edit.
-# This file is user-owned and validated on load; state is tool-owned and lives
-# in .easy-infra/state.json — never hand-edit state.
+# This file (easy-infra.yml) defines WHICH services the project uses and their
+# environment-independent definition — image/version. It is the source of truth
+# and is tracked in git; it contains no credentials.
+#
+# Per-environment settings (host, port, user, password, database URL) live in
+# PROFILE files under .easy-infra/profiles/<name>.yml — see
+# easy-infra.profile.example.yml. Those hold secrets and are gitignored.
+#
+# Run `easy-infra init` to scaffold both this file and a default profile.
 
 version: 1
 
-profiles:
-  # The everyday local development profile.
-  default:
-    services:
-      postgres:
-        version: "16"
-        port: 5432
-        database: app
-      redis:
-        version: "7"
-        port: 6379
-
-  # A heavier profile resembling staging: object storage and AWS emulation.
-  staging-like:
-    services:
-      postgres:
-        version: "16"
-        port: 5432
-        database: app
-      minio:
-        port: 9000
-        consolePort: 9001
-      localstack:
-        port: 4566
-        services: s3,sqs,sns
+services:
+  postgres:
+    version: "16"
+  redis:
+    version: "7"
+  minio:
+    version: latest
+  localstack:
+    version: latest
+    # Which AWS APIs to emulate is a property of the service, not the env.
+    services: s3,sqs,sns

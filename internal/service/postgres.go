@@ -6,18 +6,37 @@ type Postgres struct{}
 // Name implements Service.
 func (Postgres) Name() string { return "postgres" }
 
-// DefaultConfig implements Service.
-func (Postgres) DefaultConfig() Config {
+// DefaultDefinition implements Service.
+func (Postgres) DefaultDefinition() Config {
+	return Config{"version": "16"}
+}
+
+// ValidateDefinition implements Service.
+func (Postgres) ValidateDefinition(cfg Config) error {
+	_, err := optionalString(cfg, "version", "16")
+	return err
+}
+
+// DefaultEnv implements Service.
+func (Postgres) DefaultEnv() Config {
 	return Config{
-		"version":  "16",
+		"host":     "localhost",
 		"port":     5432,
+		"user":     "app",
+		"password": "app",
 		"database": "app",
 	}
 }
 
-// Validate implements Service.
-func (Postgres) Validate(cfg Config) error {
+// ValidateEnv implements Service.
+func (Postgres) ValidateEnv(cfg Config) error {
+	if _, err := requireString(cfg, "host"); err != nil {
+		return err
+	}
 	if _, err := optionalPort(cfg, "port", 5432); err != nil {
+		return err
+	}
+	if _, err := requireString(cfg, "user"); err != nil {
 		return err
 	}
 	if _, err := requireString(cfg, "database"); err != nil {

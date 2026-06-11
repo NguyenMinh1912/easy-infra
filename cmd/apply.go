@@ -18,7 +18,7 @@ func newApplyCmd(reg *service.Registry, paths project.Paths) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			name, profile, err := proj.ActiveProfile()
+			name, prof, err := proj.ActiveProfile()
 			if err != nil {
 				return err
 			}
@@ -27,9 +27,9 @@ func newApplyCmd(reg *service.Registry, paths project.Paths) *cobra.Command {
 			fmt.Fprintf(out, "Applying profile %q:\n", name)
 			// Provisioning via Docker is intentionally not wired up yet; the
 			// loop establishes the per-service seam where each provider will
-			// reconcile its own service.
-			for _, svcName := range sortedKeys(profile.Services) {
-				fmt.Fprintf(out, "  - %s: would provision\n", svcName)
+			// reconcile its own service from the definition + env config.
+			for _, svcName := range sortedKeys(prof.Services) {
+				fmt.Fprintf(out, "  - %s: would provision at %s\n", svcName, endpoint(prof.Services[svcName]))
 			}
 			return nil
 		},

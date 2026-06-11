@@ -9,7 +9,7 @@ import (
 
 func TestScaffoldSaveLoadRoundtrip(t *testing.T) {
 	reg := service.DefaultRegistry()
-	cfg, err := Scaffold(reg, "default", "postgres", "redis")
+	cfg, err := Scaffold(reg, "postgres", "redis")
 	if err != nil {
 		t.Fatalf("Scaffold: %v", err)
 	}
@@ -25,13 +25,13 @@ func TestScaffoldSaveLoadRoundtrip(t *testing.T) {
 	if err := loaded.Validate(reg); err != nil {
 		t.Fatalf("Validate roundtripped config: %v", err)
 	}
-	if _, ok := loaded.Profile("default"); !ok {
-		t.Error("expected default profile after roundtrip")
+	if !loaded.HasService("postgres") {
+		t.Error("expected postgres service after roundtrip")
 	}
 }
 
 func TestScaffoldUnknownService(t *testing.T) {
-	if _, err := Scaffold(service.DefaultRegistry(), "default", "mongodb"); err == nil {
+	if _, err := Scaffold(service.DefaultRegistry(), "mongodb"); err == nil {
 		t.Error("expected error scaffolding unknown service")
 	}
 }
@@ -45,32 +45,27 @@ func TestValidate(t *testing.T) {
 	}{
 		{
 			name:    "valid",
-			cfg:     Config{Version: CurrentVersion, Profiles: map[string]Profile{"default": {Services: map[string]service.Config{"redis": {"port": 6379}}}}},
+			cfg:     Config{Version: CurrentVersion, Services: map[string]service.Config{"redis": {"version": "7"}}},
 			wantErr: false,
 		},
 		{
 			name:    "wrong version",
-			cfg:     Config{Version: 999, Profiles: map[string]Profile{"default": {Services: map[string]service.Config{"redis": {}}}}},
+			cfg:     Config{Version: 999, Services: map[string]service.Config{"redis": {}}},
 			wantErr: true,
 		},
 		{
-			name:    "no profiles",
+			name:    "no services",
 			cfg:     Config{Version: CurrentVersion},
 			wantErr: true,
 		},
 		{
-			name:    "empty profile",
-			cfg:     Config{Version: CurrentVersion, Profiles: map[string]Profile{"default": {}}},
-			wantErr: true,
-		},
-		{
 			name:    "unknown service",
-			cfg:     Config{Version: CurrentVersion, Profiles: map[string]Profile{"default": {Services: map[string]service.Config{"mongodb": {}}}}},
+			cfg:     Config{Version: CurrentVersion, Services: map[string]service.Config{"mongodb": {}}},
 			wantErr: true,
 		},
 		{
-			name:    "invalid service config",
-			cfg:     Config{Version: CurrentVersion, Profiles: map[string]Profile{"default": {Services: map[string]service.Config{"redis": {"port": 99999}}}}},
+			name:    "invalid definition",
+			cfg:     Config{Version: CurrentVersion, Services: map[string]service.Config{"redis": {"version": 7}}},
 			wantErr: true,
 		},
 	}

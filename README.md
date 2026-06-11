@@ -9,14 +9,22 @@ Supported services: **postgres**, **minio**, **redis**, **localstack**.
 
 ## Concepts
 
-- **Config** (`easy-infra.yml`, YAML) is user-authored and the source of truth.
-  It defines the project's profiles and the per-service configuration in each.
-- **State** (`.easy-infra/state.json`, JSON) is tool-owned. It records derived
-  facts — most importantly the active profile — and is not hand-edited.
-- A **profile** is a named bundle of service configurations (e.g. `default`,
-  `staging-like`). Exactly one profile is active at a time.
+Configuration is split into two layers:
 
-See [`easy-infra.example.yml`](./easy-infra.example.yml) for a worked example.
+- **Project config** (`easy-infra.yml`, YAML) is user-authored and the source of
+  truth for *which* services the project uses and their environment-independent
+  definition (image/version). It is tracked in git and contains no secrets.
+- **Profile config** (`.easy-infra/profiles/<name>.yml`, YAML) describes *how to
+  reach* each service in one environment — host, port, user, password, database
+  URL. A **profile** is one such environment (e.g. `default`, `ci`, `staging`).
+  Profiles hold credentials and are gitignored.
+- **State** (`.easy-infra/state.json`, JSON) is tool-owned. It records derived
+  facts — most importantly the active profile — and is not hand-edited. Exactly
+  one profile is active at a time.
+
+See [`easy-infra.example.yml`](./easy-infra.example.yml) (project) and
+[`easy-infra.profile.example.yml`](./easy-infra.profile.example.yml) (profile)
+for worked examples.
 
 ## Commands
 

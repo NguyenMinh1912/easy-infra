@@ -36,28 +36,38 @@ func TestRegistryGet(t *testing.T) {
 	}
 }
 
-func TestDefaultConfigsValidate(t *testing.T) {
+// TestDefaultsValidate asserts every service's own defaults satisfy its own
+// validation, for both the definition and the environment halves.
+func TestDefaultsValidate(t *testing.T) {
 	reg := DefaultRegistry()
 	for _, name := range reg.Names() {
 		svc, _ := reg.Get(name)
-		if err := svc.Validate(svc.DefaultConfig()); err != nil {
-			t.Errorf("%s default config failed validation: %v", name, err)
+		if err := svc.ValidateDefinition(svc.DefaultDefinition()); err != nil {
+			t.Errorf("%s default definition failed validation: %v", name, err)
+		}
+		if err := svc.ValidateEnv(svc.DefaultEnv()); err != nil {
+			t.Errorf("%s default env failed validation: %v", name, err)
 		}
 	}
 }
 
-func TestValidatePortRange(t *testing.T) {
-	if err := (Redis{}).Validate(Config{"port": 70000}); err == nil {
+func TestValidateEnvPortRange(t *testing.T) {
+	env := Redis{}.DefaultEnv()
+	env["port"] = 70000
+	if err := (Redis{}).ValidateEnv(env); err == nil {
 		t.Error("expected out-of-range port to fail validation")
 	}
-	if err := (Redis{}).Validate(Config{"port": "abc"}); err == nil {
+	env["port"] = "abc"
+	if err := (Redis{}).ValidateEnv(env); err == nil {
 		t.Error("expected non-numeric port to fail validation")
 	}
 }
 
-func TestValidateRequiredString(t *testing.T) {
-	// postgres requires "database"; an empty map should fail.
-	if err := (Postgres{}).Validate(Config{"port": 5432}); err == nil {
-		t.Error("expected missing database to fail validation")
+func TestValidateEnvRequiresHost(t *testing.T) {
+	// Drop the required host field from postgres env.
+	env := Postgres{}.DefaultEnv()
+	delete(env, "host")
+	if err := (Postgres{}).ValidateEnv(env); err == nil {
+		t.Error("expected missing host to fail env validation")
 	}
 }

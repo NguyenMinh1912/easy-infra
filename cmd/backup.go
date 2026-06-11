@@ -18,7 +18,7 @@ func newBackupCmd(reg *service.Registry, paths project.Paths) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			name, profile, err := proj.ActiveProfile()
+			name, prof, err := proj.ActiveProfile()
 			if err != nil {
 				return err
 			}
@@ -27,8 +27,8 @@ func newBackupCmd(reg *service.Registry, paths project.Paths) *cobra.Command {
 			fmt.Fprintf(out, "Backing up profile %q:\n", name)
 			// As with apply, the actual backup mechanism is future work; this
 			// loop is the per-service seam.
-			for _, svcName := range sortedKeys(profile.Services) {
-				fmt.Fprintf(out, "  - %s: would back up\n", svcName)
+			for _, svcName := range sortedKeys(prof.Services) {
+				fmt.Fprintf(out, "  - %s: would back up from %s\n", svcName, endpoint(prof.Services[svcName]))
 			}
 			return nil
 		},

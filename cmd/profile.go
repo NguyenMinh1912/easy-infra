@@ -12,7 +12,7 @@ func newProfileCmd(reg *service.Registry, paths project.Paths) *cobra.Command {
 	profile := &cobra.Command{
 		Use:   "profile",
 		Short: "Manage profiles",
-		Long:  "List and inspect the profiles defined in the project config.",
+		Long:  "List and inspect the environment profiles defined for the project.",
 	}
 	profile.AddCommand(newProfileListCmd(reg, paths))
 	return profile
@@ -28,9 +28,17 @@ func newProfileListCmd(reg *service.Registry, paths project.Paths) *cobra.Comman
 			if err != nil {
 				return err
 			}
+			names, err := proj.Profiles()
+			if err != nil {
+				return err
+			}
+			if len(names) == 0 {
+				fmt.Fprintln(cmd.OutOrStdout(), "no profiles found")
+				return nil
+			}
 			out := cmd.OutOrStdout()
 			active := proj.State.ActiveProfile
-			for _, name := range proj.Config.ProfileNames() {
+			for _, name := range names {
 				marker := "  "
 				if name == active {
 					marker = "* "

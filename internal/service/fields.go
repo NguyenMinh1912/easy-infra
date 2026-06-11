@@ -27,6 +27,20 @@ func optionalPort(cfg Config, key string, def int) (int, error) {
 	return port, nil
 }
 
+// optionalString returns the string stored under key, or def if absent. A
+// non-string value is reported as an actionable error.
+func optionalString(cfg Config, key, def string) (string, error) {
+	raw, ok := cfg[key]
+	if !ok {
+		return def, nil
+	}
+	s, ok := raw.(string)
+	if !ok {
+		return "", fmt.Errorf("%q must be a string, got %v", key, raw)
+	}
+	return s, nil
+}
+
 // requireString returns a non-empty string stored under key, or an error if it
 // is missing, empty, or not a string.
 func requireString(cfg Config, key string) (string, error) {
