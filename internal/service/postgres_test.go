@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -89,6 +90,94 @@ func TestConnString(t *testing.T) {
 	}
 	if !strings.Contains(cs, "dbname='postgres'") {
 		t.Errorf("override connString = %q, want dbname='postgres'", cs)
+	}
+}
+
+func TestConnStringURL(t *testing.T) {
+	env := Config{"url": "postgres://app:secret@db.internal:5432/app?sslmode=require"}
+	cs, err := connString(env, "")
+	if err != nil {
+		t.Fatalf("connString: %v", err)
+	}
+	if cs != "postgres://app:secret@db.internal:5432/app?sslmode=require" {
+		t.Errorf("connString = %q, want the URL verbatim", cs)
+	}
+	// database override swaps only the path, preserving credentials and params.
+	cs, err = connString(env, "postgres")
+	if err != nil {
+		t.Fatalf("connString override: %v", err)
+	}
+	if cs != "postgres://app:secret@db.internal:5432/postgres?sslmode=require" {
+		t.Errorf("override connString = %q, want dbname swapped to postgres", cs)
+	}
+}
+
+func TestConnStringJDBCURL(t *testing.T) {
+	// JDBC URL with a currentSchema: the jdbc: prefix is stripped and
+	// currentSchema is translated to search_path so pgx accepts it.
+	env := Config{"url": "jdbc:postgresql://kot:secret@172.16.10.228:5432/kot?currentSchema=kot_dynamic"}
+	cs, err := connString(env, "")
+	if err != nil {
+		t.Fatalf("connString: %v", err)
+	}
+	u, err := url.Parse(cs)
+	if err != nil {
+		t.Fatalf("result is not a valid URL %q: %v", cs, err)
+	}
+	if u.Scheme != "postgresql" {
+		t.Errorf("scheme = %q, want postgresql (jdbc: stripped)", u.Scheme)
+	}
+	if got := u.Query().Get("search_path"); got != "kot_dynamic" {
+		t.Errorf("search_path = %q, want kot_dynamic", got)
+	}
+	if u.Query().Has("currentSchema") {
+		t.Errorf("currentSchema should be removed, got %q", cs)
+	}
+	// database override keeps the schema query parameter intact.
+	cs, err = connString(env, "postgres")
+	if err != nil {
+		t.Fatalf("connString override: %v", err)
+	}
+	u, _ = url.Parse(cs)
+	if u.Path != "/postgres" {
+		t.Errorf("path = %q, want /postgres", u.Path)
+	}
+	if got := u.Query().Get("search_path"); got != "kot_dynamic" {
+		t.Errorf("override search_path = %q, want kot_dynamic", got)
+	}
+	// databaseName parses the db out of a JDBC URL.
+	if name, err := databaseName(env); err != nil || name != "kot" {
+		t.Errorf("databaseName = %q, %v; want kot", name, err)
+	}
+}
+
+func TestValidateEnvURL(t *testing.T) {
+	if err := (Postgres{}).ValidateEnv(Config{"url": "postgres://app@db.internal/app"}); err != nil {
+		t.Errorf("ValidateEnv (valid url): %v", err)
+	}
+	if err := (Postgres{}).ValidateEnv(Config{"url": "postgres://app@db.internal/"}); err == nil {
+		t.Error("ValidateEnv (url without database): expected error")
+	}
+	if err := (Postgres{}).ValidateEnv(Config{"url": ""}); err == nil {
+		t.Error("ValidateEnv (empty url): expected error")
+	}
+}
+
+func TestPostgresApplyURLCreatesDatabase(t *testing.T) {
+	t.Chdir(t.TempDir())
+	fc := &fakeConn{rowExists: false}
+	env := Config{"url": "postgres://app:secret@db.internal:5432/app"}
+	if err := withConn(fc).Apply(context.Background(), Spec{Profile: "default", Env: env}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	var created bool
+	for _, e := range fc.execs {
+		if strings.Contains(e, `CREATE DATABASE "app"`) {
+			created = true
+		}
+	}
+	if !created {
+		t.Errorf("Apply execs = %v, want CREATE DATABASE \"app\" (db name parsed from url)", fc.execs)
 	}
 }
 

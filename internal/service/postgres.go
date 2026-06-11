@@ -48,8 +48,15 @@ func (Postgres) DefaultEnv() Config {
 	}
 }
 
-// ValidateEnv implements Service.
+// ValidateEnv implements Service. A profile may describe the connection either
+// as a single "url" DSN or as discrete host/port/user/database fields.
 func (Postgres) ValidateEnv(cfg Config) error {
+	if _, ok := cfg["url"]; ok {
+		// databaseName validates the URL is a non-empty string, parses, and
+		// carries a database name.
+		_, err := databaseName(cfg)
+		return err
+	}
 	if _, err := requireString(cfg, "host"); err != nil {
 		return err
 	}
@@ -168,7 +175,7 @@ func (p Postgres) connect(ctx context.Context, env Config, database string) (pgC
 // ensureDatabase creates the target database if it does not already exist,
 // connecting to the "postgres" maintenance database to do so.
 func (p Postgres) ensureDatabase(ctx context.Context, spec Spec) error {
-	dbName, err := requireString(spec.Env, "database")
+	dbName, err := databaseName(spec.Env)
 	if err != nil {
 		return err
 	}
