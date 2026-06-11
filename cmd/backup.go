@@ -24,12 +24,13 @@ func newBackupCmd(reg *service.Registry, paths project.Paths) *cobra.Command {
 }
 
 func newBackupSnapshotCmd(reg *service.Registry, paths project.Paths) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "snapshot [profile]",
 		Short: "Snapshot a profile's services into a new backup folder",
 		Long:  "Back up every service in a profile into a single timestamped snapshot folder. Defaults to the active profile; pass a profile name to snapshot a specific one.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			verbose, _ := cmd.Flags().GetBool("verbose")
 			proj, err := project.Load(paths, reg)
 			if err != nil {
 				return err
@@ -55,6 +56,11 @@ func newBackupSnapshotCmd(reg *service.Registry, paths project.Paths) *cobra.Com
 					Env:        prof.Services[svcName],
 					BackupDir:  dir,
 				}
+				// In verbose mode, stream the service's own progress lines, tagged
+				// with its name so they line up with the per-service summary below.
+				if verbose {
+					spec.Log = &prefixWriter{w: out, prefix: fmt.Sprintf("  - %s: ", svcName)}
+				}
 				switch err := svc.Backup(ctx, spec); {
 				case errors.Is(err, service.ErrNotImplemented):
 					fmt.Fprintf(out, "  - %s: would back up from %s\n", svcName, endpoint(spec.Env))
@@ -67,6 +73,8 @@ func newBackupSnapshotCmd(reg *service.Registry, paths project.Paths) *cobra.Com
 			return nil
 		},
 	}
+	cmd.Flags().BoolP("verbose", "v", false, "stream each service's snapshot activity as it runs")
+	return cmd
 }
 
 func newBackupListCmd(reg *service.Registry, paths project.Paths) *cobra.Command {

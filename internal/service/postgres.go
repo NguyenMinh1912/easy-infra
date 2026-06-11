@@ -150,8 +150,12 @@ func (p Postgres) Backup(ctx context.Context, spec Spec) error {
 		return fmt.Errorf("creating backup file %s: %w", path, err)
 	}
 	defer f.Close()
-	if err := dump(ctx, conn, f); err != nil {
+	spec.logf("dumping database to %s\n", path)
+	if err := dump(ctx, conn, f, spec.logf); err != nil {
 		return fmt.Errorf("backing up postgres: %w", err)
+	}
+	if fi, err := f.Stat(); err == nil {
+		spec.logf("wrote %d bytes\n", fi.Size())
 	}
 	return nil
 }
