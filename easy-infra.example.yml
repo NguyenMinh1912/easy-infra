@@ -1,0 +1,33 @@
+# Example easy-infra configuration.
+#
+# Copy to `easy-infra.yml` (or run `easy-infra init` to scaffold one) and edit.
+# This file is user-owned and validated on load; state is tool-owned and lives
+# in .easy-infra/state.json — never hand-edit state.
+
+version: 1
+
+profiles:
+  # The everyday local development profile.
+  default:
+    services:
+      postgres:
+        version: "16"
+        port: 5432
+        database: app
+      redis:
+        version: "7"
+        port: 6379
+
+  # A heavier profile resembling staging: object storage and AWS emulation.
+  staging-like:
+    services:
+      postgres:
+        version: "16"
+        port: 5432
+        database: app
+      minio:
+        port: 9000
+        consolePort: 9001
+      localstack:
+        port: 4566
+        services: s3,sqs,sns

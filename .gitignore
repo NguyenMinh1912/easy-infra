@@ -1,0 +1,8 @@
+# Compiled binary
+/easy-infra
+
+# Tool-owned project state (created by `easy-infra init`)
+/.easy-infra/
+
+# Real project config (the tracked example is easy-infra.example.yml)
+/easy-infra.yml
