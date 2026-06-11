@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"path/filepath"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -192,10 +191,4 @@ func quoteDSN(v string) string {
 // quoteIdent renders s as a quoted SQL identifier, doubling embedded quotes.
 func quoteIdent(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
-}
-
-// backupDir is the directory holding a profile's postgres backups, relative to
-// the project root (matching how config/state paths are resolved).
-func backupDir(profile string) string {
-	return filepath.Join(".easy-infra", "backups", profile, "postgres")
 }

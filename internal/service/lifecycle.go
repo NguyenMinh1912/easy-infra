@@ -18,6 +18,10 @@ type Spec struct {
 	Definition Config
 	// Env is the active profile's environment config for the service.
 	Env Config
+	// BackupDir is the snapshot folder a Backup should write into. The command
+	// layer sets it so every service in one snapshot shares a single folder. When
+	// empty, Backup falls back to its own fresh snapshot.
+	BackupDir string
 }
 
 // ErrNotImplemented is returned by lifecycle operations whose Docker-backed

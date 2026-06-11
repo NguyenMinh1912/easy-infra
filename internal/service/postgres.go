@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
-	"time"
 )
+
+// postgresBackupFile is the name of postgres's artifact within a snapshot
+// folder.
+const postgresBackupFile = "postgres.sql"
 
 // Postgres provisions a PostgreSQL database service.
 //
@@ -87,20 +89,30 @@ func (p Postgres) Health(ctx context.Context, spec Spec) error {
 }
 
 // Apply implements Service: ensure the target database exists (creating it if
-// absent) and, if a backup exists for the active profile, restore the latest
-// one into it. With no backup yet, Apply just leaves the freshly-created empty
-// database in place.
+// absent) and, if a snapshot exists for the active profile, restore postgres
+// from the latest one. With no snapshot yet (or one without a postgres
+// artifact), Apply just leaves the freshly-created empty database in place.
 func (p Postgres) Apply(ctx context.Context, spec Spec) error {
 	if err := p.ensureDatabase(ctx, spec); err != nil {
 		return err
 	}
-	path, err := latestBackup(spec.Profile)
+	dir, err := latestSnapshotDir(spec.Profile)
 	if err != nil {
 		return err
 	}
-	if path == "" {
+	if dir == "" {
 		return nil
 	}
+	path := filepath.Join(dir, postgresBackupFile)
+
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("opening backup %s: %w", path, err)
+	}
+	defer f.Close()
 
 	conn, err := p.connect(ctx, spec.Env, "")
 	if err != nil {
@@ -108,19 +120,16 @@ func (p Postgres) Apply(ctx context.Context, spec Spec) error {
 	}
 	defer conn.Close(ctx)
 
-	f, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("opening backup %s: %w", path, err)
-	}
-	defer f.Close()
 	if err := restore(ctx, conn, f); err != nil {
 		return fmt.Errorf("restoring %s: %w", path, err)
 	}
 	return nil
 }
 
-// Backup implements Service: write a logical SQL dump of the database to the
-// active profile's backup directory.
+// Backup implements Service: write a logical SQL dump of the database into the
+// snapshot folder. The command layer sets spec.BackupDir so every service in a
+// snapshot shares one folder; when it is empty (e.g. a service backing itself
+// up directly) Backup creates its own fresh snapshot.
 func (p Postgres) Backup(ctx context.Context, spec Spec) error {
 	conn, err := p.connect(ctx, spec.Env, "")
 	if err != nil {
@@ -128,11 +137,14 @@ func (p Postgres) Backup(ctx context.Context, spec Spec) error {
 	}
 	defer conn.Close(ctx)
 
-	dir := backupDir(spec.Profile)
+	dir := spec.BackupDir
+	if dir == "" {
+		dir = NewSnapshotDir(spec.Profile)
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("creating backup dir %s: %w", dir, err)
 	}
-	path := filepath.Join(dir, backupStamp()+".sql")
+	path := filepath.Join(dir, postgresBackupFile)
 	f, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("creating backup file %s: %w", path, err)
@@ -199,36 +211,4 @@ func (p Postgres) ensureDatabase(ctx context.Context, spec Spec) error {
 		return fmt.Errorf("creating database %q: %w", dbName, err)
 	}
 	return nil
-}
-
-// latestBackup returns the path of the most recent backup for profile, or an
-// empty string when none exist. Backup filenames are sortable timestamps, so
-// the lexically greatest name is the newest.
-func latestBackup(profile string) (string, error) {
-	dir := backupDir(profile)
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", nil
-		}
-		return "", fmt.Errorf("reading backups %s: %w", dir, err)
-	}
-	var latest string
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") {
-			continue
-		}
-		if e.Name() > latest {
-			latest = e.Name()
-		}
-	}
-	if latest == "" {
-		return "", nil
-	}
-	return filepath.Join(dir, latest), nil
-}
-
-// backupStamp is a sortable, filesystem-safe UTC timestamp for backup files.
-func backupStamp() string {
-	return time.Now().UTC().Format("20060102T150405Z")
 }
