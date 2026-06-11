@@ -1,5 +1,7 @@
 package service
 
+import "context"
+
 // MinIO provisions a MinIO S3-compatible object storage service.
 type MinIO struct{}
 
@@ -47,3 +49,18 @@ func (MinIO) ValidateEnv(cfg Config) error {
 	}
 	return nil
 }
+
+// Lifecycle operations are the per-service seam for Docker-backed provisioning,
+// which is future work; until a provider lands they report ErrNotImplemented.
+
+// Apply implements Service.
+func (MinIO) Apply(context.Context, Spec) error { return notImplemented("minio", "apply") }
+
+// Health implements Service.
+func (MinIO) Health(context.Context, Spec) error { return notImplemented("minio", "health") }
+
+// Backup implements Service.
+func (MinIO) Backup(context.Context, Spec) error { return notImplemented("minio", "backup") }
+
+// Clean implements Service.
+func (MinIO) Clean(context.Context, Spec) error { return notImplemented("minio", "clean") }

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/minhnc/easy-infra/internal/project"
@@ -25,11 +26,28 @@ func newApplyCmd(reg *service.Registry, paths project.Paths) *cobra.Command {
 
 			out := cmd.OutOrStdout()
 			fmt.Fprintf(out, "Applying profile %q:\n", name)
-			// Provisioning via Docker is intentionally not wired up yet; the
-			// loop establishes the per-service seam where each provider will
-			// reconcile its own service from the definition + env config.
+			// Each service reconciles itself through Service.Apply. Docker-backed
+			// provisioning is future work, so providers report ErrNotImplemented
+			// for now; we surface that as the intended action rather than failing.
+			ctx := cmd.Context()
 			for _, svcName := range sortedKeys(prof.Services) {
-				fmt.Fprintf(out, "  - %s: would provision at %s\n", svcName, endpoint(prof.Services[svcName]))
+				svc, ok := reg.Get(svcName)
+				if !ok {
+					return fmt.Errorf("unknown service %q", svcName)
+				}
+				spec := service.Spec{
+					Profile:    name,
+					Definition: proj.Config.Services[svcName],
+					Env:        prof.Services[svcName],
+				}
+				switch err := svc.Apply(ctx, spec); {
+				case errors.Is(err, service.ErrNotImplemented):
+					fmt.Fprintf(out, "  - %s: would provision at %s\n", svcName, endpoint(spec.Env))
+				case err != nil:
+					return fmt.Errorf("applying %s: %w", svcName, err)
+				default:
+					fmt.Fprintf(out, "  - %s: applied at %s\n", svcName, endpoint(spec.Env))
+				}
 			}
 			return nil
 		},

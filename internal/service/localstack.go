@@ -1,5 +1,7 @@
 package service
 
+import "context"
+
 // LocalStack provisions a LocalStack service emulating AWS APIs locally.
 type LocalStack struct{}
 
@@ -45,3 +47,18 @@ func (LocalStack) ValidateEnv(cfg Config) error {
 	}
 	return nil
 }
+
+// Lifecycle operations are the per-service seam for Docker-backed provisioning,
+// which is future work; until a provider lands they report ErrNotImplemented.
+
+// Apply implements Service.
+func (LocalStack) Apply(context.Context, Spec) error { return notImplemented("localstack", "apply") }
+
+// Health implements Service.
+func (LocalStack) Health(context.Context, Spec) error { return notImplemented("localstack", "health") }
+
+// Backup implements Service.
+func (LocalStack) Backup(context.Context, Spec) error { return notImplemented("localstack", "backup") }
+
+// Clean implements Service.
+func (LocalStack) Clean(context.Context, Spec) error { return notImplemented("localstack", "clean") }
