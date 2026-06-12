@@ -58,6 +58,16 @@ func TestForkSnapshotNotFound(t *testing.T) {
 	}
 }
 
+func TestForkInvalidPort(t *testing.T) {
+	paths, reg := initProject(t, "postgres")
+	srv := New(reg, paths, emptyUI)
+	// An out-of-range local port is rejected before any provisioning.
+	rec := doRequest(t, srv, http.MethodPost, "/api/services/postgres/fork", `{"port":70000}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("code = %d, want 400 (body %q)", rec.Code, rec.Body.String())
+	}
+}
+
 func TestForkNotInitialized(t *testing.T) {
 	srv := New(service.DefaultRegistry(), newPaths(t), emptyUI)
 	rec := doRequest(t, srv, http.MethodPost, "/api/services/postgres/fork", "")

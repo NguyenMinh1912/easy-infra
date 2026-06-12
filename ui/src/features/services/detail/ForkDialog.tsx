@@ -11,9 +11,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAsync } from "@/hooks/useAsync";
-import { listSnapshots } from "@/services/api";
+import { getProfileConfig, listProfiles, listSnapshots } from "@/services/api";
 import { cn } from "@/lib/utils";
 
 interface ForkDialogProps {
@@ -22,10 +23,12 @@ interface ForkDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /**
-   * Called with the chosen snapshot once the user confirms. An empty string
-   * means "create a fresh backup of the source first, then fork from it".
+   * Called with the chosen snapshot, and the local port to publish the forked
+   * container on, once the user confirms. An empty snapshot means "create a
+   * fresh backup of the source first, then fork from it"; an undefined port
+   * keeps the source profile's port.
    */
-  onFork: (snapshot: string) => void;
+  onFork: (snapshot: string, port?: number) => void;
 }
 
 /** Sentinel for the "create a new backup" choice — the server reads "" the same way. */
@@ -57,6 +60,31 @@ export function ForkDialog({
     if (open) setSelected(NEW_BACKUP);
   }, [open]);
 
+  // The local container defaults to the source profile's port; fetch it so the
+  // field can be pre-filled with the value the user is editing.
+  const sourcePort = useAsync(
+    async (signal) => {
+      if (!open) return "";
+      const { activeProfile } = await listProfiles(signal);
+      const cfg = await getProfileConfig(activeProfile, signal);
+      const raw = cfg.services.find((s) => s.name === serviceName)?.config.port;
+      return raw == null ? "" : String(raw);
+    },
+    [serviceName, open],
+  );
+
+  const [port, setPort] = useState("");
+  useEffect(() => {
+    if (open && sourcePort.status === "success") setPort(sourcePort.data);
+  }, [open, sourcePort]);
+
+  // A blank field keeps the source port; otherwise the entered number is sent.
+  const trimmedPort = port.trim();
+  const portNumber = Number(trimmedPort);
+  const portInvalid =
+    trimmedPort !== "" &&
+    (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
@@ -76,14 +104,42 @@ export function ForkDialog({
           onSelect={setSelected}
         />
 
+        <div className="space-y-1.5">
+          <label htmlFor="fork-local-port" className="text-sm font-medium">
+            Local port
+          </label>
+          <Input
+            id="fork-local-port"
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={65535}
+            value={port}
+            onChange={(e) => setPort(e.target.value)}
+            placeholder="Same as source"
+            aria-invalid={portInvalid}
+          />
+          <p
+            className={cn(
+              "text-xs",
+              portInvalid ? "text-destructive" : "text-muted-foreground",
+            )}
+          >
+            {portInvalid
+              ? "Enter a port between 1 and 65535, or leave blank to keep the source's."
+              : "Port the local container is published on. Leave blank to keep the source's."}
+          </p>
+        </div>
+
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button
+            disabled={portInvalid}
             onClick={() => {
               onOpenChange(false);
-              onFork(selected);
+              onFork(selected, trimmedPort === "" ? undefined : portNumber);
             }}
           >
             Fork
