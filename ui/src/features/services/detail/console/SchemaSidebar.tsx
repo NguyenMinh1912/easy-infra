@@ -8,8 +8,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRemainingHeight } from "@/hooks/useRemainingHeight";
+import { useResizableWidth } from "@/hooks/useResizableWidth";
 import { cn } from "@/lib/utils";
 import type { TableInfo } from "@/types/console";
+
+/** Sidebar width bounds (px); the default matches the former fixed `w-56`. */
+const WIDTH = { initial: 224, min: 160, max: 480 } as const;
 
 interface SchemaSidebarProps {
   /** Whether schema introspection is still in flight. */
@@ -44,8 +48,17 @@ export function SchemaSidebar({
   // Cap the table list to the height still visible below it so a long list
   // scrolls within the sidebar instead of growing the page past the viewport.
   const { ref, maxHeight } = useRemainingHeight<HTMLUListElement>();
+  // Width is user-draggable (handle on the right edge) and remembered across
+  // reloads.
+  const { width, onResizeStart } = useResizableWidth({
+    key: "console-schema-sidebar",
+    ...WIDTH,
+  });
   return (
-    <aside className="w-56 shrink-0 space-y-3 border-r border-border pr-4">
+    <aside
+      style={{ width }}
+      className="relative shrink-0 space-y-3 border-r border-border pr-4"
+    >
       <div className="space-y-1.5">
         <p className="text-xs font-medium text-muted-foreground">Schema</p>
         {loading ? (
@@ -131,6 +144,14 @@ export function SchemaSidebar({
           </ul>
         )}
       </div>
+
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize table list"
+        onPointerDown={onResizeStart}
+        className="absolute inset-y-0 -right-2 w-4 cursor-col-resize touch-none after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-transparent hover:after:bg-border"
+      />
     </aside>
   );
 }
