@@ -93,6 +93,31 @@ func TestConnString(t *testing.T) {
 	}
 }
 
+func TestValidateEnvStringPort(t *testing.T) {
+	// The web UI submits every field as a string, so a numeric string port
+	// must validate; a non-numeric one must still be rejected.
+	if err := (Postgres{}).ValidateEnv(Config{"host": "h", "port": "5432", "user": "u", "database": "d"}); err != nil {
+		t.Errorf("string port should validate: %v", err)
+	}
+	if err := (Postgres{}).ValidateEnv(Config{"host": "h", "port": "abc", "user": "u", "database": "d"}); err == nil {
+		t.Errorf("non-numeric port should be rejected")
+	}
+}
+
+func TestConnStringSchema(t *testing.T) {
+	env := Postgres{}.DefaultEnv()
+	env["schema"] = "app_dynamic"
+	cs, err := connString(env, "")
+	if err != nil {
+		t.Fatalf("connString: %v", err)
+	}
+	// schema is applied as a search_path runtime parameter, mirroring the URL
+	// form's currentSchema handling.
+	if !strings.Contains(cs, "search_path='app_dynamic'") {
+		t.Errorf("connString = %q, missing search_path='app_dynamic'", cs)
+	}
+}
+
 func TestConnStringURL(t *testing.T) {
 	env := Config{"url": "postgres://app:secret@db.internal:5432/app?sslmode=require"}
 	cs, err := connString(env, "")

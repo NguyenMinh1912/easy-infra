@@ -10,9 +10,16 @@ export interface ConfigRow {
   value: string;
 }
 
-interface ProfileServiceConfigCardProps {
+/**
+ * Props shared by every per-service config card. A tailored card (see
+ * {@link profileConfigCardFor}) may use `profileName` — e.g. to probe a
+ * connection — while the generic card ignores it.
+ */
+export interface ProfileServiceConfigCardProps {
   /** Service this card configures (e.g. "postgres"). */
   name: string;
+  /** Profile the config belongs to; needed by cards that call the backend. */
+  profileName: string;
   rows: ConfigRow[];
   onChange: (rows: ConfigRow[]) => void;
   disabled?: boolean;
