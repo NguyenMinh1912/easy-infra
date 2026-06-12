@@ -1,15 +1,18 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { cn } from "@/lib/utils";
 import type { ServiceConfig, ServiceDefinition } from "@/types/service";
 import { DefinitionEditor, type DefinitionRow } from "./DefinitionEditor";
 
 interface ServiceCardProps {
   service: ServiceDefinition;
   busy: boolean;
+  /** When true (deep-linked from the sidebar), scroll into view and ring it. */
+  highlighted?: boolean;
   onSave: (name: string, definition: ServiceConfig) => void;
   onRemove: (name: string) => void;
 }
@@ -22,11 +25,19 @@ interface ServiceCardProps {
 export function ServiceCard({
   service,
   busy,
+  highlighted = false,
   onSave,
   onRemove,
 }: ServiceCardProps) {
   const [editing, setEditing] = useState(false);
   const [rows, setRows] = useState<DefinitionRow[]>([]);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (highlighted) {
+      cardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [highlighted]);
 
   const startEditing = () => {
     setRows(toRows(service.definition));
@@ -39,7 +50,13 @@ export function ServiceCard({
   };
 
   return (
-    <Card>
+    <Card
+      ref={cardRef}
+      className={cn(
+        "scroll-mt-6 transition-shadow",
+        highlighted && "ring-2 ring-primary",
+      )}
+    >
       <CardHeader className="flex flex-row items-center justify-between space-y-0">
         <CardTitle className="font-mono text-base">{service.name}</CardTitle>
         {!editing && (
