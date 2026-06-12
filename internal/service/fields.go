@@ -68,6 +68,51 @@ func optionalBool(cfg Config, key string, def bool) (bool, error) {
 	}
 }
 
+// optionalStringSlice returns the list of strings stored under key, or nil when
+// the key is absent. It accepts a YAML sequence (decoded as []any or []string)
+// as well as a single comma-separated string, since the JSON API (the web UI)
+// edits every field as one string value. Entries are trimmed and blanks are
+// dropped. A wrong-typed value, or a non-string element, is reported as an
+// actionable error.
+func optionalStringSlice(cfg Config, key string) ([]string, error) {
+	raw, ok := cfg[key]
+	if !ok {
+		return nil, nil
+	}
+	switch v := raw.(type) {
+	case nil:
+		return nil, nil
+	case string:
+		return cleanList(strings.Split(v, ",")), nil
+	case []string:
+		return cleanList(v), nil
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, e := range v {
+			s, ok := e.(string)
+			if !ok {
+				return nil, fmt.Errorf("%q must be a list of strings, got element %v", key, e)
+			}
+			out = append(out, s)
+		}
+		return cleanList(out), nil
+	default:
+		return nil, fmt.Errorf("%q must be a list of strings, got %v", key, raw)
+	}
+}
+
+// cleanList trims each entry and drops the ones left empty, so a trailing comma
+// or stray whitespace in user input does not produce blank list members.
+func cleanList(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // requireString returns a non-empty string stored under key, or an error if it
 // is missing, empty, or not a string.
 func requireString(cfg Config, key string) (string, error) {

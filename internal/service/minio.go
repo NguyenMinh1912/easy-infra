@@ -48,15 +48,25 @@ func (m MinIO) dockerClient() dockerRunner {
 // Name implements Service.
 func (MinIO) Name() string { return "minio" }
 
-// DefaultDefinition implements Service.
+// DefaultDefinition implements Service. The empty `buckets` list documents the
+// field so a user knows the buckets to create on apply are configured here.
 func (MinIO) DefaultDefinition() Config {
-	return Config{"version": "latest", cleanableKey: true}
+	return Config{"version": "latest", "buckets": []string{}, cleanableKey: true}
 }
 
 // ValidateDefinition implements Service.
 func (MinIO) ValidateDefinition(cfg Config) error {
 	if _, err := optionalString(cfg, "version", "latest"); err != nil {
 		return err
+	}
+	buckets, err := optionalStringSlice(cfg, "buckets")
+	if err != nil {
+		return err
+	}
+	for _, bucket := range buckets {
+		if err := validateBucketName(bucket); err != nil {
+			return err
+		}
 	}
 	return validateCleanable(cfg)
 }
@@ -109,11 +119,18 @@ func (m MinIO) Health(ctx context.Context, spec Spec) error {
 	return nil
 }
 
-// Apply implements Service: if a snapshot exists for the active profile, recreate
+// Apply implements Service: create the buckets declared in the profile config
+// (idempotently), then, if a snapshot exists for the active profile, recreate
 // its buckets and re-upload its objects. spec.Snapshot selects which version to
-// restore; when empty the latest snapshot is used. With no snapshot yet (or one
-// without a minio artifact), Apply is a no-op, leaving the store as-is.
+// restore; when empty the latest snapshot is used. With no configured buckets
+// and no snapshot yet (or one without a minio artifact), Apply is a no-op,
+// leaving the store as-is.
 func (m MinIO) Apply(ctx context.Context, spec Spec) error {
+	buckets, err := optionalStringSlice(spec.Definition, "buckets")
+	if err != nil {
+		return err
+	}
+
 	var dir string
 	if spec.Snapshot != "" {
 		dir = SnapshotDir(spec.Profile, spec.Snapshot)
@@ -124,24 +141,41 @@ func (m MinIO) Apply(ctx context.Context, spec Spec) error {
 		}
 		dir = latest
 	}
-	if dir == "" {
-		spec.logf("no snapshot found for profile %q; leaving minio untouched\n", spec.Profile)
-		return nil
+
+	var base string
+	var manifest *minioManifest
+	if dir != "" {
+		base = filepath.Join(dir, minioDir)
+		manifest, err = readMinioManifest(base)
+		if err != nil {
+			return err
+		}
 	}
 
-	base := filepath.Join(dir, minioDir)
-	manifest, err := readMinioManifest(base)
-	if err != nil {
-		return err
-	}
-	if manifest == nil {
-		spec.logf("snapshot %s has no minio artifact; nothing to restore\n", filepath.Base(dir))
+	// Nothing declared and nothing captured: leave the store as-is.
+	if len(buckets) == 0 && manifest == nil {
+		if dir == "" {
+			spec.logf("no snapshot found for profile %q; leaving minio untouched\n", spec.Profile)
+		} else {
+			spec.logf("snapshot %s has no minio artifact; nothing to restore\n", filepath.Base(dir))
+		}
 		return nil
 	}
 
 	client, err := m.connect(ctx, spec.Env)
 	if err != nil {
 		return err
+	}
+
+	for _, bucket := range buckets {
+		spec.logf("ensuring configured bucket %q\n", bucket)
+		if err := ensureBucket(ctx, client, bucket); err != nil {
+			return err
+		}
+	}
+
+	if manifest == nil {
+		return nil
 	}
 
 	for _, bucket := range manifest.Buckets {
@@ -256,6 +290,30 @@ func (m MinIO) connect(ctx context.Context, env Config) (s3Client, error) {
 		return nil, err
 	}
 	return client, nil
+}
+
+// validateBucketName checks a configured bucket name against MinIO's S3 naming
+// rules so a bad name is rejected at config time with an actionable message
+// rather than failing cryptically when Apply tries to create it: 3–63
+// characters, lowercase letters, digits, dots and hyphens, beginning and ending
+// with a letter or digit.
+func validateBucketName(name string) error {
+	if len(name) < 3 || len(name) > 63 {
+		return fmt.Errorf("bucket name %q must be between 3 and 63 characters", name)
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+		case c == '-' || c == '.':
+			if i == 0 || i == len(name)-1 {
+				return fmt.Errorf("bucket name %q must begin and end with a lowercase letter or digit", name)
+			}
+		default:
+			return fmt.Errorf("bucket name %q may contain only lowercase letters, digits, dots and hyphens", name)
+		}
+	}
+	return nil
 }
 
 // ensureBucket creates bucket if it does not already exist.
