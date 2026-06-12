@@ -183,7 +183,7 @@ func (s *Server) handleStartBackup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// One fresh snapshot folder for this service's artifact.
-	dir := service.NewSnapshotDir(profileName)
+	dir := service.NewSnapshotDir(profileName, name)
 	spec := service.Spec{
 		Profile:    profileName,
 		Definition: env,
@@ -212,10 +212,11 @@ func (s *Server) handleStartBackup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, toSessionJSON(sess))
 }
 
-// handleListSnapshots returns the backup snapshot ids available to the active
-// profile, newest first, so the UI can offer them as the versions an apply may
-// restore. The {name} service must be defined in the profile; the snapshots
-// themselves are profile-wide (one snapshot captures the whole profile).
+// handleListSnapshots returns the backup snapshot ids available for the {name}
+// service in the active profile, newest first, so the UI can offer them as the
+// versions an apply may restore. Snapshots are kept per service, so a service
+// only ever sees its own backups (e.g. minio never lists postgres-only ones).
+// The {name} service must be defined in the profile.
 func (s *Server) handleListSnapshots(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 
@@ -233,7 +234,7 @@ func (s *Server) handleListSnapshots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ids, err := service.ListSnapshots(profileName)
+	ids, err := service.ListSnapshots(profileName, name)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -387,13 +388,13 @@ func (s *Server) handleStartApply(w http.ResponseWriter, r *http.Request) {
 	// Validate the requested snapshot against the known list rather than trusting
 	// the client, so a crafted id cannot escape the backups directory.
 	if body.Snapshot != "" {
-		ids, err := service.ListSnapshots(profileName)
+		ids, err := service.ListSnapshots(profileName, name)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		if !contains(ids, body.Snapshot) {
-			writeError(w, http.StatusNotFound, fmt.Sprintf("snapshot %q not found for profile %q", body.Snapshot, profileName))
+			writeError(w, http.StatusNotFound, fmt.Sprintf("snapshot %q not found for service %q in profile %q", body.Snapshot, name, profileName))
 			return
 		}
 	}
@@ -528,7 +529,7 @@ func (s *Server) handleDeleteBackup(w http.ResponseWriter, r *http.Request) {
 	// Drop the snapshot artifact on disk too, so deleting the record leaves
 	// nothing behind. Best-effort: the record is already gone.
 	if sess.Snapshot != "" {
-		_ = os.RemoveAll(filepath.Join(service.BackupsDir(sess.Profile), sess.Snapshot))
+		_ = os.RemoveAll(service.SnapshotDir(sess.Profile, sess.Service, sess.Snapshot))
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

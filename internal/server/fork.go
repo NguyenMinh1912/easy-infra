@@ -91,13 +91,13 @@ func (s *Server) handleStartFork(w http.ResponseWriter, r *http.Request) {
 	// Validate a requested snapshot against the source profile's known list, so a
 	// crafted id cannot escape the backups directory.
 	if body.Snapshot != "" {
-		ids, err := service.ListSnapshots(sourceProfile)
+		ids, err := service.ListSnapshots(sourceProfile, name)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		if !contains(ids, body.Snapshot) {
-			writeError(w, http.StatusNotFound, fmt.Sprintf("snapshot %q not found for profile %q", body.Snapshot, sourceProfile))
+			writeError(w, http.StatusNotFound, fmt.Sprintf("snapshot %q not found for service %q in profile %q", body.Snapshot, name, sourceProfile))
 			return
 		}
 	}
@@ -131,7 +131,7 @@ func (s *Server) handleStartFork(w http.ResponseWriter, r *http.Request) {
 	snapshot := body.Snapshot
 	var newBackupDir string
 	if createNew {
-		newBackupDir = service.NewSnapshotDir(sourceProfile)
+		newBackupDir = service.NewSnapshotDir(sourceProfile, name)
 		snapshot = filepath.Base(newBackupDir)
 	}
 

@@ -40,10 +40,11 @@ func newBackupSnapshotCmd(reg *service.Registry, paths project.Paths) *cobra.Com
 				return err
 			}
 
-			// One shared folder per snapshot, so every service is captured together.
-			dir := service.NewSnapshotDir(name)
+			// One shared timestamp across the profile's services, so each service's
+			// snapshot lands in its own folder under the same id.
+			stamp := service.BackupStamp()
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "Snapshotting profile %q into %s:\n", name, dir)
+			fmt.Fprintf(out, "Snapshotting profile %q (snapshot %s):\n", name, stamp)
 			ctx := cmd.Context()
 			for _, svcName := range sortedKeys(prof.Services) {
 				svc, ok := reg.Get(svcName)
@@ -54,7 +55,7 @@ func newBackupSnapshotCmd(reg *service.Registry, paths project.Paths) *cobra.Com
 					Profile:    name,
 					Definition: prof.Services[svcName],
 					Env:        prof.Services[svcName],
-					BackupDir:  dir,
+					BackupDir:  service.SnapshotDir(name, svcName, stamp),
 				}
 				// In verbose mode, stream the service's own progress lines, tagged
 				// with its name so they line up with the per-service summary below.
@@ -99,18 +100,25 @@ func newBackupListCmd(reg *service.Registry, paths project.Paths) *cobra.Command
 			out := cmd.OutOrStdout()
 			found := false
 			for _, name := range profiles {
-				ids, err := service.ListSnapshots(name)
+				svcs, err := service.BackedUpServices(name)
 				if err != nil {
 					return err
 				}
-				if len(ids) == 0 {
+				if len(svcs) == 0 {
 					continue
 				}
 				found = true
 				fmt.Fprintf(out, "%s:\n", name)
-				// Newest first: snapshot ids are sortable timestamps.
-				for i := len(ids) - 1; i >= 0; i-- {
-					fmt.Fprintf(out, "  %s\n", ids[i])
+				for _, svcName := range svcs {
+					ids, err := service.ListSnapshots(name, svcName)
+					if err != nil {
+						return err
+					}
+					fmt.Fprintf(out, "  %s:\n", svcName)
+					// Newest first: snapshot ids are sortable timestamps.
+					for i := len(ids) - 1; i >= 0; i-- {
+						fmt.Fprintf(out, "    %s\n", ids[i])
+					}
 				}
 			}
 			if !found {

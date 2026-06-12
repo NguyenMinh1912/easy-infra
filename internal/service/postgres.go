@@ -120,9 +120,9 @@ func (p Postgres) Apply(ctx context.Context, spec Spec) error {
 
 	var dir string
 	if spec.Snapshot != "" {
-		dir = SnapshotDir(spec.Profile, spec.Snapshot)
+		dir = SnapshotDir(spec.Profile, p.Name(), spec.Snapshot)
 	} else {
-		latest, err := latestSnapshotDir(spec.Profile)
+		latest, err := latestSnapshotDir(spec.Profile, p.Name())
 		if err != nil {
 			return err
 		}
@@ -171,7 +171,7 @@ func (p Postgres) Backup(ctx context.Context, spec Spec) error {
 
 	dir := spec.BackupDir
 	if dir == "" {
-		dir = NewSnapshotDir(spec.Profile)
+		dir = NewSnapshotDir(spec.Profile, p.Name())
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("creating backup dir %s: %w", dir, err)
