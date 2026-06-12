@@ -28,7 +28,7 @@ import (
 // Steps 2 happens synchronously so a bad profile is reported as an error before
 // a session is created; the rest stream their progress through the session log.
 func (s *Server) handleStartFork(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
+	svcID := r.PathValue("name")
 
 	var body struct {
 		Snapshot string `json:"snapshot"`
@@ -54,16 +54,18 @@ func (s *Server) handleStartFork(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	env, ok := prof.Services[name]
+	entry, ok := prof.Services[svcID]
 	if !ok {
-		writeError(w, http.StatusNotFound, fmt.Sprintf("service %q is not defined in profile %q", name, sourceProfile))
+		writeError(w, http.StatusNotFound, fmt.Sprintf("service %q is not defined in profile %q", svcID, sourceProfile))
 		return
 	}
-	svc, ok := s.reg.Get(name)
+	svcType := entry.ResolveType(svcID)
+	svc, ok := s.reg.Get(svcType)
 	if !ok {
-		writeError(w, http.StatusNotFound, fmt.Sprintf("unknown service %q", name))
+		writeError(w, http.StatusNotFound, fmt.Sprintf("unknown service %q", svcType))
 		return
 	}
+	env := entry.Config
 	def := env
 	store, err := s.backups.Store()
 	if err != nil {
@@ -76,10 +78,10 @@ func (s *Server) handleStartFork(w http.ResponseWriter, r *http.Request) {
 	prov, provOK := svc.(service.Provisioner)
 	if !provOK {
 		run := func(_ context.Context, lw io.Writer) error {
-			fmt.Fprintf(lw, "forking %q to a local container is not supported yet\n", name)
+			fmt.Fprintf(lw, "forking %q to a local container is not supported yet\n", svcID)
 			return service.ErrNotImplemented
 		}
-		sess, err := s.backups.Start(store, name, project.LocalProfile, backup.KindFork, "", nil, run)
+		sess, err := s.backups.Start(store, svcID, project.LocalProfile, backup.KindFork, "", nil, run)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -91,13 +93,13 @@ func (s *Server) handleStartFork(w http.ResponseWriter, r *http.Request) {
 	// Validate a requested snapshot against the source profile's known list, so a
 	// crafted id cannot escape the backups directory.
 	if body.Snapshot != "" {
-		ids, err := service.ListSnapshots(sourceProfile, name)
+		ids, err := service.ListSnapshots(sourceProfile, svcID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		if !contains(ids, body.Snapshot) {
-			writeError(w, http.StatusNotFound, fmt.Sprintf("snapshot %q not found for service %q in profile %q", body.Snapshot, name, sourceProfile))
+			writeError(w, http.StatusNotFound, fmt.Sprintf("snapshot %q not found for service %q in profile %q", body.Snapshot, svcID, sourceProfile))
 			return
 		}
 	}
@@ -119,7 +121,7 @@ func (s *Server) handleStartFork(w http.ResponseWriter, r *http.Request) {
 		}
 		localEnv["port"] = body.Port
 	}
-	localProfile, err := proj.ForkLocalProfile(sourceProfile, name, localEnv)
+	localProfile, err := proj.ForkLocalProfile(sourceProfile, svcID, localEnv)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -131,13 +133,13 @@ func (s *Server) handleStartFork(w http.ResponseWriter, r *http.Request) {
 	snapshot := body.Snapshot
 	var newBackupDir string
 	if createNew {
-		newBackupDir = service.NewSnapshotDir(sourceProfile, name)
+		newBackupDir = service.NewSnapshotDir(sourceProfile, svcID)
 		snapshot = filepath.Base(newBackupDir)
 	}
 
 	run := func(ctx context.Context, lw io.Writer) error {
 		if createNew {
-			fmt.Fprintf(lw, "No backup selected; snapshotting %q from profile %q into %s\n", name, sourceProfile, newBackupDir)
+			fmt.Fprintf(lw, "No backup selected; snapshotting %q from profile %q into %s\n", svcID, sourceProfile, newBackupDir)
 			if err := svc.Backup(ctx, service.Spec{
 				Profile:    sourceProfile,
 				Definition: def,
@@ -149,7 +151,7 @@ func (s *Server) handleStartFork(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		fmt.Fprintf(lw, "Forking %q to local profile %q\n", name, localProfile)
+		fmt.Fprintf(lw, "Forking %q to local profile %q\n", svcID, localProfile)
 		if err := prov.Provision(ctx, service.Spec{
 			Profile:    localProfile,
 			Definition: def,
@@ -159,7 +161,7 @@ func (s *Server) handleStartFork(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 
-		fmt.Fprintf(lw, "Restoring snapshot %s into the local %q\n", snapshot, name)
+		fmt.Fprintf(lw, "Restoring snapshot %s into the local %q\n", snapshot, svcID)
 		// Profile is the SOURCE so the snapshot is located under it; Env is the
 		// LOCAL container so the restore lands in the fork.
 		return svc.Apply(ctx, service.Spec{
@@ -178,7 +180,7 @@ func (s *Server) handleStartFork(w http.ResponseWriter, r *http.Request) {
 		cleanup = func() { _ = os.RemoveAll(newBackupDir) }
 	}
 
-	sess, err := s.backups.Start(store, name, localProfile, backup.KindFork, snapshot, cleanup, run)
+	sess, err := s.backups.Start(store, svcID, localProfile, backup.KindFork, snapshot, cleanup, run)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

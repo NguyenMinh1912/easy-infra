@@ -4,4 +4,8 @@
 // else is feature-internal.
 export { ServiceDetailPage } from "./detail";
 export { metaFor } from "./catalog-meta";
-export { ServiceDialog, type DialogState } from "./components/ServiceDialog";
+export {
+  ServiceDialog,
+  type DialogState,
+  type ServiceDialogResult,
+} from "./components/ServiceDialog";

@@ -46,14 +46,14 @@ export function ServiceSettingsDialog({
   const [rows, setRows] = useState<ConfigRow[]>(() => rowsFromConfig(service.config));
   const [saving, setSaving] = useState(false);
 
-  const ConfigCard = profileConfigCardFor(service.name);
-  const meta = metaFor(service.name);
+  const ConfigCard = profileConfigCardFor(service.type);
+  const meta = metaFor(service.type);
   const Icon = meta.icon;
 
   const save = async () => {
     setSaving(true);
     try {
-      await updateService(profile, service.name, configFromRows(rows));
+      await updateService(profile, service.id, configFromRows(rows));
       toast.success(`Settings for "${service.name}" saved`);
       notifyProfilesChanged();
       onSaved?.();
@@ -85,7 +85,7 @@ export function ServiceSettingsDialog({
 
         <div className="max-h-[60vh] overflow-y-auto pr-1">
           <ConfigCard
-            name={service.name}
+            name={service.type}
             profileName={profile}
             rows={rows}
             disabled={saving}

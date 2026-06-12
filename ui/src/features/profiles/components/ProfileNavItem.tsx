@@ -12,7 +12,12 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { metaFor, ServiceDialog, type DialogState } from "@/features/services";
+import {
+  metaFor,
+  ServiceDialog,
+  type DialogState,
+  type ServiceDialogResult,
+} from "@/features/services";
 import { useAsync } from "@/hooks/useAsync";
 import {
   createService,
@@ -22,7 +27,7 @@ import {
   updateService,
 } from "@/services/api";
 import { cn } from "@/lib/utils";
-import type { CatalogEntry, ServiceConfig, ServiceInstance } from "@/types/service";
+import type { CatalogEntry, ServiceInstance } from "@/types/service";
 import type { Profile } from "@/types/status";
 
 import { notifyProfilesChanged, onProfilesChanged } from "../profiles-events";
@@ -80,8 +85,10 @@ export function ProfileNavItem({
   const data = dataState.status === "success" ? dataState.data : null;
   const services = data?.services ?? [];
   const catalog = data?.catalog ?? [];
-  const defined = new Set(services.map((s) => s.name));
-  const available = catalog.filter((entry) => !defined.has(entry.name));
+  // A profile may hold several instances of the same type, so every catalog
+  // entry stays available to add — nothing is filtered out by what already
+  // exists.
+  const available = catalog;
 
   const activate = async () => {
     setBusy(true);
@@ -132,36 +139,28 @@ export function ProfileNavItem({
     }
   };
 
-  // Create with defaults, then persist any edits the user made in the dialog.
-  const add = (name: string, config: ServiceConfig) => {
-    const defaults =
-      catalog.find((entry) => entry.name === name)?.defaultConfig ?? {};
-    const edited = !sameConfig(config, defaults);
-    return run(
-      async () => {
-        await createService(profile.name, name);
-        if (edited) await updateService(profile.name, name, config);
-      },
-      { success: `Service "${name}" added`, error: `Could not add "${name}"` },
-    );
-  };
-
-  const submit = async (name: string, config: ServiceConfig) => {
+  const submit = async ({ target, name, config }: ServiceDialogResult) => {
     if (!dialog) return;
+    // In add mode `target` is the chosen service type; in edit mode it is the
+    // instance id. `name` is the optional display label.
+    const label = name || target;
     const ok =
       dialog.mode === "add"
-        ? await add(name, config)
-        : await run(() => updateService(profile.name, name, config), {
-            success: `Service "${name}" updated`,
-            error: `Could not update "${name}"`,
+        ? await run(() => createService(profile.name, target, name, config), {
+            success: `Service "${label}" added`,
+            error: `Could not add "${label}"`,
+          })
+        : await run(() => updateService(profile.name, target, config, name), {
+            success: `Service "${label}" updated`,
+            error: `Could not update "${label}"`,
           });
     if (ok) setDialog(null);
   };
 
-  const removeService = (name: string) =>
-    run(() => deleteService(profile.name, name), {
-      success: `Service "${name}" removed`,
-      error: `Could not remove "${name}"`,
+  const removeService = (id: string, label: string) =>
+    run(() => deleteService(profile.name, id), {
+      success: `Service "${label}" removed`,
+      error: `Could not remove "${label}"`,
     });
 
   return (
@@ -244,13 +243,13 @@ export function ProfileNavItem({
                 </li>
               ) : (
                 services.map((service) => {
-                  const href = `#/profiles/${encodeURIComponent(profile.name)}/services/${encodeURIComponent(service.name)}`;
+                  const href = `#/profiles/${encodeURIComponent(profile.name)}/services/${encodeURIComponent(service.id)}`;
                   const active =
                     route ===
-                    `/profiles/${profile.name}/services/${service.name}`;
-                  const Icon = metaFor(service.name).icon;
+                    `/profiles/${profile.name}/services/${service.id}`;
+                  const Icon = metaFor(service.type).icon;
                   return (
-                    <li key={service.name}>
+                    <li key={service.id}>
                       <div
                         className={cn(
                           "group/svc flex items-center gap-1 rounded-md pr-1 transition-colors",
@@ -298,7 +297,7 @@ export function ProfileNavItem({
                             description={`This removes ${service.name} from the "${profile.name}" profile. This action cannot be undone.`}
                             confirmLabel="Remove"
                             variant="destructive"
-                            onConfirm={() => removeService(service.name)}
+                            onConfirm={() => removeService(service.id, service.name)}
                           />
                         </div>
                       </div>
@@ -312,7 +311,7 @@ export function ProfileNavItem({
                   disabled={mutating || available.length === 0}
                   title={
                     available.length === 0
-                      ? "All supported services are already defined"
+                      ? "No services available to add"
                       : undefined
                   }
                   onClick={() => setDialog({ mode: "add" })}
@@ -339,11 +338,4 @@ export function ProfileNavItem({
       )}
     </li>
   );
-}
-
-/** Whether two definitions are equal once values are compared as strings. */
-function sameConfig(a: ServiceConfig, b: ServiceConfig): boolean {
-  const keys = Object.keys(a);
-  if (keys.length !== Object.keys(b).length) return false;
-  return keys.every((key) => key in b && String(a[key]) === String(b[key]));
 }

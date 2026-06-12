@@ -79,28 +79,43 @@ func TestValidate(t *testing.T) {
 	}{
 		{
 			name: "valid",
-			profile: &Profile{Services: map[string]service.Config{
-				"postgres": cfg("postgres"),
-				"redis":    cfg("redis"),
+			profile: &Profile{Services: map[string]ServiceEntry{
+				"postgres": {Config: cfg("postgres")},
+				"redis":    {Config: cfg("redis")},
+			}},
+			wantErr: false,
+		},
+		{
+			name: "valid with two of the same type",
+			profile: &Profile{Services: map[string]ServiceEntry{
+				"postgres":     {Config: cfg("postgres")},
+				"db-analytics": {Type: "postgres", Name: "Analytics", Config: cfg("postgres")},
 			}},
 			wantErr: false,
 		},
 		{
 			name:    "no services",
-			profile: &Profile{Services: map[string]service.Config{}},
+			profile: &Profile{Services: map[string]ServiceEntry{}},
 			wantErr: true,
 		},
 		{
 			name: "unknown service",
-			profile: &Profile{Services: map[string]service.Config{
+			profile: &Profile{Services: map[string]ServiceEntry{
 				"mongodb": {},
 			}},
 			wantErr: true,
 		},
 		{
+			name: "unknown explicit type",
+			profile: &Profile{Services: map[string]ServiceEntry{
+				"db-1": {Type: "mongodb"},
+			}},
+			wantErr: true,
+		},
+		{
 			name: "invalid config",
-			profile: &Profile{Services: map[string]service.Config{
-				"postgres": {"port": 5432}, // missing required host/user/database
+			profile: &Profile{Services: map[string]ServiceEntry{
+				"postgres": {Config: service.Config{"port": 5432}}, // missing required host/user/database
 			}},
 			wantErr: true,
 		},

@@ -64,7 +64,7 @@ func TestCreateProfileService(t *testing.T) {
 	paths, reg := initProject(t, "postgres")
 	srv := New(reg, paths, emptyUI)
 
-	rec := doJSON(t, srv, http.MethodPost, "/api/profiles/default/services", serviceNameRequest{Name: "redis"})
+	rec := doJSON(t, srv, http.MethodPost, "/api/profiles/default/services", serviceNameRequest{Type: "redis"})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("code = %d, want 201 (body %s)", rec.Code, rec.Body)
 	}
@@ -81,6 +81,34 @@ func TestCreateProfileService(t *testing.T) {
 	}
 }
 
+func TestCreateProfileServiceSameTypeTwice(t *testing.T) {
+	paths, reg := initProject(t, "postgres")
+	srv := New(reg, paths, emptyUI)
+
+	// A profile may now hold several instances of the same type; the second is
+	// assigned a distinct id rather than being rejected.
+	rec := doJSON(t, srv, http.MethodPost, "/api/profiles/default/services",
+		serviceNameRequest{Type: "postgres", Name: "Analytics"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("code = %d, want 201 (body %s)", rec.Code, rec.Body)
+	}
+
+	prof, err := profilepkg.Load(paths.ProfilePath("default"))
+	if err != nil {
+		t.Fatalf("load profile: %v", err)
+	}
+	entry, ok := prof.Services["postgres-2"]
+	if !ok {
+		t.Fatalf("second postgres instance not created; services = %v", prof.Services)
+	}
+	if entry.ResolveType("postgres-2") != "postgres" {
+		t.Errorf("postgres-2 type = %q, want postgres", entry.ResolveType("postgres-2"))
+	}
+	if entry.Name != "Analytics" {
+		t.Errorf("postgres-2 name = %q, want Analytics", entry.Name)
+	}
+}
+
 func TestCreateProfileServiceErrors(t *testing.T) {
 	paths, reg := initProject(t, "postgres")
 	srv := New(reg, paths, emptyUI)
@@ -90,8 +118,7 @@ func TestCreateProfileServiceErrors(t *testing.T) {
 		body     serviceNameRequest
 		wantCode int
 	}{
-		{"already defined", serviceNameRequest{Name: "postgres"}, http.StatusConflict},
-		{"unknown service", serviceNameRequest{Name: "nope"}, http.StatusBadRequest},
+		{"unknown service", serviceNameRequest{Type: "nope"}, http.StatusBadRequest},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -105,7 +132,7 @@ func TestCreateProfileServiceErrors(t *testing.T) {
 
 func TestCreateProfileServiceNotInitialized(t *testing.T) {
 	srv := New(service.DefaultRegistry(), newPaths(t), emptyUI)
-	rec := doJSON(t, srv, http.MethodPost, "/api/profiles/default/services", serviceNameRequest{Name: "redis"})
+	rec := doJSON(t, srv, http.MethodPost, "/api/profiles/default/services", serviceNameRequest{Type: "redis"})
 	if rec.Code != http.StatusConflict {
 		t.Errorf("code = %d, want 409", rec.Code)
 	}
@@ -128,11 +155,11 @@ func TestUpdateProfileService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load profile: %v", err)
 	}
-	if prof.Services["postgres"]["version"] != "17" {
-		t.Errorf("version = %v, want 17", prof.Services["postgres"]["version"])
+	if prof.Services["postgres"].Config["version"] != "17" {
+		t.Errorf("version = %v, want 17", prof.Services["postgres"].Config["version"])
 	}
-	if prof.Services["postgres"]["host"] != "db.example" {
-		t.Errorf("host = %v, want db.example", prof.Services["postgres"]["host"])
+	if prof.Services["postgres"].Config["host"] != "db.example" {
+		t.Errorf("host = %v, want db.example", prof.Services["postgres"].Config["host"])
 	}
 }
 

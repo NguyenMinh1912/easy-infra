@@ -10,7 +10,7 @@ import type { OverviewProps } from "./types";
  * overview, so a new backend service renders without a code change.
  */
 export function OverviewPanel({ service }: OverviewProps) {
-  const meta = metaFor(service.name);
+  const meta = metaFor(service.type);
   const Icon = meta.icon;
 
   return (

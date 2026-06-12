@@ -133,7 +133,7 @@ export function ServiceActions({ service, profile, onChanged }: ServiceActionsPr
       )}
 
       <BackupSelectDialog
-        serviceName={service.name}
+        serviceName={service.id}
         profile={profile}
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
@@ -144,7 +144,7 @@ export function ServiceActions({ service, profile, onChanged }: ServiceActionsPr
       />
 
       <BackupLogDialog
-        serviceName={service.name}
+        serviceName={service.id}
         profile={profile}
         buckets={backupBuckets}
         open={logOpen}
@@ -152,7 +152,7 @@ export function ServiceActions({ service, profile, onChanged }: ServiceActionsPr
       />
 
       <SnapshotSelectDialog
-        serviceName={service.name}
+        serviceName={service.id}
         profile={profile}
         open={snapshotOpen}
         onOpenChange={setSnapshotOpen}
@@ -163,7 +163,7 @@ export function ServiceActions({ service, profile, onChanged }: ServiceActionsPr
       />
 
       <ApplyLogDialog
-        serviceName={service.name}
+        serviceName={service.id}
         profile={profile}
         snapshot={applySnapshot}
         open={applyOpen}
@@ -171,7 +171,7 @@ export function ServiceActions({ service, profile, onChanged }: ServiceActionsPr
       />
 
       <ForkDialog
-        serviceName={service.name}
+        serviceName={service.id}
         profile={profile}
         open={forkOpen}
         onOpenChange={setForkOpen}
@@ -183,7 +183,7 @@ export function ServiceActions({ service, profile, onChanged }: ServiceActionsPr
       />
 
       <ForkLogDialog
-        serviceName={service.name}
+        serviceName={service.id}
         profile={profile}
         snapshot={forkSnapshot}
         port={forkPort}
