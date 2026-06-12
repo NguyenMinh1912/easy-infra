@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // minioDir is the sub-folder, within a shared snapshot, that holds minio's
@@ -277,6 +278,44 @@ func (m MinIO) Clean(ctx context.Context, spec Spec) error {
 		}
 	}
 	return nil
+}
+
+// Buckets implements Browser: list the buckets on the configured endpoint.
+func (m MinIO) Buckets(ctx context.Context, spec Spec) ([]string, error) {
+	client, err := m.connect(ctx, spec.Env)
+	if err != nil {
+		return nil, err
+	}
+	buckets, err := client.ListBuckets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing buckets: %w", err)
+	}
+	return buckets, nil
+}
+
+// Objects implements Browser: list the immediate sub-folders and objects under
+// prefix within bucket, folder-style. An empty prefix lists the bucket root.
+func (m MinIO) Objects(ctx context.Context, spec Spec, bucket, prefix string) (*ObjectListing, error) {
+	client, err := m.connect(ctx, spec.Env)
+	if err != nil {
+		return nil, err
+	}
+	page, err := client.ListObjectsPage(ctx, bucket, prefix)
+	if err != nil {
+		return nil, fmt.Errorf("listing objects in %q: %w", bucket, err)
+	}
+	listing := &ObjectListing{
+		Prefixes: append([]string{}, page.prefixes...),
+		Objects:  make([]ObjectEntry, 0, len(page.objects)),
+	}
+	for _, o := range page.objects {
+		entry := ObjectEntry{Key: o.key, Size: o.size, ContentType: o.contentType}
+		if !o.lastModified.IsZero() {
+			entry.LastModified = o.lastModified.Format(time.RFC3339)
+		}
+		listing.Objects = append(listing.Objects, entry)
+	}
+	return listing, nil
 }
 
 // connect opens a client to the MinIO endpoint described by env.

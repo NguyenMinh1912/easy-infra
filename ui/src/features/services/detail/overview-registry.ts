@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 
+import { MinioOverview } from "./MinioOverview";
 import { OverviewPanel } from "./OverviewPanel";
 import { PostgresOverview } from "./PostgresOverview";
 import type { OverviewProps } from "./types";
@@ -13,6 +14,7 @@ import type { OverviewProps } from "./types";
  */
 const OVERVIEWS: Record<string, ComponentType<OverviewProps>> = {
   postgres: PostgresOverview,
+  minio: MinioOverview,
 };
 
 /** The overview component for a service name, or the generic fallback. */
