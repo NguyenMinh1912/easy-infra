@@ -64,11 +64,19 @@ export type BackupStatus =
   | "error"
   | "cancelled";
 
+/**
+ * What a session is doing, mirroring the server's kinds: a plain backup, an
+ * apply (restore from a snapshot), or a fork (stand up a local container seeded
+ * from a snapshot).
+ */
+export type BackupKind = "backup" | "apply" | "fork";
+
 /** A backup run as reported by the API. */
 export interface BackupSession {
   id: string;
   service: string;
   profile: string;
+  kind: BackupKind;
   status: BackupStatus;
   snapshot?: string;
   error?: string;
