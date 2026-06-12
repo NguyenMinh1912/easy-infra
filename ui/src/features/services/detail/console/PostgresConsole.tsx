@@ -29,6 +29,14 @@ interface PostgresConsoleProps {
   completionSchema?: Record<string, string[]>;
   /** Whether schema introspection has finished (drives the help text). */
   schemaResolved: boolean;
+  /**
+   * Run the statement once as soon as the console mounts — used when a console
+   * is opened pre-filled (e.g. double-clicking a table). Cleared via
+   * {@link onAutoRun} so it fires only on the initial open.
+   */
+  autoRun?: boolean;
+  /** Called after the initial auto-run is kicked off, to clear the flag. */
+  onAutoRun?: () => void;
 }
 
 /** State of the current (or last) statement execution. */
@@ -53,6 +61,8 @@ export function PostgresConsole({
   onSqlChange,
   completionSchema,
   schemaResolved,
+  autoRun,
+  onAutoRun,
 }: PostgresConsoleProps) {
   const [run, setRun] = useState<RunState>({ status: "idle" });
 
@@ -95,6 +105,18 @@ export function PostgresConsole({
         });
       });
   }, [profile, service, sql]);
+
+  // Fire the initial run for a pre-filled console exactly once. The buffer holds
+  // a single statement, so runQuery falls back to it even before the editor view
+  // (and viewRef) is ready.
+  const autoRanRef = useRef(false);
+  useEffect(() => {
+    if (autoRun && !autoRanRef.current) {
+      autoRanRef.current = true;
+      runQuery();
+      onAutoRun?.();
+    }
+  }, [autoRun, runQuery, onAutoRun]);
 
   const running = run.status === "running";
 
