@@ -36,6 +36,17 @@ function screenForRoute(route: string): Screen {
       content: <ServicesPage />,
     };
   }
+  const profileService = route.match(/^\/profiles\/(.+)\/services\/(.+)$/);
+  if (profileService) {
+    const name = decodeURIComponent(profileService[2]);
+    const meta = metaFor(name);
+    return {
+      title: meta.label,
+      subtitle: meta.blurb,
+      content: <ServiceDetailPage name={name} />,
+      fullWidth: true,
+    };
+  }
   const settings = route.match(/^\/profiles\/(.+)\/settings$/);
   if (settings) {
     const name = decodeURIComponent(settings[1]);
