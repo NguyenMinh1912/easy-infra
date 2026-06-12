@@ -17,7 +17,7 @@ import type { ObjectEntry } from "@/types/browse";
 
 import { baseName, formatBytes, formatTime } from "./format";
 import { EntryIcon, PathBreadcrumb } from "./MinioBrowser";
-import { ObjectDetailSheet } from "./ObjectDetailSheet";
+import { ObjectDetailPanel } from "./ObjectDetailPanel";
 
 interface BucketContentsProps {
   profile: string;
@@ -46,48 +46,52 @@ export function BucketContents({
   return (
     <div className="space-y-3">
       <PathBreadcrumb bucket={bucket} prefix={prefix} onNavigate={setPrefix} />
-      {state.status === "loading" && (
-        <div className="space-y-2" aria-label="Loading objects">
-          <Skeleton className="h-8 w-full" />
-          <Skeleton className="h-8 w-full" />
-          <Skeleton className="h-8 w-2/3" />
-        </div>
-      )}
-      {state.status === "error" && (
-        <Alert variant="destructive">
-          <AlertCircle />
-          <div>
-            <AlertTitle>Could not load objects</AlertTitle>
-            <AlertDescription>{state.error.message}</AlertDescription>
-          </div>
-        </Alert>
-      )}
-      {state.status === "success" &&
-        (state.data.error ? (
-          <Alert variant="destructive">
-            <AlertCircle />
-            <div>
-              <AlertTitle>MinIO unreachable</AlertTitle>
-              <AlertDescription className="font-mono text-xs">
-                {state.data.error}
-              </AlertDescription>
+      <div className="flex items-start">
+        <div className="min-w-0 flex-1">
+          {state.status === "loading" && (
+            <div className="space-y-2" aria-label="Loading objects">
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-2/3" />
             </div>
-          </Alert>
-        ) : (
-          <ObjectsTable
-            prefixes={state.data.prefixes}
-            objects={state.data.objects}
-            onOpen={setPrefix}
-            onSelect={setSelected}
-          />
-        ))}
-      <ObjectDetailSheet
-        profile={profile}
-        service={service}
-        bucket={bucket}
-        object={selected}
-        onClose={() => setSelected(null)}
-      />
+          )}
+          {state.status === "error" && (
+            <Alert variant="destructive">
+              <AlertCircle />
+              <div>
+                <AlertTitle>Could not load objects</AlertTitle>
+                <AlertDescription>{state.error.message}</AlertDescription>
+              </div>
+            </Alert>
+          )}
+          {state.status === "success" &&
+            (state.data.error ? (
+              <Alert variant="destructive">
+                <AlertCircle />
+                <div>
+                  <AlertTitle>MinIO unreachable</AlertTitle>
+                  <AlertDescription className="font-mono text-xs">
+                    {state.data.error}
+                  </AlertDescription>
+                </div>
+              </Alert>
+            ) : (
+              <ObjectsTable
+                prefixes={state.data.prefixes}
+                objects={state.data.objects}
+                onOpen={setPrefix}
+                onSelect={setSelected}
+              />
+            ))}
+        </div>
+        <ObjectDetailPanel
+          profile={profile}
+          service={service}
+          bucket={bucket}
+          object={selected}
+          onClose={() => setSelected(null)}
+        />
+      </div>
     </div>
   );
 }
