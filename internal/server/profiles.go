@@ -4,8 +4,10 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"sort"
 
 	"github.com/minhnc/easy-infra/internal/project"
+	"github.com/minhnc/easy-infra/internal/service"
 )
 
 // profilesResponse is the JSON shape returned by the /api/profiles endpoints:
@@ -18,6 +20,25 @@ type profilesResponse struct {
 // profileRequest is the request body for creating a profile.
 type profileRequest struct {
 	Name string `json:"name"`
+}
+
+// profileConfigResponse is the JSON shape returned by GET /api/profiles/{name}:
+// the profile's per-service environment config.
+type profileConfigResponse struct {
+	Name     string                 `json:"name"`
+	Services []profileServiceConfig `json:"services"`
+}
+
+// profileServiceConfig pairs a service name with its environment config within
+// a profile.
+type profileServiceConfig struct {
+	Name   string         `json:"name"`
+	Config service.Config `json:"config"`
+}
+
+// profileConfigRequest is the request body for updating a profile's config.
+type profileConfigRequest struct {
+	Services []profileServiceConfig `json:"services"`
 }
 
 // validProfileName guards the profile name taken from the request path/body.
@@ -79,6 +100,52 @@ func (s *Server) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleGetProfile returns the named profile's per-service environment config.
+func (s *Server) handleGetProfile(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	proj, err := project.Load(s.paths, s.reg)
+	if err != nil {
+		s.writeProjectError(w, err)
+		return
+	}
+	services, err := proj.ProfileConfig(name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, profileConfigResponse{
+		Name:     name,
+		Services: profileServiceConfigs(services),
+	})
+}
+
+// handleUpdateProfile replaces the named profile's per-service environment
+// config, validating it against the project's defined services.
+func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	var req profileConfigRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	proj, err := project.Load(s.paths, s.reg)
+	if err != nil {
+		s.writeProjectError(w, err)
+		return
+	}
+	services := make(map[string]service.Config, len(req.Services))
+	for _, sc := range req.Services {
+		services[sc.Name] = sc.Config
+	}
+	if err := proj.UpdateProfile(name, services); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, profileConfigResponse{
+		Name:     name,
+		Services: profileServiceConfigs(services),
+	})
+}
+
 // handleActivateProfile sets the named profile as the active one.
 func (s *Server) handleActivateProfile(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
@@ -105,6 +172,21 @@ func (s *Server) writeProfiles(w http.ResponseWriter, status int, proj *project.
 		ActiveProfile: proj.State.ActiveProfile,
 		Profiles:      profiles,
 	})
+}
+
+// profileServiceConfigs maps a profile's per-service env config onto its JSON
+// shape, sorted by service name for a stable response.
+func profileServiceConfigs(services map[string]service.Config) []profileServiceConfig {
+	names := make([]string, 0, len(services))
+	for name := range services {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]profileServiceConfig, 0, len(names))
+	for _, name := range names {
+		out = append(out, profileServiceConfig{Name: name, Config: services[name]})
+	}
+	return out
 }
 
 // listProfiles builds the API profile list for a loaded project, flagging the

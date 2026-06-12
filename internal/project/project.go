@@ -126,6 +126,35 @@ func (p *Project) SaveProfile(name string, prof *profile.Profile) error {
 	return prof.Save(p.Paths.ProfilePath(name))
 }
 
+// ProfileConfig returns the named profile's per-service environment config for
+// display or editing. Unlike LoadProfile it does not validate, so a profile
+// momentarily out of sync with the service definitions can still be opened and
+// fixed. A missing profile is reported as an actionable error.
+func (p *Project) ProfileConfig(name string) (map[string]service.Config, error) {
+	prof, err := profile.Load(p.Paths.ProfilePath(name))
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("profile %q does not exist", name)
+		}
+		return nil, err
+	}
+	return prof.Services, nil
+}
+
+// UpdateProfile replaces the named profile's per-service environment config,
+// after validating it against the project's defined services, then saves it. It
+// reports a missing profile as an actionable error.
+func (p *Project) UpdateProfile(name string, services map[string]service.Config) error {
+	if _, err := p.ProfileConfig(name); err != nil {
+		return err
+	}
+	prof := &profile.Profile{Services: services}
+	if err := prof.Validate(p.Registry, p.Config.ServiceNames()); err != nil {
+		return fmt.Errorf("profile %q: %w", name, err)
+	}
+	return p.SaveProfile(name, prof)
+}
+
 // AddProfile scaffolds a new profile with default environment config for every
 // service the project defines, then saves it. It errors if a profile with that
 // name already exists.
