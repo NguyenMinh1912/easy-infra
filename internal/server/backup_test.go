@@ -177,6 +177,64 @@ func TestBackupUnknownService(t *testing.T) {
 	}
 }
 
+func decodeBackupOptions(t *testing.T, rec *httptest.ResponseRecorder) backupOptionsResponse {
+	t.Helper()
+	var got backupOptionsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode backup options: %v (body %q)", err, rec.Body.String())
+	}
+	return got
+}
+
+// TestBackupOptionsNoBuckets confirms a service without a bucket concept
+// (postgres) reports empty options, so the UI offers a plain confirmation.
+func TestBackupOptionsNoBuckets(t *testing.T) {
+	paths, reg := initProject(t, "postgres")
+	srv := New(reg, paths, emptyUI)
+
+	rec := doRequest(t, srv, http.MethodGet, "/api/services/postgres/backup-options", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+	}
+	opts := decodeBackupOptions(t, rec)
+	if len(opts.Buckets) != 0 || len(opts.Selected) != 0 {
+		t.Errorf("options = %+v, want empty buckets/selected", opts)
+	}
+}
+
+// TestBackupOptionsStoreUnreachable confirms that for an object store whose
+// server cannot be reached, the endpoint still returns 200 with the failure
+// reported inline rather than failing the request.
+func TestBackupOptionsStoreUnreachable(t *testing.T) {
+	paths, reg := initProject(t, "minio")
+	srv := New(reg, paths, emptyUI)
+
+	rec := doRequest(t, srv, http.MethodGet, "/api/services/minio/backup-options", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+	}
+	opts := decodeBackupOptions(t, rec)
+	if opts.Error == "" {
+		t.Errorf("options = %+v, want an inline error for the unreachable store", opts)
+	}
+}
+
+// TestDefaultBucketSelection covers the default-selection rule: configured
+// buckets that exist are selected, missing ones are dropped, and an empty
+// configuration selects every live bucket.
+func TestDefaultBucketSelection(t *testing.T) {
+	live := []string{"assets", "logs", "uploads"}
+
+	got := defaultBucketSelection(live, []string{"assets", "uploads", "ghost"})
+	if len(got) != 2 || got[0] != "assets" || got[1] != "uploads" {
+		t.Errorf("with config = %v, want [assets uploads]", got)
+	}
+
+	if got := defaultBucketSelection(live, nil); len(got) != 3 {
+		t.Errorf("with no config = %v, want all 3 live buckets", got)
+	}
+}
+
 func TestBackupGetUnknownID(t *testing.T) {
 	paths, reg := initProject(t, "postgres")
 	srv := New(reg, paths, emptyUI)
