@@ -10,10 +10,15 @@ export interface ProfilesResult {
 }
 
 /**
- * One service's environment config within a profile: a free-form string→value
- * map (host, port, credentials, …), mirroring the backend's `service.Config`.
+ * One service instance within a profile: its unique `id`, its service `type`,
+ * its display `name`, and its environment config (a free-form string→value map
+ * of host, port, credentials, …, mirroring the backend's `service.Config`). A
+ * profile may hold several instances of the same type, so `id` is the stable
+ * identifier.
  */
 export interface ProfileServiceConfig {
+  id: string;
+  type: string;
   name: string;
   config: Record<string, unknown>;
 }

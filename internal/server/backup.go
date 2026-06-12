@@ -143,7 +143,7 @@ func (m *backupManager) Cancel(id string) {
 // per-service action mirrors where backup is offered in the UI; the
 // whole-profile snapshot lives in the CLI (`easy-infra backup snapshot`).
 func (s *Server) handleStartBackup(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
+	svcID := r.PathValue("name")
 
 	// An optional body selects which buckets to back up (minio); an empty or
 	// absent list backs up everything, preserving the default behaviour.
@@ -166,16 +166,18 @@ func (s *Server) handleStartBackup(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	env, ok := prof.Services[name]
+	entry, ok := prof.Services[svcID]
 	if !ok {
-		writeError(w, http.StatusNotFound, fmt.Sprintf("service %q is not defined in profile %q", name, profileName))
+		writeError(w, http.StatusNotFound, fmt.Sprintf("service %q is not defined in profile %q", svcID, profileName))
 		return
 	}
-	svc, ok := s.reg.Get(name)
+	svcType := entry.ResolveType(svcID)
+	svc, ok := s.reg.Get(svcType)
 	if !ok {
-		writeError(w, http.StatusNotFound, fmt.Sprintf("unknown service %q", name))
+		writeError(w, http.StatusNotFound, fmt.Sprintf("unknown service %q", svcType))
 		return
 	}
+	env := entry.Config
 	store, err := s.backups.Store()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -183,7 +185,7 @@ func (s *Server) handleStartBackup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// One fresh snapshot folder for this service's artifact.
-	dir := service.NewSnapshotDir(profileName, name)
+	dir := service.NewSnapshotDir(profileName, svcID)
 	spec := service.Spec{
 		Profile:    profileName,
 		Definition: env,
@@ -192,11 +194,11 @@ func (s *Server) handleStartBackup(w http.ResponseWriter, r *http.Request) {
 		Buckets:    body.Buckets,
 	}
 	run := func(ctx context.Context, lw io.Writer) error {
-		fmt.Fprintf(lw, "Backing up %q (profile %q) into %s\n", name, profileName, dir)
+		fmt.Fprintf(lw, "Backing up %q (profile %q) into %s\n", svcID, profileName, dir)
 		spec.Log = lw
 		err := svc.Backup(ctx, spec)
 		if errors.Is(err, service.ErrNotImplemented) {
-			fmt.Fprintf(lw, "backup is not supported for %q yet\n", name)
+			fmt.Fprintf(lw, "backup is not supported for %q yet\n", svcID)
 		}
 		return err
 	}
@@ -204,7 +206,7 @@ func (s *Server) handleStartBackup(w http.ResponseWriter, r *http.Request) {
 	// A cancelled or failed backup may have written a partial artifact; drop the
 	// whole snapshot folder so no truncated snapshot is left behind.
 	cleanup := func() { _ = os.RemoveAll(dir) }
-	sess, err := s.backups.Start(store, name, profileName, backup.KindBackup, filepath.Base(dir), cleanup, run)
+	sess, err := s.backups.Start(store, svcID, profileName, backup.KindBackup, filepath.Base(dir), cleanup, run)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -218,7 +220,7 @@ func (s *Server) handleStartBackup(w http.ResponseWriter, r *http.Request) {
 // only ever sees its own backups (e.g. minio never lists postgres-only ones).
 // The {name} service must be defined in the profile.
 func (s *Server) handleListSnapshots(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
+	svcID := r.PathValue("name")
 
 	proj, err := project.Load(s.paths, s.reg)
 	if err != nil {
@@ -229,12 +231,12 @@ func (s *Server) handleListSnapshots(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if _, ok := prof.Services[name]; !ok {
-		writeError(w, http.StatusNotFound, fmt.Sprintf("service %q is not defined in profile %q", name, profileName))
+	if _, ok := prof.Services[svcID]; !ok {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("service %q is not defined in profile %q", svcID, profileName))
 		return
 	}
 
-	ids, err := service.ListSnapshots(profileName, name)
+	ids, err := service.ListSnapshots(profileName, svcID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -262,7 +264,7 @@ const backupOptionsTimeout = 15 * time.Second
 // reported inline (HTTP 200) like the browse endpoints, falling back to the
 // configured buckets so the user is not blocked.
 func (s *Server) handleBackupOptions(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
+	svcID := r.PathValue("name")
 
 	proj, err := project.Load(s.paths, s.reg)
 	if err != nil {
@@ -273,16 +275,17 @@ func (s *Server) handleBackupOptions(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	env, ok := prof.Services[name]
+	entry, ok := prof.Services[svcID]
 	if !ok {
-		writeError(w, http.StatusNotFound, fmt.Sprintf("service %q is not defined in profile %q", name, profileName))
+		writeError(w, http.StatusNotFound, fmt.Sprintf("service %q is not defined in profile %q", svcID, profileName))
 		return
 	}
-	svc, ok := s.reg.Get(name)
+	svc, ok := s.reg.Get(entry.ResolveType(svcID))
 	if !ok {
-		writeError(w, http.StatusNotFound, fmt.Sprintf("unknown service %q", name))
+		writeError(w, http.StatusNotFound, fmt.Sprintf("unknown service %q", entry.ResolveType(svcID)))
 		return
 	}
+	env := entry.Config
 
 	browser, ok := svc.(service.Browser)
 	if !ok {
@@ -352,7 +355,7 @@ func nonNil(xs []string) []string {
 // snapshot applies the latest. The apply reads an existing snapshot, so a
 // failure leaves it in place (no cleanup), unlike a backup.
 func (s *Server) handleStartApply(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
+	svcID := r.PathValue("name")
 
 	var body struct {
 		Snapshot string `json:"snapshot"`
@@ -374,27 +377,29 @@ func (s *Server) handleStartApply(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	env, ok := prof.Services[name]
+	entry, ok := prof.Services[svcID]
 	if !ok {
-		writeError(w, http.StatusNotFound, fmt.Sprintf("service %q is not defined in profile %q", name, profileName))
+		writeError(w, http.StatusNotFound, fmt.Sprintf("service %q is not defined in profile %q", svcID, profileName))
 		return
 	}
-	svc, ok := s.reg.Get(name)
+	svcType := entry.ResolveType(svcID)
+	svc, ok := s.reg.Get(svcType)
 	if !ok {
-		writeError(w, http.StatusNotFound, fmt.Sprintf("unknown service %q", name))
+		writeError(w, http.StatusNotFound, fmt.Sprintf("unknown service %q", svcType))
 		return
 	}
+	env := entry.Config
 
 	// Validate the requested snapshot against the known list rather than trusting
 	// the client, so a crafted id cannot escape the backups directory.
 	if body.Snapshot != "" {
-		ids, err := service.ListSnapshots(profileName, name)
+		ids, err := service.ListSnapshots(profileName, svcID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		if !contains(ids, body.Snapshot) {
-			writeError(w, http.StatusNotFound, fmt.Sprintf("snapshot %q not found for service %q in profile %q", body.Snapshot, name, profileName))
+			writeError(w, http.StatusNotFound, fmt.Sprintf("snapshot %q not found for service %q in profile %q", body.Snapshot, svcID, profileName))
 			return
 		}
 	}
@@ -416,16 +421,16 @@ func (s *Server) handleStartApply(w http.ResponseWriter, r *http.Request) {
 		if version == "" {
 			version = "latest snapshot"
 		}
-		fmt.Fprintf(lw, "Applying %q (profile %q) from %s\n", name, profileName, version)
+		fmt.Fprintf(lw, "Applying %q (profile %q) from %s\n", svcID, profileName, version)
 		spec.Log = lw
 		err := svc.Apply(ctx, spec)
 		if errors.Is(err, service.ErrNotImplemented) {
-			fmt.Fprintf(lw, "apply is not supported for %q yet\n", name)
+			fmt.Fprintf(lw, "apply is not supported for %q yet\n", svcID)
 		}
 		return err
 	}
 
-	sess, err := s.backups.Start(store, name, profileName, backup.KindApply, body.Snapshot, nil, run)
+	sess, err := s.backups.Start(store, svcID, profileName, backup.KindApply, body.Snapshot, nil, run)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

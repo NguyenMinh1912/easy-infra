@@ -48,16 +48,16 @@ export function ServiceDetailPage({ name, profile }: ServiceDetailPageProps) {
       if (!state.data.initialized) {
         return <NoProject />;
       }
-      const service = state.data.services.find((s) => s.name === name);
+      const service = state.data.services.find((s) => s.id === name);
       if (!service) {
         return <ServiceNotFound name={name} />;
       }
 
-      const Overview = overviewFor(service.name);
+      const Overview = overviewFor(service.type);
 
       return (
         <ServiceDetailLayout
-          key={service.name}
+          key={service.id}
           actions={
             <ServiceActions
               service={service}

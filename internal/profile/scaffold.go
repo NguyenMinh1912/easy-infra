@@ -14,13 +14,15 @@ func Scaffold(reg *service.Registry, services ...string) (*Profile, error) {
 	if len(services) == 0 {
 		return nil, fmt.Errorf("at least one service is required")
 	}
-	cfgs := make(map[string]service.Config, len(services))
+	entries := make(map[string]ServiceEntry, len(services))
 	for _, name := range services {
 		svc, ok := reg.Get(name)
 		if !ok {
 			return nil, fmt.Errorf("unknown service %q", name)
 		}
-		cfgs[name] = service.DefaultConfig(svc)
+		// A scaffolded instance is keyed by its service type, so its id, type,
+		// and name all coincide; Type/Name are left empty and resolve to the id.
+		entries[name] = ServiceEntry{Config: service.DefaultConfig(svc)}
 	}
-	return &Profile{Services: cfgs}, nil
+	return &Profile{Services: entries}, nil
 }

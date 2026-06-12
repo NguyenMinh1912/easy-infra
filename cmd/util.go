@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/minhnc/easy-infra/internal/profile"
 	"github.com/minhnc/easy-infra/internal/service"
 )
 
@@ -40,9 +41,9 @@ func (p *prefixWriter) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// sortedKeys returns the keys of a service-config map in deterministic order so
-// command output is stable.
-func sortedKeys(m map[string]service.Config) []string {
+// sortedKeys returns the ids of a profile's service instances in deterministic
+// order so command output is stable.
+func sortedKeys(m map[string]profile.ServiceEntry) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

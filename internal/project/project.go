@@ -140,7 +140,7 @@ func (p *Project) SaveProfile(name string, prof *profile.Profile) error {
 // display or editing. Unlike LoadProfile it does not validate, so a profile
 // momentarily out of sync with the service definitions can still be opened and
 // fixed. A missing profile is reported as an actionable error.
-func (p *Project) ProfileConfig(name string) (map[string]service.Config, error) {
+func (p *Project) ProfileConfig(name string) (map[string]profile.ServiceEntry, error) {
 	prof, err := profile.Load(p.Paths.ProfilePath(name))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -154,7 +154,7 @@ func (p *Project) ProfileConfig(name string) (map[string]service.Config, error) 
 // UpdateProfile replaces the named profile's per-service config, after
 // validating each service against the registry, then saves it. It reports a
 // missing profile as an actionable error.
-func (p *Project) UpdateProfile(name string, services map[string]service.Config) error {
+func (p *Project) UpdateProfile(name string, services map[string]profile.ServiceEntry) error {
 	if _, err := p.ProfileConfig(name); err != nil {
 		return err
 	}
@@ -192,7 +192,7 @@ func (p *Project) AddProfile(name string) (*profile.Profile, error) {
 // existing local profile's already-localised services are preserved, so forking
 // services one at a time accumulates them. The result is validated and saved,
 // and its name (LocalProfile) is returned.
-func (p *Project) ForkLocalProfile(source, svcName string, localEnv service.Config) (string, error) {
+func (p *Project) ForkLocalProfile(source, svcID string, localEnv service.Config) (string, error) {
 	// Load the source through LoadProfile so an invalid source is rejected before
 	// we derive anything from it.
 	src, err := p.LoadProfile(source)
@@ -200,15 +200,15 @@ func (p *Project) ForkLocalProfile(source, svcName string, localEnv service.Conf
 		return "", err
 	}
 
-	services := make(map[string]service.Config, len(src.Services))
-	for name, cfg := range src.Services {
-		services[name] = cfg
+	services := make(map[string]profile.ServiceEntry, len(src.Services))
+	for id, entry := range src.Services {
+		services[id] = entry
 	}
 	// Preserve services already localised by a previous fork.
 	if existing, err := profile.Load(p.Paths.ProfilePath(LocalProfile)); err == nil {
-		for name, cfg := range existing.Services {
-			if _, defined := services[name]; defined {
-				services[name] = cfg
+		for id, entry := range existing.Services {
+			if _, defined := services[id]; defined {
+				services[id] = entry
 			}
 		}
 	} else if !errors.Is(err, fs.ErrNotExist) {
@@ -216,15 +216,16 @@ func (p *Project) ForkLocalProfile(source, svcName string, localEnv service.Conf
 	}
 	// Overlay the localised connection onto the source's block so the forked
 	// service keeps its definition fields (e.g. version) while pointing at the
-	// local container.
-	forked := service.Config{}
-	for k, v := range src.Services[svcName] {
-		forked[k] = v
+	// local container, preserving its type and name.
+	srcEntry := src.Services[svcID]
+	forkedCfg := service.Config{}
+	for k, v := range srcEntry.Config {
+		forkedCfg[k] = v
 	}
 	for k, v := range localEnv {
-		forked[k] = v
+		forkedCfg[k] = v
 	}
-	services[svcName] = forked
+	services[svcID] = profile.ServiceEntry{Type: srcEntry.Type, Name: srcEntry.Name, Config: forkedCfg}
 
 	prof := &profile.Profile{Services: services}
 	if err := prof.Validate(p.Registry); err != nil {

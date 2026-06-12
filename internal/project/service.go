@@ -28,15 +28,18 @@ var (
 	ErrInvalidDefinition = errors.New("invalid service config")
 )
 
-// ServiceConfig pairs a service name with its config within a profile (the
-// merged definition + environment block). It is the shape the command and HTTP
-// layers read.
+// ServiceConfig describes one service instance within a profile: its unique id,
+// its service type (the registry key), its user-facing name, and the merged
+// definition + environment block. It is the shape the command and HTTP layers
+// read.
 type ServiceConfig struct {
+	ID     string
+	Type   string
 	Name   string
 	Config service.Config
 }
 
-// ProfileServices returns the named profile's service configs, sorted by name.
+// ProfileServices returns the named profile's service instances, sorted by id.
 // It reports a missing profile as an actionable error.
 func (p *Project) ProfileServices(profileName string) ([]ServiceConfig, error) {
 	services, err := p.ProfileConfig(profileName)
@@ -44,68 +47,112 @@ func (p *Project) ProfileServices(profileName string) ([]ServiceConfig, error) {
 		return nil, err
 	}
 	defs := make([]ServiceConfig, 0, len(services))
-	for _, name := range sortedServiceNames(services) {
-		defs = append(defs, ServiceConfig{Name: name, Config: services[name]})
+	for _, id := range sortedServiceIDs(services) {
+		entry := services[id]
+		defs = append(defs, ServiceConfig{
+			ID:     id,
+			Type:   entry.ResolveType(id),
+			Name:   entry.ResolveName(id),
+			Config: entry.Config,
+		})
 	}
 	return defs, nil
 }
 
-// AddProfileService adds the named service to a profile using its default
-// config, then saves the profile. It errors if the service is unknown or the
-// profile already defines it.
-func (p *Project) AddProfileService(profileName, name string) error {
-	svc, ok := p.Registry.Get(name)
+// AddProfileService adds an instance of the given service type to a profile,
+// then saves it and returns the new instance's id. A profile may hold several
+// instances of the same type, so a unique id is generated rather than rejecting
+// a duplicate. name defaults to the id when empty; cfg defaults to the service's
+// default config when nil, and is otherwise validated against the service.
+func (p *Project) AddProfileService(profileName, svcType, name string, cfg service.Config) (string, error) {
+	svc, ok := p.Registry.Get(svcType)
 	if !ok {
-		return fmt.Errorf("%q: %w", name, ErrUnknownService)
+		return "", fmt.Errorf("%q: %w", svcType, ErrUnknownService)
 	}
 	prof, err := p.loadProfileForEdit(profileName)
 	if err != nil {
-		return err
+		return "", err
 	}
-	if _, exists := prof.Services[name]; exists {
-		return fmt.Errorf("%q: %w", name, ErrServiceExists)
+	if cfg == nil {
+		cfg = service.DefaultConfig(svc)
+	} else if err := service.ValidateConfig(svc, cfg); err != nil {
+		return "", fmt.Errorf("%w: %v", ErrInvalidDefinition, err)
 	}
-	prof.Services[name] = service.DefaultConfig(svc)
-	return p.SaveProfile(profileName, prof)
+	id := uniqueServiceID(prof.Services, svcType)
+	if name == "" {
+		name = id
+	}
+	prof.Services[id] = profile.ServiceEntry{Type: svcType, Name: name, Config: cfg}
+	if err := p.SaveProfile(profileName, prof); err != nil {
+		return "", err
+	}
+	return id, nil
 }
 
-// UpdateProfileService replaces the named service's config in a profile with
-// cfg, after validating it against the service, then saves the profile.
-func (p *Project) UpdateProfileService(profileName, name string, cfg service.Config) error {
-	svc, ok := p.Registry.Get(name)
-	if !ok {
-		return fmt.Errorf("%q: %w", name, ErrUnknownService)
-	}
+// UpdateProfileService replaces the config of the instance identified by id in a
+// profile, after validating it against the instance's service type, then saves
+// the profile. A non-empty name renames the instance; an empty name leaves it
+// unchanged.
+func (p *Project) UpdateProfileService(profileName, id, name string, cfg service.Config) error {
 	prof, err := p.loadProfileForEdit(profileName)
 	if err != nil {
 		return err
 	}
-	if _, exists := prof.Services[name]; !exists {
-		return fmt.Errorf("%q: %w", name, ErrServiceNotDefined)
+	entry, exists := prof.Services[id]
+	if !exists {
+		return fmt.Errorf("%q: %w", id, ErrServiceNotDefined)
+	}
+	svcType := entry.ResolveType(id)
+	svc, ok := p.Registry.Get(svcType)
+	if !ok {
+		return fmt.Errorf("%q: %w", svcType, ErrUnknownService)
 	}
 	if err := service.ValidateConfig(svc, cfg); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidDefinition, err)
 	}
-	prof.Services[name] = cfg
+	entry.Type = svcType
+	entry.Config = cfg
+	if name != "" {
+		entry.Name = name
+	} else {
+		entry.Name = entry.ResolveName(id)
+	}
+	prof.Services[id] = entry
 	return p.SaveProfile(profileName, prof)
 }
 
-// RemoveProfileService removes the named service from a profile. It refuses to
-// remove the profile's last remaining service, since a profile must define at
-// least one.
-func (p *Project) RemoveProfileService(profileName, name string) error {
+// RemoveProfileService removes the instance identified by id from a profile. It
+// refuses to remove the profile's last remaining service, since a profile must
+// define at least one.
+func (p *Project) RemoveProfileService(profileName, id string) error {
 	prof, err := p.loadProfileForEdit(profileName)
 	if err != nil {
 		return err
 	}
-	if _, exists := prof.Services[name]; !exists {
-		return fmt.Errorf("%q: %w", name, ErrServiceNotDefined)
+	if _, exists := prof.Services[id]; !exists {
+		return fmt.Errorf("%q: %w", id, ErrServiceNotDefined)
 	}
 	if len(prof.Services) == 1 {
-		return fmt.Errorf("%q: %w", name, ErrLastService)
+		return fmt.Errorf("%q: %w", id, ErrLastService)
 	}
-	delete(prof.Services, name)
+	delete(prof.Services, id)
 	return p.SaveProfile(profileName, prof)
+}
+
+// uniqueServiceID returns an id for a new instance of svcType that does not
+// collide with an existing one. The first instance of a type takes the type
+// name itself (so a single-instance profile reads naturally and matches the
+// pre-instance-id layout); subsequent instances get a numeric suffix.
+func uniqueServiceID(services map[string]profile.ServiceEntry, svcType string) string {
+	if _, exists := services[svcType]; !exists {
+		return svcType
+	}
+	for i := 2; ; i++ {
+		id := fmt.Sprintf("%s-%d", svcType, i)
+		if _, exists := services[id]; !exists {
+			return id
+		}
+	}
 }
 
 // loadProfileForEdit loads a profile without validation (via profile.Load) so a
@@ -122,12 +169,13 @@ func (p *Project) loadProfileForEdit(name string) (*profile.Profile, error) {
 	return prof, nil
 }
 
-// sortedServiceNames returns the keys of services in sorted order.
-func sortedServiceNames(services map[string]service.Config) []string {
-	names := make([]string, 0, len(services))
-	for name := range services {
-		names = append(names, name)
+// sortedServiceIDs returns the ids of a profile's service instances in sorted
+// order.
+func sortedServiceIDs(services map[string]profile.ServiceEntry) []string {
+	ids := make([]string, 0, len(services))
+	for id := range services {
+		ids = append(ids, id)
 	}
-	sort.Strings(names)
-	return names
+	sort.Strings(ids)
+	return ids
 }
