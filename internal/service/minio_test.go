@@ -176,6 +176,58 @@ func TestMinIOApplyNoSnapshot(t *testing.T) {
 	}
 }
 
+// TestMinIOApplyCreatesConfiguredBuckets confirms Apply creates the buckets
+// declared in the profile definition even when no snapshot exists, and that it
+// is idempotent for buckets that already exist.
+func TestMinIOApplyCreatesConfiguredBuckets(t *testing.T) {
+	t.Chdir(t.TempDir())
+	f := newFakeS3()
+	f.put("assets", "", nil, "") // already present; must be left intact
+
+	spec := Spec{
+		Profile:    "fresh",
+		Env:        minioEnv(),
+		Definition: Config{"buckets": []string{"assets", "uploads"}},
+	}
+	if err := withS3(f).Apply(context.Background(), spec); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	for _, want := range []string{"assets", "uploads"} {
+		if _, ok := f.buckets[want]; !ok {
+			t.Errorf("bucket %q was not created", want)
+		}
+	}
+}
+
+// TestMinIOValidateDefinitionBuckets confirms the buckets field is validated:
+// well-formed names (as a list or a comma-separated string) pass, and an
+// invalid name is rejected.
+func TestMinIOValidateDefinitionBuckets(t *testing.T) {
+	valid := []Config{
+		{"buckets": []string{"assets", "user-uploads"}},
+		{"buckets": []any{"assets", "logs.archive"}},
+		{"buckets": "assets, uploads"}, // web UI submits one comma-separated string
+		{"buckets": ""},                // empty is allowed (no buckets)
+	}
+	for _, cfg := range valid {
+		if err := (MinIO{}).ValidateDefinition(cfg); err != nil {
+			t.Errorf("ValidateDefinition(%v): unexpected error %v", cfg, err)
+		}
+	}
+
+	invalid := []Config{
+		{"buckets": []string{"AB"}},       // too short and uppercase
+		{"buckets": []string{"Bad_Name"}}, // illegal characters
+		{"buckets": []string{"-leading"}}, // must start with a letter or digit
+		{"buckets": []any{"ok", 7}},       // non-string element
+	}
+	for _, cfg := range invalid {
+		if err := (MinIO{}).ValidateDefinition(cfg); err == nil {
+			t.Errorf("ValidateDefinition(%v): expected an error, got nil", cfg)
+		}
+	}
+}
+
 // TestMinIOCleanProtected confirms a protected definition blocks Clean before any
 // client work happens.
 func TestMinIOCleanProtected(t *testing.T) {
