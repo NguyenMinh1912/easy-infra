@@ -30,23 +30,25 @@ func newApplyCmd(reg *service.Registry, paths project.Paths) *cobra.Command {
 			// provisioning is future work, so providers report ErrNotImplemented
 			// for now; we surface that as the intended action rather than failing.
 			ctx := cmd.Context()
-			for _, svcName := range sortedKeys(prof.Services) {
-				svc, ok := reg.Get(svcName)
+			for _, svcID := range sortedKeys(prof.Services) {
+				entry := prof.Services[svcID]
+				svcType := entry.ResolveType(svcID)
+				svc, ok := reg.Get(svcType)
 				if !ok {
-					return fmt.Errorf("unknown service %q", svcName)
+					return fmt.Errorf("unknown service %q", svcType)
 				}
 				spec := service.Spec{
 					Profile:    name,
-					Definition: prof.Services[svcName],
-					Env:        prof.Services[svcName],
+					Definition: entry.Config,
+					Env:        entry.Config,
 				}
 				switch err := svc.Apply(ctx, spec); {
 				case errors.Is(err, service.ErrNotImplemented):
-					fmt.Fprintf(out, "  - %s: would provision at %s\n", svcName, endpoint(spec.Env))
+					fmt.Fprintf(out, "  - %s: would provision at %s\n", svcID, endpoint(spec.Env))
 				case err != nil:
-					return fmt.Errorf("applying %s: %w", svcName, err)
+					return fmt.Errorf("applying %s: %w", svcID, err)
 				default:
-					fmt.Fprintf(out, "  - %s: applied at %s\n", svcName, endpoint(spec.Env))
+					fmt.Fprintf(out, "  - %s: applied at %s\n", svcID, endpoint(spec.Env))
 				}
 			}
 			return nil

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"time"
 
+	profilepkg "github.com/minhnc/easy-infra/internal/profile"
 	"github.com/minhnc/easy-infra/internal/project"
 	"github.com/minhnc/easy-infra/internal/service"
 )
@@ -36,9 +37,13 @@ type profileConfigResponse struct {
 	Services []profileServiceConfig `json:"services"`
 }
 
-// profileServiceConfig pairs a service name with its environment config within
-// a profile.
+// profileServiceConfig describes one service instance within a profile: its
+// unique id, its service type, its display name, and its environment config. A
+// profile may hold several instances of the same type, so id (not type) is the
+// stable identifier the UI routes and per-service endpoints use.
 type profileServiceConfig struct {
+	ID     string         `json:"id"`
+	Type   string         `json:"type"`
 	Name   string         `json:"name"`
 	Config service.Config `json:"config"`
 }
@@ -153,9 +158,23 @@ func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 		s.writeProjectError(w, err)
 		return
 	}
-	services := make(map[string]service.Config, len(req.Services))
+	services := make(map[string]profilepkg.ServiceEntry, len(req.Services))
 	for _, sc := range req.Services {
-		services[sc.Name] = sc.Config
+		// Fall back to the id for an absent type/name so a client may post a
+		// minimal {id, config} block, matching the on-disk default behaviour.
+		id := sc.ID
+		if id == "" {
+			id = sc.Name
+		}
+		svcType := sc.Type
+		if svcType == "" {
+			svcType = id
+		}
+		svcName := sc.Name
+		if svcName == "" {
+			svcName = id
+		}
+		services[id] = profilepkg.ServiceEntry{Type: svcType, Name: svcName, Config: sc.Config}
 	}
 	if err := proj.UpdateProfile(name, services); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -167,42 +186,63 @@ func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// serviceNameRequest is the request body for adding a service to a profile.
+// serviceNameRequest is the request body for adding a service to a profile. It
+// names the service type to add and, optionally, a display name and a starting
+// config. Type defaults from the legacy `name` field so an older client posting
+// just a service type still works; name and config fall back to the service's
+// defaults when omitted.
 type serviceNameRequest struct {
-	Name string `json:"name"`
-}
-
-// serviceConfigRequest is the request body for updating a single service's
-// config within a profile.
-type serviceConfigRequest struct {
+	Type   string         `json:"type"`
+	Name   string         `json:"name"`
 	Config service.Config `json:"config"`
 }
 
-// handleCreateProfileService adds a service to a profile using its default
-// config, then returns the profile's updated service config.
+// serviceConfigRequest is the request body for updating a single service
+// instance within a profile: its config and, optionally, a new display name.
+type serviceConfigRequest struct {
+	Name   string         `json:"name"`
+	Config service.Config `json:"config"`
+}
+
+// handleCreateProfileService adds an instance of a service type to a profile,
+// then returns the profile's updated service config. A profile may hold several
+// instances of the same type; the backend assigns each a unique id.
 func (s *Server) handleCreateProfileService(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	var req serviceNameRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	// Accept the service type from `type`, falling back to the legacy `name`
+	// field which used to carry it.
+	svcType := req.Type
+	if svcType == "" {
+		svcType = req.Name
+	}
+	// A display name only defaults when type was given explicitly; when the
+	// legacy single-field form is used, `name` is the type, not a label.
+	displayName := ""
+	if req.Type != "" {
+		displayName = req.Name
+	}
 	proj, err := project.Load(s.paths, s.reg)
 	if err != nil {
 		s.writeProjectError(w, err)
 		return
 	}
-	if err := proj.AddProfileService(name, req.Name); err != nil {
+	if _, err := proj.AddProfileService(name, svcType, displayName, req.Config); err != nil {
 		s.writeProjectError(w, err)
 		return
 	}
 	s.writeProfileConfig(w, http.StatusCreated, proj, name)
 }
 
-// handleUpdateProfileService replaces a single service's config within a
-// profile.
+// handleUpdateProfileService replaces a single service instance's config within
+// a profile and optionally renames it. The {service} path segment is the
+// instance id.
 func (s *Server) handleUpdateProfileService(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	svcName := r.PathValue("service")
+	svcID := r.PathValue("service")
 	var req serviceConfigRequest
 	if !decodeJSON(w, r, &req) {
 		return
@@ -212,23 +252,24 @@ func (s *Server) handleUpdateProfileService(w http.ResponseWriter, r *http.Reque
 		s.writeProjectError(w, err)
 		return
 	}
-	if err := proj.UpdateProfileService(name, svcName, req.Config); err != nil {
+	if err := proj.UpdateProfileService(name, svcID, req.Name, req.Config); err != nil {
 		s.writeProjectError(w, err)
 		return
 	}
 	s.writeProfileConfig(w, http.StatusOK, proj, name)
 }
 
-// handleDeleteProfileService removes a service from a profile.
+// handleDeleteProfileService removes a service instance from a profile. The
+// {service} path segment is the instance id.
 func (s *Server) handleDeleteProfileService(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	svcName := r.PathValue("service")
+	svcID := r.PathValue("service")
 	proj, err := project.Load(s.paths, s.reg)
 	if err != nil {
 		s.writeProjectError(w, err)
 		return
 	}
-	if err := proj.RemoveProfileService(name, svcName); err != nil {
+	if err := proj.RemoveProfileService(name, svcID); err != nil {
 		s.writeProjectError(w, err)
 		return
 	}
@@ -306,17 +347,25 @@ func (s *Server) writeProfiles(w http.ResponseWriter, status int, proj *project.
 	})
 }
 
-// profileServiceConfigs maps a profile's per-service env config onto its JSON
-// shape, sorted by service name for a stable response.
-func profileServiceConfigs(services map[string]service.Config) []profileServiceConfig {
-	names := make([]string, 0, len(services))
-	for name := range services {
-		names = append(names, name)
+// profileServiceConfigs maps a profile's service instances onto their JSON
+// shape, sorted by id for a stable response. Type and name fall back to the id
+// for an entry that stores neither (the backward-compatible single-instance
+// case), so the UI always receives a resolved type and name.
+func profileServiceConfigs(services map[string]profilepkg.ServiceEntry) []profileServiceConfig {
+	ids := make([]string, 0, len(services))
+	for id := range services {
+		ids = append(ids, id)
 	}
-	sort.Strings(names)
-	out := make([]profileServiceConfig, 0, len(names))
-	for _, name := range names {
-		out = append(out, profileServiceConfig{Name: name, Config: services[name]})
+	sort.Strings(ids)
+	out := make([]profileServiceConfig, 0, len(ids))
+	for _, id := range ids {
+		entry := services[id]
+		out = append(out, profileServiceConfig{
+			ID:     id,
+			Type:   entry.ResolveType(id),
+			Name:   entry.ResolveName(id),
+			Config: entry.Config,
+		})
 	}
 	return out
 }

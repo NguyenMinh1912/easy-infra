@@ -106,8 +106,8 @@ func TestForkLocalProfile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadProfile(local): %v", err)
 	}
-	if local.Services["postgres"]["host"] != "127.0.0.1" {
-		t.Errorf("postgres host = %v, want 127.0.0.1", local.Services["postgres"]["host"])
+	if local.Services["postgres"].Config["host"] != "127.0.0.1" {
+		t.Errorf("postgres host = %v, want 127.0.0.1", local.Services["postgres"].Config["host"])
 	}
 	if _, ok := local.Services["redis"]; !ok {
 		t.Error("local profile missing copied service redis")
@@ -137,11 +137,11 @@ func TestForkLocalProfilePreservesPriorForks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadProfile(local): %v", err)
 	}
-	if local.Services["postgres"]["host"] != "127.0.0.1" {
-		t.Errorf("postgres host = %v, want preserved 127.0.0.1", local.Services["postgres"]["host"])
+	if local.Services["postgres"].Config["host"] != "127.0.0.1" {
+		t.Errorf("postgres host = %v, want preserved 127.0.0.1", local.Services["postgres"].Config["host"])
 	}
-	if local.Services["redis"]["port"] != 6379 {
-		t.Errorf("redis port = %v, want 6379", local.Services["redis"]["port"])
+	if local.Services["redis"].Config["port"] != 6379 {
+		t.Errorf("redis port = %v, want 6379", local.Services["redis"].Config["port"])
 	}
 }
 

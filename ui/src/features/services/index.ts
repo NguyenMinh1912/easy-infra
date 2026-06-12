@@ -4,4 +4,8 @@
 // profile's services. Everything else is feature-internal.
 export { ServiceDetailPage, ServiceSettingsDialog } from "./detail";
 export { metaFor } from "./catalog-meta";
-export { ServiceDialog, type DialogState } from "./components/ServiceDialog";
+export {
+  ServiceDialog,
+  type DialogState,
+  type ServiceDialogResult,
+} from "./components/ServiceDialog";

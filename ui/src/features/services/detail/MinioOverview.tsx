@@ -20,7 +20,7 @@ export function MinioOverview({ service, profile }: OverviewProps) {
   return (
     <MinioBrowser
       profile={profile}
-      service={service.name}
+      service={service.id}
       defaultBucket={configuredBucket(service.config)}
     />
   );

@@ -28,7 +28,7 @@ export function PostgresOverview({ service, profile }: OverviewProps) {
   }
   return (
     <Suspense fallback={<Skeleton className="h-40 w-full" />}>
-      <PostgresConsoleTabs profile={profile} service={service.name} />
+      <PostgresConsoleTabs profile={profile} service={service.id} />
     </Suspense>
   );
 }

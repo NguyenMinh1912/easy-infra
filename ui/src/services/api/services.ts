@@ -28,26 +28,43 @@ export function getServiceCatalog(signal?: AbortSignal): Promise<CatalogResponse
   return apiGet<CatalogResponse>("/services/catalog", signal);
 }
 
-/** Add a service to a profile using its default config; returns the profile. */
+/**
+ * Add an instance of a service `type` to a profile, optionally with a display
+ * `name` and a starting `config`; returns the profile. The backend assigns the
+ * new instance a unique id, so a profile may hold several of the same type.
+ */
 export function createService(
   profile: string,
-  name: string,
+  type: string,
+  name?: string,
+  config?: ServiceConfig,
 ): Promise<ProfileConfig> {
-  return apiSend<ProfileConfig>("POST", servicesPath(profile), { name });
+  return apiSend<ProfileConfig>("POST", servicesPath(profile), {
+    type,
+    name,
+    config,
+  });
 }
 
-/** Replace a service's config within a profile; returns the profile. */
+/**
+ * Replace a service instance's config within a profile (identified by its
+ * `id`), optionally renaming it; returns the profile.
+ */
 export function updateService(
   profile: string,
-  name: string,
+  id: string,
   config: ServiceConfig,
+  name?: string,
 ): Promise<ProfileConfig> {
-  return apiSend<ProfileConfig>("PUT", servicesPath(profile, name), { config });
+  return apiSend<ProfileConfig>("PUT", servicesPath(profile, id), {
+    config,
+    name,
+  });
 }
 
-/** Remove a service from a profile. */
-export function deleteService(profile: string, name: string): Promise<void> {
-  return apiSend<void>("DELETE", servicesPath(profile, name));
+/** Remove a service instance from a profile, identified by its `id`. */
+export function deleteService(profile: string, id: string): Promise<void> {
+  return apiSend<void>("DELETE", servicesPath(profile, id));
 }
 
 // --- Backup sessions ---------------------------------------------------------
@@ -64,11 +81,19 @@ export type BackupStatus =
   | "error"
   | "cancelled";
 
+/**
+ * What a session is doing, mirroring the server's kinds: a plain backup, an
+ * apply (restore from a snapshot), or a fork (stand up a local container seeded
+ * from a snapshot).
+ */
+export type BackupKind = "backup" | "apply" | "fork";
+
 /** A backup run as reported by the API. */
 export interface BackupSession {
   id: string;
   service: string;
   profile: string;
+  kind: BackupKind;
   status: BackupStatus;
   snapshot?: string;
   error?: string;

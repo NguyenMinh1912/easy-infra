@@ -11,8 +11,12 @@ func TestAddProfileService(t *testing.T) {
 		t.Fatalf("AddProfile: %v", err)
 	}
 
-	if err := p.AddProfileService("staging", "minio"); err != nil {
+	id, err := p.AddProfileService("staging", "minio", "", nil)
+	if err != nil {
 		t.Fatalf("AddProfileService: %v", err)
+	}
+	if id != "minio" {
+		t.Errorf("first minio id = %q, want %q", id, "minio")
 	}
 
 	defs, err := p.ProfileServices("staging")
@@ -21,12 +25,59 @@ func TestAddProfileService(t *testing.T) {
 	}
 	var found bool
 	for _, d := range defs {
-		if d.Name == "minio" {
+		if d.ID == "minio" && d.Type == "minio" {
 			found = true
 		}
 	}
 	if !found {
 		t.Errorf("minio not added to profile; got %v", defs)
+	}
+}
+
+func TestAddProfileServiceMultipleSameType(t *testing.T) {
+	p := newTestProject(t)
+	if _, err := p.AddProfile("staging"); err != nil {
+		t.Fatalf("AddProfile: %v", err)
+	}
+
+	// postgres is part of the default scaffold, so a second instance gets a
+	// distinct, suffixed id rather than being rejected.
+	id, err := p.AddProfileService("staging", "postgres", "Analytics", nil)
+	if err != nil {
+		t.Fatalf("AddProfileService(second postgres): %v", err)
+	}
+	if id != "postgres-2" {
+		t.Errorf("second postgres id = %q, want %q", id, "postgres-2")
+	}
+
+	// A third instance continues the sequence.
+	id3, err := p.AddProfileService("staging", "postgres", "", nil)
+	if err != nil {
+		t.Fatalf("AddProfileService(third postgres): %v", err)
+	}
+	if id3 != "postgres-3" {
+		t.Errorf("third postgres id = %q, want %q", id3, "postgres-3")
+	}
+
+	defs, err := p.ProfileServices("staging")
+	if err != nil {
+		t.Fatalf("ProfileServices: %v", err)
+	}
+	count := 0
+	var analyticsName string
+	for _, d := range defs {
+		if d.Type == "postgres" {
+			count++
+		}
+		if d.ID == "postgres-2" {
+			analyticsName = d.Name
+		}
+	}
+	if count != 3 {
+		t.Errorf("postgres instance count = %d, want 3", count)
+	}
+	if analyticsName != "Analytics" {
+		t.Errorf("postgres-2 name = %q, want %q", analyticsName, "Analytics")
 	}
 }
 
@@ -36,14 +87,10 @@ func TestAddProfileServiceErrors(t *testing.T) {
 		t.Fatalf("AddProfile: %v", err)
 	}
 
-	if err := p.AddProfileService("staging", "mongodb"); !errors.Is(err, ErrUnknownService) {
+	if _, err := p.AddProfileService("staging", "mongodb", "", nil); !errors.Is(err, ErrUnknownService) {
 		t.Errorf("AddProfileService(unknown) error = %v, want ErrUnknownService", err)
 	}
-	// postgres is part of the default scaffold, so adding it again conflicts.
-	if err := p.AddProfileService("staging", "postgres"); !errors.Is(err, ErrServiceExists) {
-		t.Errorf("AddProfileService(existing) error = %v, want ErrServiceExists", err)
-	}
-	if err := p.AddProfileService("nope", "minio"); err == nil {
+	if _, err := p.AddProfileService("nope", "minio", "", nil); err == nil {
 		t.Error("AddProfileService(missing profile) error = nil, want error")
 	}
 }
@@ -57,7 +104,7 @@ func TestUpdateProfileService(t *testing.T) {
 	cfg := map[string]any{
 		"version": "15", "host": "db.example", "port": 5433, "user": "u", "database": "d",
 	}
-	if err := p.UpdateProfileService("staging", "postgres", cfg); err != nil {
+	if err := p.UpdateProfileService("staging", "postgres", "", cfg); err != nil {
 		t.Fatalf("UpdateProfileService: %v", err)
 	}
 
@@ -65,11 +112,39 @@ func TestUpdateProfileService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ProfileConfig: %v", err)
 	}
-	if stored["postgres"]["host"] != "db.example" {
-		t.Errorf("postgres host = %v, want db.example", stored["postgres"]["host"])
+	if stored["postgres"].Config["host"] != "db.example" {
+		t.Errorf("postgres host = %v, want db.example", stored["postgres"].Config["host"])
 	}
-	if stored["postgres"]["version"] != "15" {
-		t.Errorf("postgres version = %v, want 15", stored["postgres"]["version"])
+	if stored["postgres"].Config["version"] != "15" {
+		t.Errorf("postgres version = %v, want 15", stored["postgres"].Config["version"])
+	}
+}
+
+func TestUpdateProfileServiceRename(t *testing.T) {
+	p := newTestProject(t)
+	if _, err := p.AddProfile("staging"); err != nil {
+		t.Fatalf("AddProfile: %v", err)
+	}
+
+	cfg := map[string]any{
+		"version": "16", "host": "localhost", "port": 5432, "user": "u", "database": "d",
+	}
+	if err := p.UpdateProfileService("staging", "postgres", "Primary DB", cfg); err != nil {
+		t.Fatalf("UpdateProfileService(rename): %v", err)
+	}
+
+	defs, err := p.ProfileServices("staging")
+	if err != nil {
+		t.Fatalf("ProfileServices: %v", err)
+	}
+	var name string
+	for _, d := range defs {
+		if d.ID == "postgres" {
+			name = d.Name
+		}
+	}
+	if name != "Primary DB" {
+		t.Errorf("postgres name = %q, want %q", name, "Primary DB")
 	}
 }
 
@@ -80,12 +155,12 @@ func TestUpdateProfileServiceErrors(t *testing.T) {
 	}
 
 	// minio is not in the default scaffold.
-	if err := p.UpdateProfileService("staging", "minio", map[string]any{}); !errors.Is(err, ErrServiceNotDefined) {
+	if err := p.UpdateProfileService("staging", "minio", "", map[string]any{}); !errors.Is(err, ErrServiceNotDefined) {
 		t.Errorf("UpdateProfileService(undefined) error = %v, want ErrServiceNotDefined", err)
 	}
 	// An invalid postgres config (missing required fields) is rejected.
 	bad := map[string]any{"port": 99999999}
-	if err := p.UpdateProfileService("staging", "postgres", bad); !errors.Is(err, ErrInvalidDefinition) {
+	if err := p.UpdateProfileService("staging", "postgres", "", bad); !errors.Is(err, ErrInvalidDefinition) {
 		t.Errorf("UpdateProfileService(invalid) error = %v, want ErrInvalidDefinition", err)
 	}
 }

@@ -46,29 +46,31 @@ func newBackupSnapshotCmd(reg *service.Registry, paths project.Paths) *cobra.Com
 			out := cmd.OutOrStdout()
 			fmt.Fprintf(out, "Snapshotting profile %q (snapshot %s):\n", name, stamp)
 			ctx := cmd.Context()
-			for _, svcName := range sortedKeys(prof.Services) {
-				svc, ok := reg.Get(svcName)
+			for _, svcID := range sortedKeys(prof.Services) {
+				entry := prof.Services[svcID]
+				svcType := entry.ResolveType(svcID)
+				svc, ok := reg.Get(svcType)
 				if !ok {
-					return fmt.Errorf("unknown service %q", svcName)
+					return fmt.Errorf("unknown service %q", svcType)
 				}
 				spec := service.Spec{
 					Profile:    name,
-					Definition: prof.Services[svcName],
-					Env:        prof.Services[svcName],
-					BackupDir:  service.SnapshotDir(name, svcName, stamp),
+					Definition: entry.Config,
+					Env:        entry.Config,
+					BackupDir:  service.SnapshotDir(name, svcID, stamp),
 				}
 				// In verbose mode, stream the service's own progress lines, tagged
-				// with its name so they line up with the per-service summary below.
+				// with its id so they line up with the per-service summary below.
 				if verbose {
-					spec.Log = &prefixWriter{w: out, prefix: fmt.Sprintf("  - %s: ", svcName)}
+					spec.Log = &prefixWriter{w: out, prefix: fmt.Sprintf("  - %s: ", svcID)}
 				}
 				switch err := svc.Backup(ctx, spec); {
 				case errors.Is(err, service.ErrNotImplemented):
-					fmt.Fprintf(out, "  - %s: would back up from %s\n", svcName, endpoint(spec.Env))
+					fmt.Fprintf(out, "  - %s: would back up from %s\n", svcID, endpoint(spec.Env))
 				case err != nil:
-					return fmt.Errorf("backing up %s: %w", svcName, err)
+					return fmt.Errorf("backing up %s: %w", svcID, err)
 				default:
-					fmt.Fprintf(out, "  - %s: backed up from %s\n", svcName, endpoint(spec.Env))
+					fmt.Fprintf(out, "  - %s: backed up from %s\n", svcID, endpoint(spec.Env))
 				}
 			}
 			return nil

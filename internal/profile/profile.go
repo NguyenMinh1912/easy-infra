@@ -25,11 +25,50 @@ var DefaultDir = filepath.Join(".easy-infra", "profiles")
 // ext is the profile file extension.
 const ext = ".yml"
 
-// Profile is one environment's settings: per-service environment config keyed
-// by service name. The map is inlined so a profile file reads as a flat
-// mapping of service name to its settings.
+// ServiceEntry is one service instance within a profile. A profile may hold
+// several instances of the same service type (e.g. two postgres databases), so
+// each entry is identified by its own unique id (the map key) rather than by
+// the service type. The entry records:
+//
+//   - Type — which service this is (the registry key, e.g. "postgres"). When
+//     empty it defaults to the entry's id, so a profile written before instance
+//     ids existed (keyed directly by service type) still loads unchanged.
+//   - Name — a user-facing label that can be renamed freely. When empty it
+//     defaults to the id.
+//   - Config — the merged definition + environment block (host, port, version,
+//     …), inlined so an entry reads as a flat mapping.
+//
+// Type and Name are reserved keys within an entry; a service's own config must
+// not use them.
+type ServiceEntry struct {
+	Type   string         `yaml:"type,omitempty"`
+	Name   string         `yaml:"name,omitempty"`
+	Config service.Config `yaml:",inline"`
+}
+
+// ResolveType returns the entry's service type, falling back to id when the
+// Type field is empty (the backward-compatible case where the key is the type).
+func (e ServiceEntry) ResolveType(id string) string {
+	if e.Type != "" {
+		return e.Type
+	}
+	return id
+}
+
+// ResolveName returns the entry's display name, falling back to id when the
+// Name field is empty.
+func (e ServiceEntry) ResolveName(id string) string {
+	if e.Name != "" {
+		return e.Name
+	}
+	return id
+}
+
+// Profile is one environment's settings: a set of service instances keyed by a
+// unique id. The map is inlined so a profile file reads as a flat mapping of
+// service id to its settings.
 type Profile struct {
-	Services map[string]service.Config `yaml:",inline"`
+	Services map[string]ServiceEntry `yaml:",inline"`
 }
 
 // Path returns the file path for the named profile within dir.
@@ -49,7 +88,15 @@ func Load(path string) (*Profile, error) {
 		return nil, fmt.Errorf("parsing profile %s: %w", path, err)
 	}
 	if p.Services == nil {
-		p.Services = map[string]service.Config{}
+		p.Services = map[string]ServiceEntry{}
+	}
+	// An entry with no config keys unmarshals to a nil inline map; normalise it
+	// to an empty map so callers can always read (and overlay onto) Config.
+	for id, entry := range p.Services {
+		if entry.Config == nil {
+			entry.Config = service.Config{}
+			p.Services[id] = entry
+		}
 	}
 	return &p, nil
 }
@@ -62,7 +109,20 @@ func (p *Profile) Save(path string) error {
 			return fmt.Errorf("creating profiles dir %s: %w", dir, err)
 		}
 	}
-	data, err := yaml.Marshal(p)
+	// Drop a Type/Name that merely echoes the id, so an entry whose id already
+	// is its type (the common single-instance case) serialises as a plain
+	// `type:`-less block — identical to profiles written before instance ids.
+	out := make(map[string]ServiceEntry, len(p.Services))
+	for id, e := range p.Services {
+		if e.Type == id {
+			e.Type = ""
+		}
+		if e.Name == id {
+			e.Name = ""
+		}
+		out[id] = e
+	}
+	data, err := yaml.Marshal(Profile{Services: out})
 	if err != nil {
 		return fmt.Errorf("encoding profile: %w", err)
 	}
@@ -106,13 +166,14 @@ func (p *Profile) Validate(reg *service.Registry) error {
 	if len(p.Services) == 0 {
 		return fmt.Errorf("profile must define at least one service")
 	}
-	for name, cfg := range p.Services {
-		svc, ok := reg.Get(name)
+	for id, entry := range p.Services {
+		svcType := entry.ResolveType(id)
+		svc, ok := reg.Get(svcType)
 		if !ok {
-			return fmt.Errorf("unknown service %q", name)
+			return fmt.Errorf("unknown service %q", svcType)
 		}
-		if err := service.ValidateConfig(svc, cfg); err != nil {
-			return fmt.Errorf("service %q: %w", name, err)
+		if err := service.ValidateConfig(svc, entry.Config); err != nil {
+			return fmt.Errorf("service %q: %w", id, err)
 		}
 	}
 	return nil

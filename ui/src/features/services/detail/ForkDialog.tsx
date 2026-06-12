@@ -72,7 +72,7 @@ export function ForkDialog({
       const sourceProfile =
         profile ?? (await listProfiles(signal)).activeProfile;
       const cfg = await getProfileConfig(sourceProfile, signal);
-      const raw = cfg.services.find((s) => s.name === serviceName)?.config.port;
+      const raw = cfg.services.find((s) => s.id === serviceName)?.config.port;
       return raw == null ? "" : String(raw);
     },
     [serviceName, profile, open],

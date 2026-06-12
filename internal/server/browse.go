@@ -239,7 +239,7 @@ func writeArchiveEntry(ctx context.Context, zw *zip.Writer, browser service.Brow
 // response and returns ok=false. It mirrors resolveQuerier.
 func (s *Server) resolveBrowser(w http.ResponseWriter, r *http.Request) (service.Browser, service.Spec, bool) {
 	profileName := r.PathValue("name")
-	svcName := r.PathValue("service")
+	svcID := r.PathValue("service")
 
 	proj, err := project.Load(s.paths, s.reg)
 	if err != nil {
@@ -251,20 +251,21 @@ func (s *Server) resolveBrowser(w http.ResponseWriter, r *http.Request) (service
 		writeError(w, http.StatusNotFound, err.Error())
 		return nil, service.Spec{}, false
 	}
-	env, ok := services[svcName]
+	entry, ok := services[svcID]
 	if !ok {
-		writeError(w, http.StatusNotFound, fmt.Sprintf("service %q is not defined in profile %q", svcName, profileName))
+		writeError(w, http.StatusNotFound, fmt.Sprintf("service %q is not defined in profile %q", svcID, profileName))
 		return nil, service.Spec{}, false
 	}
-	svc, ok := s.reg.Get(svcName)
+	svcType := entry.ResolveType(svcID)
+	svc, ok := s.reg.Get(svcType)
 	if !ok {
-		writeError(w, http.StatusNotFound, fmt.Sprintf("unknown service %q", svcName))
+		writeError(w, http.StatusNotFound, fmt.Sprintf("unknown service %q", svcType))
 		return nil, service.Spec{}, false
 	}
 	browser, ok := svc.(service.Browser)
 	if !ok {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("service %q does not support browsing", svcName))
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("service %q does not support browsing", svcID))
 		return nil, service.Spec{}, false
 	}
-	return browser, service.Spec{Profile: profileName, Env: env}, true
+	return browser, service.Spec{Profile: profileName, Env: entry.Config}, true
 }
