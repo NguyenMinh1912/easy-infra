@@ -356,6 +356,20 @@ func (m MinIO) Objects(ctx context.Context, spec Spec, bucket, prefix string) (*
 	return listing, nil
 }
 
+// Object implements Browser: open one object for download. The returned reader
+// is the live object stream; the caller must close it.
+func (m MinIO) Object(ctx context.Context, spec Spec, bucket, key string) (io.ReadCloser, ObjectContent, error) {
+	client, err := m.connect(ctx, spec.Env)
+	if err != nil {
+		return nil, ObjectContent{}, err
+	}
+	r, info, err := client.GetObject(ctx, bucket, key)
+	if err != nil {
+		return nil, ObjectContent{}, fmt.Errorf("reading %s/%s: %w", bucket, key, err)
+	}
+	return r, ObjectContent{Size: info.Size, ContentType: info.ContentType}, nil
+}
+
 // connect opens a client to the MinIO endpoint described by env.
 func (m MinIO) connect(ctx context.Context, env Config) (s3Client, error) {
 	params, err := minioParamsFrom(env)

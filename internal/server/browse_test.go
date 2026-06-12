@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/minhnc/easy-infra/internal/service"
@@ -18,8 +20,12 @@ type stubBrowser struct {
 	bucketsErr error
 	listing    *service.ObjectListing
 	listErr    error
+	object     string
+	objectInfo service.ObjectContent
+	objectErr  error
 	gotBucket  string
 	gotPrefix  string
+	gotKey     string
 	gotSpec    service.Spec
 }
 
@@ -33,6 +39,16 @@ func (s *stubBrowser) Objects(_ context.Context, spec service.Spec, bucket, pref
 	s.gotBucket = bucket
 	s.gotPrefix = prefix
 	return s.listing, s.listErr
+}
+
+func (s *stubBrowser) Object(_ context.Context, spec service.Spec, bucket, key string) (io.ReadCloser, service.ObjectContent, error) {
+	s.gotSpec = spec
+	s.gotBucket = bucket
+	s.gotKey = key
+	if s.objectErr != nil {
+		return nil, service.ObjectContent{}, s.objectErr
+	}
+	return io.NopCloser(strings.NewReader(s.object)), s.objectInfo, nil
 }
 
 func TestBrowseBucketsHappyPath(t *testing.T) {
@@ -98,6 +114,51 @@ func TestBrowseObjectsHappyPath(t *testing.T) {
 	}
 	if stub.gotBucket != "assets" {
 		t.Errorf("listed bucket = %q, want assets", stub.gotBucket)
+	}
+}
+
+func TestBrowseObjectDownload(t *testing.T) {
+	stub := &stubBrowser{
+		stubService: stubService{name: "stub"},
+		object:      "PNGDATA",
+		objectInfo:  service.ObjectContent{Size: 7, ContentType: "image/png"},
+	}
+	srv := newConsoleServer(t, stub)
+	rec := doJSON(t, srv, http.MethodGet, "/api/profiles/default/services/stub/object?bucket=assets&key=docs/logo.png", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+	}
+	if rec.Body.String() != "PNGDATA" {
+		t.Errorf("body = %q, want PNGDATA", rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "image/png" {
+		t.Errorf("Content-Type = %q, want image/png", ct)
+	}
+	if cd := rec.Header().Get("Content-Disposition"); cd != `attachment; filename="logo.png"` {
+		t.Errorf("Content-Disposition = %q, want attachment with base name", cd)
+	}
+	if stub.gotBucket != "assets" || stub.gotKey != "docs/logo.png" {
+		t.Errorf("got bucket=%q key=%q, want assets/docs/logo.png", stub.gotBucket, stub.gotKey)
+	}
+}
+
+func TestBrowseObjectMissingKey(t *testing.T) {
+	srv := newConsoleServer(t, &stubBrowser{stubService: stubService{name: "stub"}})
+	rec := doJSON(t, srv, http.MethodGet, "/api/profiles/default/services/stub/object?bucket=assets", nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body %q)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestBrowseObjectError(t *testing.T) {
+	stub := &stubBrowser{
+		stubService: stubService{name: "stub"},
+		objectErr:   errors.New("store unreachable"),
+	}
+	srv := newConsoleServer(t, stub)
+	rec := doJSON(t, srv, http.MethodGet, "/api/profiles/default/services/stub/object?bucket=assets&key=x", nil)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502 (body %q)", rec.Code, rec.Body.String())
 	}
 }
 

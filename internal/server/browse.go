@@ -6,7 +6,10 @@ package server
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
+	"path"
+	"strconv"
 	"time"
 
 	"github.com/minhnc/easy-infra/internal/project"
@@ -77,6 +80,46 @@ func (s *Server) handleBrowseObjects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, objectsResponse{Prefixes: listing.Prefixes, Objects: listing.Objects})
+}
+
+// handleBrowseObject streams one object's contents as a download. The `bucket`
+// and `key` queries name the object; the response carries it as an attachment
+// so the browser saves it under the object's base name.
+func (s *Server) handleBrowseObject(w http.ResponseWriter, r *http.Request) {
+	browser, spec, ok := s.resolveBrowser(w, r)
+	if !ok {
+		return
+	}
+	bucket := r.URL.Query().Get("bucket")
+	if bucket == "" {
+		writeError(w, http.StatusBadRequest, "bucket must not be empty")
+		return
+	}
+	key := r.URL.Query().Get("key")
+	if key == "" {
+		writeError(w, http.StatusBadRequest, "key must not be empty")
+		return
+	}
+
+	rc, info, err := browser.Object(r.Context(), spec, bucket, key)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	defer rc.Close()
+
+	contentType := info.ContentType
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
+	if info.Size > 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(info.Size, 10))
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", path.Base(key)))
+	// Headers are committed on the first write; a copy error mid-stream can no
+	// longer change the status, so there is nothing useful to report past it.
+	_, _ = io.Copy(w, rc)
 }
 
 // resolveBrowser maps the {name}/{service} path onto a browse-capable service
