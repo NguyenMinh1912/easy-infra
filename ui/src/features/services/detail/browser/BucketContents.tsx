@@ -15,7 +15,9 @@ import { useAsync } from "@/hooks/useAsync";
 import { listObjects } from "@/services/api";
 import type { ObjectEntry } from "@/types/browse";
 
+import { baseName, formatBytes, formatTime } from "./format";
 import { EntryIcon, PathBreadcrumb } from "./MinioBrowser";
+import { ObjectDetailSheet } from "./ObjectDetailSheet";
 
 interface BucketContentsProps {
   profile: string;
@@ -35,6 +37,7 @@ export function BucketContents({
   bucket,
 }: BucketContentsProps) {
   const [prefix, setPrefix] = useState("");
+  const [selected, setSelected] = useState<ObjectEntry | null>(null);
   const state = useAsync(
     (signal) => listObjects(profile, service, bucket, prefix, signal),
     [profile, service, bucket, prefix],
@@ -75,8 +78,16 @@ export function BucketContents({
             prefixes={state.data.prefixes}
             objects={state.data.objects}
             onOpen={setPrefix}
+            onSelect={setSelected}
           />
         ))}
+      <ObjectDetailSheet
+        profile={profile}
+        service={service}
+        bucket={bucket}
+        object={selected}
+        onClose={() => setSelected(null)}
+      />
     </div>
   );
 }
@@ -85,10 +96,16 @@ interface ObjectsTableProps {
   prefixes: string[];
   objects: ObjectEntry[];
   onOpen: (prefix: string) => void;
+  onSelect: (object: ObjectEntry) => void;
 }
 
 /** The folders and objects of one level, folders first. */
-function ObjectsTable({ prefixes, objects, onOpen }: ObjectsTableProps) {
+function ObjectsTable({
+  prefixes,
+  objects,
+  onOpen,
+  onSelect,
+}: ObjectsTableProps) {
   if (prefixes.length === 0 && objects.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
@@ -130,14 +147,22 @@ function ObjectsTable({ prefixes, objects, onOpen }: ObjectsTableProps) {
             </TableRow>
           ))}
           {objects.map((obj) => (
-            <TableRow key={obj.key}>
+            <TableRow
+              key={obj.key}
+              className="cursor-pointer"
+              onClick={() => onSelect(obj)}
+            >
               <TableCell>
-                <span className="flex min-w-0 items-center gap-2">
+                <button
+                  type="button"
+                  className="flex w-full min-w-0 items-center gap-2 text-left hover:underline"
+                  onClick={() => onSelect(obj)}
+                >
                   <EntryIcon folder={false} />
                   <span className="truncate font-mono text-sm" title={obj.key}>
                     {baseName(obj.key)}
                   </span>
-                </span>
+                </button>
               </TableCell>
               <TableCell className="text-right font-mono text-sm">
                 {formatBytes(obj.size)}
@@ -151,31 +176,4 @@ function ObjectsTable({ prefixes, objects, onOpen }: ObjectsTableProps) {
       </Table>
     </div>
   );
-}
-
-/** The last path segment of a key or prefix ("a/b/c.txt" -> "c.txt"). */
-function baseName(key: string): string {
-  const trimmed = key.endsWith("/") ? key.slice(0, -1) : key;
-  const i = trimmed.lastIndexOf("/");
-  return i >= 0 ? trimmed.slice(i + 1) : trimmed;
-}
-
-/** Human-readable byte size, e.g. "1.2 KB". */
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB", "TB"];
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  return `${value.toFixed(1)} ${units[unit]}`;
-}
-
-/** A locale date-time for a modified timestamp, blank when absent/unparseable. */
-function formatTime(value?: string): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
 }

@@ -38,3 +38,18 @@ export async function listObjects(
     signal,
   );
 }
+
+/**
+ * The URL that streams one object's contents as a download. The endpoint sets
+ * `Content-Disposition: attachment`, so navigating to it (or following an
+ * anchor) saves the file rather than rendering it.
+ */
+export function objectDownloadUrl(
+  profile: string,
+  service: string,
+  bucket: string,
+  key: string,
+): string {
+  const query = new URLSearchParams({ bucket, key });
+  return `/api/profiles/${encodeURIComponent(profile)}/services/${encodeURIComponent(service)}/object?${query.toString()}`;
+}

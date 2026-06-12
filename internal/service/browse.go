@@ -1,6 +1,9 @@
 package service
 
-import "context"
+import (
+	"context"
+	"io"
+)
 
 // Browser is an optional capability a Service implements when its store can be
 // explored as buckets of folder-organised objects — the backend of the UI's
@@ -14,6 +17,18 @@ type Browser interface {
 	// sub-folders (common prefixes) and the objects directly at that level. An
 	// empty prefix lists the bucket's root.
 	Objects(ctx context.Context, spec Spec, bucket, prefix string) (*ObjectListing, error)
+
+	// Object opens one object for download: a reader the caller must close
+	// along with the object's size and content type.
+	Object(ctx context.Context, spec Spec, bucket, key string) (io.ReadCloser, ObjectContent, error)
+}
+
+// ObjectContent is the metadata of an object opened for download.
+type ObjectContent struct {
+	// Size is the object's length in bytes, or 0 when unknown.
+	Size int64
+	// ContentType is the object's MIME type, empty when unknown.
+	ContentType string
 }
 
 // ObjectListing is one folder level within a bucket, shaped for JSON.
