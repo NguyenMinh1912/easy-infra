@@ -55,6 +55,21 @@ func TestPostgresIntegration(t *testing.T) {
 	if _, err := conn.Exec(ctx, `INSERT INTO widget (name) VALUES ('a'), ('b'), ('c')`); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
+	// A foreign key from an alphabetically-earlier table ("company") to a later
+	// one ("region") guards constraint ordering: the FK must be restored after
+	// region's primary key exists, even though company is dumped first.
+	if _, err := conn.Exec(ctx, `CREATE TABLE region (id serial PRIMARY KEY, name text NOT NULL)`); err != nil {
+		t.Fatalf("create region: %v", err)
+	}
+	if _, err := conn.Exec(ctx, `CREATE TABLE company (id serial PRIMARY KEY, region_id integer NOT NULL REFERENCES region (id))`); err != nil {
+		t.Fatalf("create company: %v", err)
+	}
+	if _, err := conn.Exec(ctx, `INSERT INTO region (name) VALUES ('emea')`); err != nil {
+		t.Fatalf("insert region: %v", err)
+	}
+	if _, err := conn.Exec(ctx, `INSERT INTO company (region_id) VALUES (1)`); err != nil {
+		t.Fatalf("insert company: %v", err)
+	}
 	_ = conn.Close(ctx)
 
 	// Back up (capturing verbose logs), wipe, then restore via Apply.
@@ -86,6 +101,11 @@ func TestPostgresIntegration(t *testing.T) {
 	}
 	if count != 3 {
 		t.Errorf("restored row count = %d, want 3", count)
+	}
+	// The foreign key must have survived the round-trip and still enforce
+	// referential integrity.
+	if _, err := conn.Exec(ctx, `INSERT INTO company (region_id) VALUES (999)`); err == nil {
+		t.Error("expected foreign key violation inserting company with unknown region_id, got nil")
 	}
 }
 

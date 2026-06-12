@@ -71,14 +71,33 @@ func dump(ctx context.Context, conn pgConn, w io.Writer, logf func(string, ...an
 		}
 	}
 
-	for _, t := range tables {
-		cons, err := tableConstraints(ctx, conn, t)
-		if err != nil {
-			return err
+	// Emit primary-key and unique constraints before foreign keys: a foreign
+	// key requires a matching unique/primary key on the referenced table to
+	// already exist, and tables are processed in alphabetical order, so a
+	// reference from an earlier table (e.g. "company") to a later one (e.g.
+	// "region") would otherwise fail. Within each pass tables keep their order.
+	emitCons := func(want func(string) bool) error {
+		for _, t := range tables {
+			cons, err := tableConstraints(ctx, conn, t)
+			if err != nil {
+				return err
+			}
+			for _, c := range cons {
+				if !want(c.contype) {
+					continue
+				}
+				out.printf("ALTER TABLE %s.%s ADD CONSTRAINT %s %s;\n", qSchema, quoteIdent(t.name), quoteIdent(c.name), c.def)
+			}
 		}
-		for _, c := range cons {
-			out.printf("ALTER TABLE %s.%s ADD CONSTRAINT %s %s;\n", qSchema, quoteIdent(t.name), quoteIdent(c.name), c.def)
-		}
+		return nil
+	}
+	// First pass: primary key ('p') and unique ('u') constraints that foreign
+	// keys may reference. Second pass: everything else (foreign 'f', check 'c').
+	if err := emitCons(func(t string) bool { return t == "p" || t == "u" }); err != nil {
+		return err
+	}
+	if err := emitCons(func(t string) bool { return t != "p" && t != "u" }); err != nil {
+		return err
 	}
 
 	for _, t := range tables {
@@ -208,15 +227,19 @@ func tableDDL(ctx context.Context, conn pgConn, qSchema string, t table) (string
 	return out, nil
 }
 
-// constraint is a named constraint and its reconstructed definition.
+// constraint is a named constraint, its reconstructed definition, and its
+// pg_constraint.contype ('p' primary key, 'u' unique, 'f' foreign key, 'c'
+// check). The type drives emission order so foreign keys land after the
+// primary/unique keys they reference.
 type constraint struct {
-	name string
-	def  string
+	name    string
+	def     string
+	contype string
 }
 
 func tableConstraints(ctx context.Context, conn pgConn, t table) ([]constraint, error) {
 	rows, err := conn.Query(ctx, `
-		SELECT conname, pg_get_constraintdef(oid)
+		SELECT conname, pg_get_constraintdef(oid), contype::text
 		FROM pg_constraint
 		WHERE conrelid = $1
 		ORDER BY conname`, t.oid)
@@ -227,7 +250,7 @@ func tableConstraints(ctx context.Context, conn pgConn, t table) ([]constraint, 
 	var cons []constraint
 	for rows.Next() {
 		var c constraint
-		if err := rows.Scan(&c.name, &c.def); err != nil {
+		if err := rows.Scan(&c.name, &c.def, &c.contype); err != nil {
 			return nil, err
 		}
 		cons = append(cons, c)
