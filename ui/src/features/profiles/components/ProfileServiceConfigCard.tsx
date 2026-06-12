@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Plus, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,8 @@ export interface ProfileServiceConfigCardProps {
   rows: ConfigRow[];
   onChange: (rows: ConfigRow[]) => void;
   disabled?: boolean;
+  /** Extra content rendered below the rows, e.g. a connection-check button. */
+  footer?: ReactNode;
 }
 
 /**
@@ -36,6 +39,7 @@ export function ProfileServiceConfigCard({
   rows,
   onChange,
   disabled,
+  footer,
 }: ProfileServiceConfigCardProps) {
   const update = (index: number, patch: Partial<ConfigRow>) =>
     onChange(rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
@@ -91,6 +95,7 @@ export function ProfileServiceConfigCard({
             <Plus />
             Add setting
           </Button>
+          {footer}
         </div>
       </CardContent>
     </Card>
