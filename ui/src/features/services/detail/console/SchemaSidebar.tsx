@@ -1,4 +1,5 @@
-import { Check, ChevronsUpDown, Table2 } from "lucide-react";
+import { Check, ChevronsUpDown, Search, Table2 } from "lucide-react";
+import { useMemo, useState } from "react";
 
 import {
   DropdownMenu,
@@ -6,6 +7,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRemainingHeight } from "@/hooks/useRemainingHeight";
 import { useResizableWidth } from "@/hooks/useResizableWidth";
@@ -54,6 +56,16 @@ export function SchemaSidebar({
     key: "console-schema-sidebar",
     ...WIDTH,
   });
+  // Free-text filter over the table names, applied case-insensitively.
+  const [filter, setFilter] = useState("");
+  const query = filter.trim().toLowerCase();
+  const filteredTables = useMemo(
+    () =>
+      query
+        ? tables.filter((table) => table.name.toLowerCase().includes(query))
+        : tables,
+    [tables, query],
+  );
   return (
     <aside
       style={{ width }}
@@ -100,7 +112,7 @@ export function SchemaSidebar({
 
       <div className="space-y-1">
         <p className="text-xs font-medium text-muted-foreground">
-          Tables{!loading && !unavailable && ` (${tables.length})`}
+          Tables{!loading && !unavailable && ` (${filteredTables.length})`}
         </p>
         {loading ? (
           <div className="space-y-1.5">
@@ -115,33 +127,55 @@ export function SchemaSidebar({
         ) : tables.length === 0 ? (
           <p className="text-xs text-muted-foreground">No tables.</p>
         ) : (
-          <ul
-            ref={ref}
-            style={{ maxHeight: maxHeight ?? undefined }}
-            className="space-y-0.5 overflow-y-auto"
-          >
-            {tables.map((table) => (
-              <li
-                key={table.name}
-                title={`${table.name} · ${table.columns.length} columns${
-                  onTableOpen ? " · double-click to preview rows" : ""
-                }`}
-                onDoubleClick={() => onTableOpen?.(table)}
-                className={cn(
-                  "flex items-center gap-2 rounded-sm px-2 py-1 text-sm",
-                  "text-foreground",
-                  onTableOpen &&
-                    "cursor-pointer select-none hover:bg-muted",
-                )}
+          <>
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
+              <Input
+                type="search"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder="Filter tables…"
+                aria-label="Filter tables by name"
+                className="h-8 pl-8 text-sm"
+              />
+            </div>
+            {filteredTables.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                No tables match “{filter.trim()}”.
+              </p>
+            ) : (
+              <ul
+                ref={ref}
+                style={{ maxHeight: maxHeight ?? undefined }}
+                className="space-y-0.5 overflow-y-auto"
               >
-                <Table2
-                  className="size-4 shrink-0 text-muted-foreground"
-                  aria-hidden
-                />
-                <span className="truncate">{table.name}</span>
-              </li>
-            ))}
-          </ul>
+                {filteredTables.map((table) => (
+                  <li
+                    key={table.name}
+                    title={`${table.name} · ${table.columns.length} columns${
+                      onTableOpen ? " · double-click to preview rows" : ""
+                    }`}
+                    onDoubleClick={() => onTableOpen?.(table)}
+                    className={cn(
+                      "flex items-center gap-2 rounded-sm px-2 py-1 text-sm",
+                      "text-foreground",
+                      onTableOpen &&
+                        "cursor-pointer select-none hover:bg-muted",
+                    )}
+                  >
+                    <Table2
+                      className="size-4 shrink-0 text-muted-foreground"
+                      aria-hidden
+                    />
+                    <span className="truncate">{table.name}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
       </div>
 
