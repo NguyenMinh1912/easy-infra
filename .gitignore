@@ -1,6 +1,10 @@
 # Compiled binary
 /easy-infra
 
+# Go toolchain bootstrapped by `make install` when the user has no system `go`
+# (see scripts/ensure-go.sh).
+/.go/
+
 # Tool-owned state and credential-bearing profile env files.
 # The project config (easy-infra.yml, service definitions) IS tracked;
 # profiles under .easy-infra/profiles/ hold secrets and are not.
