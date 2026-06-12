@@ -15,6 +15,8 @@ interface Screen {
   content: ReactNode;
   /** Render the screen at full remaining width instead of the centered cap. */
   fullWidth?: boolean;
+  /** Hide the page header to reclaim vertical space (screen renders its own). */
+  hideHeader?: boolean;
 }
 
 /** Map the current hash route onto the screen to render. */
@@ -36,6 +38,7 @@ function screenForRoute(route: string): Screen {
       subtitle: meta.blurb,
       content: <ServiceDetailPage name={name} profile={profile} />,
       fullWidth: true,
+      hideHeader: true,
     };
   }
   const settings = route.match(/^\/profiles\/(.+)\/settings$/);
@@ -68,11 +71,12 @@ function screenForRoute(route: string): Screen {
  */
 export default function App() {
   const route = useHashRoute();
-  const { title, subtitle, content, fullWidth } = screenForRoute(route);
+  const { title, subtitle, content, fullWidth, hideHeader } =
+    screenForRoute(route);
 
   return (
     <AdminLayout fullWidth={fullWidth}>
-      <PageHeader title={title} subtitle={subtitle} />
+      {!hideHeader && <PageHeader title={title} subtitle={subtitle} />}
       {content}
       <Toaster position="bottom-right" richColors closeButton />
     </AdminLayout>
