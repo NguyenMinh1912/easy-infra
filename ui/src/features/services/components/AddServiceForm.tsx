@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus } from "lucide-react";
+import { Loader2, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type { CatalogEntry } from "@/types/service";
@@ -58,7 +58,7 @@ export function AddServiceForm({ available, busy, onAdd }: AddServiceFormProps) 
         ))}
       </select>
       <Button type="submit" size="sm" disabled={busy || !selected}>
-        <Plus />
+        {busy ? <Loader2 className="animate-spin" /> : <Plus />}
         Add service
       </Button>
     </form>

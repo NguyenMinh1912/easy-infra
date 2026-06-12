@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { Toaster } from "@/components/ui/sonner";
 import { DashboardPage } from "@/features/dashboard";
 import { ProfilesPage } from "@/features/profiles";
 import { ServicesPage } from "@/features/services";
@@ -49,6 +50,7 @@ export default function App() {
     <AdminLayout>
       <PageHeader title={title} subtitle={subtitle} />
       {content}
+      <Toaster position="bottom-right" richColors closeButton />
     </AdminLayout>
   );
 }
