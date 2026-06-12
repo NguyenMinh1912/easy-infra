@@ -7,4 +7,10 @@ import type { ServiceDefinition } from "@/types/service";
  */
 export interface OverviewProps {
   service: ServiceDefinition;
+  /**
+   * Set when the page is profile-scoped (`#/profiles/{p}/services/{s}`).
+   * Profile-aware panels (e.g. the postgres console) only render with it —
+   * the connection env is per-profile.
+   */
+  profile?: string;
 }

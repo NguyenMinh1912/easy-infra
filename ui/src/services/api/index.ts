@@ -24,6 +24,7 @@ export type {
   BackupList,
   SnapshotsResponse,
 } from "./services";
+export { executeQuery, getSchema } from "./console";
 export {
   activateProfile,
   checkServiceConnection,

@@ -14,6 +14,8 @@ import { ServiceDetailLayout } from "./ServiceDetailLayout";
 interface ServiceDetailPageProps {
   /** Service to show, taken from the `#/services/{name}` route. */
   name: string;
+  /** Profile scoping the page, when reached via `#/profiles/{p}/services/{name}`. */
+  profile?: string;
 }
 
 /**
@@ -23,7 +25,7 @@ interface ServiceDetailPageProps {
  * navbar carries the service action menu; the overview is service-specific
  * (postgres ships its own).
  */
-export function ServiceDetailPage({ name }: ServiceDetailPageProps) {
+export function ServiceDetailPage({ name, profile }: ServiceDetailPageProps) {
   const { state } = useServices();
 
   switch (state.status) {
@@ -58,7 +60,7 @@ export function ServiceDetailPage({ name }: ServiceDetailPageProps) {
           key={service.name}
           actions={<ServiceActions service={service} />}
         >
-          <Overview service={service} />
+          <Overview service={service} profile={profile} />
         </ServiceDetailLayout>
       );
     }
