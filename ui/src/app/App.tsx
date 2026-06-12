@@ -1,8 +1,40 @@
+import type { ReactNode } from "react";
+
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { DashboardPage } from "@/features/dashboard";
+import { ProfilesPage } from "@/features/profiles";
 import { ServicesPage } from "@/features/services";
 import { useHashRoute } from "@/hooks/useHashRoute";
+
+interface Screen {
+  title: string;
+  subtitle: string;
+  content: ReactNode;
+}
+
+/** Map the current hash route onto the screen to render. */
+function screenForRoute(route: string): Screen {
+  if (route.startsWith("/services")) {
+    return {
+      title: "Services",
+      subtitle: "Manage the services your project defines",
+      content: <ServicesPage />,
+    };
+  }
+  if (route.startsWith("/profiles")) {
+    return {
+      title: "Profiles",
+      subtitle: "Create, switch, and remove environment profiles",
+      content: <ProfilesPage />,
+    };
+  }
+  return {
+    title: "Dashboard",
+    subtitle: "Local/dev infrastructure overview",
+    content: <DashboardPage />,
+  };
+}
 
 /**
  * App shell. Owns the page chrome (admin layout, header) and selects the active
@@ -11,26 +43,12 @@ import { useHashRoute } from "@/hooks/useHashRoute";
  */
 export default function App() {
   const route = useHashRoute();
+  const { title, subtitle, content } = screenForRoute(route);
 
   return (
     <AdminLayout>
-      {route.startsWith("/services") ? (
-        <>
-          <PageHeader
-            title="Services"
-            subtitle="Manage the services your project defines"
-          />
-          <ServicesPage />
-        </>
-      ) : (
-        <>
-          <PageHeader
-            title="Dashboard"
-            subtitle="Local/dev infrastructure overview"
-          />
-          <DashboardPage />
-        </>
-      )}
+      <PageHeader title={title} subtitle={subtitle} />
+      {content}
     </AdminLayout>
   );
 }

@@ -23,7 +23,7 @@ interface NavItem {
  */
 const navItems: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, route: "/" },
-  { label: "Profiles", icon: Layers },
+  { label: "Profiles", icon: Layers, route: "/profiles" },
   { label: "Services", icon: Boxes, route: "/services" },
   { label: "Backup", icon: Database },
 ];

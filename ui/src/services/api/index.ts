@@ -8,3 +8,9 @@ export {
   updateService,
   deleteService,
 } from "./services";
+export {
+  activateProfile,
+  createProfile,
+  deleteProfile,
+  listProfiles,
+} from "./profiles";
