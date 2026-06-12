@@ -23,7 +23,7 @@ export function QueryResultTable({ result }: QueryResultTableProps) {
   return (
     <div className="space-y-2">
       {result.columns.length > 0 ? (
-        <div className="overflow-x-auto rounded-md border border-border">
+        <div className="max-h-[90vh] overflow-auto rounded-md border border-border">
           <Table>
             <TableHeader>
               <TableRow>

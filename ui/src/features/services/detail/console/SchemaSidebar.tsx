@@ -95,7 +95,7 @@ export function SchemaSidebar({
         ) : tables.length === 0 ? (
           <p className="text-xs text-muted-foreground">No tables.</p>
         ) : (
-          <ul className="space-y-0.5">
+          <ul className="max-h-[90vh] space-y-0.5 overflow-y-auto">
             {tables.map((table) => (
               <li
                 key={table.name}
