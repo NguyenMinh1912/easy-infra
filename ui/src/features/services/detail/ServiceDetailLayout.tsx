@@ -19,7 +19,7 @@ export function ServiceDetailLayout({
 }: ServiceDetailLayoutProps) {
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-end gap-3 border-b border-border pb-3">
+      <div className="-mx-6 -mt-10 flex h-16 items-center justify-end gap-3 border-b border-border px-6">
         {actions}
       </div>
       <div>{children}</div>
