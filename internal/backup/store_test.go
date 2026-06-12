@@ -71,6 +71,61 @@ func TestSessionLifecycle(t *testing.T) {
 	}
 }
 
+// TestListAndDeleteSessions exercises paginated listing (newest first) and
+// deletion of a session together with its logs.
+func TestListAndDeleteSessions(t *testing.T) {
+	store := openTemp(t)
+
+	var ids []string
+	for _, svc := range []string{"postgres", "redis", "minio"} {
+		sess, err := store.CreateSession(svc, "default")
+		if err != nil {
+			t.Fatalf("CreateSession: %v", err)
+		}
+		ids = append(ids, sess.ID)
+	}
+
+	if n, err := store.CountSessions(); err != nil || n != 3 {
+		t.Fatalf("CountSessions = (%d, %v), want 3", n, err)
+	}
+
+	// Newest first: the last created session leads the list.
+	page, err := store.ListSessions(2, 0)
+	if err != nil {
+		t.Fatalf("ListSessions: %v", err)
+	}
+	if len(page) != 2 || page[0].Service != "minio" {
+		t.Fatalf("ListSessions(2,0) = %+v, want minio,redis", page)
+	}
+	rest, err := store.ListSessions(2, 2)
+	if err != nil {
+		t.Fatalf("ListSessions: %v", err)
+	}
+	if len(rest) != 1 || rest[0].Service != "postgres" {
+		t.Fatalf("ListSessions(2,2) = %+v, want postgres", rest)
+	}
+
+	// Deleting drops the session and its logs.
+	if err := store.AppendLog(ids[0], "line"); err != nil {
+		t.Fatalf("AppendLog: %v", err)
+	}
+	if err := store.Delete(ids[0]); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, err := store.Get(ids[0]); err != ErrNotFound {
+		t.Errorf("Get after delete = %v, want ErrNotFound", err)
+	}
+	if logs, err := store.Logs(ids[0], 0); err != nil || len(logs) != 0 {
+		t.Errorf("Logs after delete = (%v, %v), want none", logs, err)
+	}
+	if n, err := store.CountSessions(); err != nil || n != 2 {
+		t.Errorf("CountSessions after delete = (%d, %v), want 2", n, err)
+	}
+	if err := store.Delete("nope"); err != ErrNotFound {
+		t.Errorf("Delete unknown = %v, want ErrNotFound", err)
+	}
+}
+
 func TestGetUnknown(t *testing.T) {
 	store := openTemp(t)
 	if _, err := store.Get("nope"); err != ErrNotFound {

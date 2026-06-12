@@ -27,7 +27,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, route: "/" },
   { label: "Services", icon: Boxes, route: "/services" },
-  { label: "Backup", icon: Database },
+  { label: "Backups", icon: Database, route: "/backups" },
 ];
 
 /**

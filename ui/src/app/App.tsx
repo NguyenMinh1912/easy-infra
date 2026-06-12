@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Toaster } from "@/components/ui/sonner";
+import { BackupsPage } from "@/features/backups";
 import { DashboardPage } from "@/features/dashboard";
 import { ProfilesPage, ProfileSettingsPage } from "@/features/profiles";
 import { metaFor, ServiceDetailPage, ServicesPage } from "@/features/services";
@@ -34,6 +35,13 @@ function screenForRoute(route: string): Screen {
       title: "Services",
       subtitle: "Manage the services your project defines",
       content: <ServicesPage />,
+    };
+  }
+  if (route.startsWith("/backups")) {
+    return {
+      title: "Backups",
+      subtitle: "Browse, inspect, and remove backup sessions",
+      content: <BackupsPage />,
     };
   }
   const profileService = route.match(/^\/profiles\/(.+)\/services\/(.+)$/);
