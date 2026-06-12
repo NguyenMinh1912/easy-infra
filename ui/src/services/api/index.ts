@@ -10,6 +10,8 @@ export {
   startServiceBackup,
   getBackup,
   cancelBackup,
+  listBackups,
+  deleteBackup,
   listSnapshots,
   startServiceApply,
 } from "./services";
@@ -18,6 +20,7 @@ export type {
   BackupSession,
   BackupLog,
   BackupPoll,
+  BackupList,
   SnapshotsResponse,
 } from "./services";
 export {

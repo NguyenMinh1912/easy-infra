@@ -77,6 +77,18 @@ export interface BackupPoll {
   logs: BackupLog[];
 }
 
+/** Response of GET /api/backups: a page of sessions plus pagination info. */
+export interface BackupList {
+  /** False when the folder has no easy-infra project; sessions is then empty. */
+  initialized: boolean;
+  sessions: BackupSession[];
+  /** Total sessions across all pages. */
+  total: number;
+  /** 1-based page number echoed back by the server. */
+  page: number;
+  pageSize: number;
+}
+
 /**
  * Start (or re-attach to) a background backup of a service for the active
  * profile. If one is already running for the service, the server returns that
@@ -110,6 +122,23 @@ export function cancelBackup(id: string): Promise<BackupSession> {
     "POST",
     `/backups/${encodeURIComponent(id)}/cancel`,
   );
+}
+
+/** Fetch a page of backup sessions (newest first) across all services. */
+export function listBackups(
+  page: number,
+  pageSize: number,
+  signal?: AbortSignal,
+): Promise<BackupList> {
+  return apiGet<BackupList>(`/backups?page=${page}&pageSize=${pageSize}`, signal);
+}
+
+/**
+ * Delete a finished backup session, its logs, and its snapshot on disk. The
+ * server rejects deleting a running session — cancel it first.
+ */
+export function deleteBackup(id: string): Promise<void> {
+  return apiSend<void>("DELETE", `/backups/${encodeURIComponent(id)}`);
 }
 
 // --- Apply / restore ---------------------------------------------------------

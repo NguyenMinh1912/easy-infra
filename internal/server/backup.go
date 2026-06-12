@@ -308,6 +308,114 @@ func contains(xs []string, s string) bool {
 	return false
 }
 
+// defaultPageSize and maxPageSize bound the backup list pagination.
+const (
+	defaultPageSize = 10
+	maxPageSize     = 100
+)
+
+// handleListBackups returns a page of backup sessions, newest first, for the
+// Backups screen. The list spans every service and profile, so the whole backup
+// history is browsable in one place. An uninitialized project has no sessions
+// (and we avoid creating the database for a bare folder).
+func (s *Server) handleListBackups(w http.ResponseWriter, r *http.Request) {
+	page, pageSize := paginationParams(r)
+
+	if _, err := project.Load(s.paths, s.reg); err != nil {
+		if errors.Is(err, project.ErrNotInitialized) {
+			writeJSON(w, http.StatusOK, backupListResponse{
+				Sessions: []sessionJSON{}, Page: page, PageSize: pageSize,
+			})
+			return
+		}
+		s.writeProjectError(w, err)
+		return
+	}
+
+	store, err := s.backups.Store()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	total, err := store.CountSessions()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	sessions, err := store.ListSessions(pageSize, (page-1)*pageSize)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	out := make([]sessionJSON, 0, len(sessions))
+	for _, sess := range sessions {
+		out = append(out, toSessionJSON(sess))
+	}
+	writeJSON(w, http.StatusOK, backupListResponse{
+		Initialized: true,
+		Sessions:    out,
+		Total:       total,
+		Page:        page,
+		PageSize:    pageSize,
+	})
+}
+
+// handleDeleteBackup removes a finished backup session, its logs, and the
+// snapshot folder it produced. A running session must be cancelled first — its
+// goroutine is still writing — so deleting one is rejected with 409.
+func (s *Server) handleDeleteBackup(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	store, err := s.backups.Store()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	sess, err := store.Get(id)
+	if errors.Is(err, backup.ErrNotFound) {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("backup %q not found", id))
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if sess.Status == backup.StatusRunning {
+		writeError(w, http.StatusConflict, "cancel the running backup before deleting it")
+		return
+	}
+
+	if err := store.Delete(id); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// Drop the snapshot artifact on disk too, so deleting the record leaves
+	// nothing behind. Best-effort: the record is already gone.
+	if sess.Snapshot != "" {
+		_ = os.RemoveAll(filepath.Join(service.BackupsDir(sess.Profile), sess.Snapshot))
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// paginationParams reads the `page` (1-based) and `pageSize` query parameters,
+// applying defaults and clamping the size so a client cannot request an
+// unbounded page.
+func paginationParams(r *http.Request) (page, pageSize int) {
+	page, pageSize = 1, defaultPageSize
+	if v, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && v > 0 {
+		page = v
+	}
+	if v, err := strconv.Atoi(r.URL.Query().Get("pageSize")); err == nil && v > 0 {
+		pageSize = v
+	}
+	if pageSize > maxPageSize {
+		pageSize = maxPageSize
+	}
+	return page, pageSize
+}
+
 // handleGetBackup returns a session's current status plus any log lines after
 // the `after` query cursor, so the UI can poll for incremental progress.
 func (s *Server) handleGetBackup(w http.ResponseWriter, r *http.Request) {
@@ -389,6 +497,16 @@ type snapshotsResponse struct {
 type backupPollResponse struct {
 	Session sessionJSON      `json:"session"`
 	Logs    []backup.LogLine `json:"logs"`
+}
+
+// backupListResponse is returned by GET /api/backups: a page of sessions plus
+// the total count and the page coordinates the client requested.
+type backupListResponse struct {
+	Initialized bool          `json:"initialized"`
+	Sessions    []sessionJSON `json:"sessions"`
+	Total       int           `json:"total"`
+	Page        int           `json:"page"`
+	PageSize    int           `json:"pageSize"`
 }
 
 func toSessionJSON(s backup.Session) sessionJSON {

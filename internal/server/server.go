@@ -57,8 +57,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/services/{name}/backup", s.handleStartBackup)
 	mux.HandleFunc("GET /api/services/{name}/snapshots", s.handleListSnapshots)
 	mux.HandleFunc("POST /api/services/{name}/apply", s.handleStartApply)
+	mux.HandleFunc("GET /api/backups", s.handleListBackups)
 	mux.HandleFunc("GET /api/backups/{id}", s.handleGetBackup)
 	mux.HandleFunc("POST /api/backups/{id}/cancel", s.handleCancelBackup)
+	mux.HandleFunc("DELETE /api/backups/{id}", s.handleDeleteBackup)
 	mux.Handle("/", s.spaHandler())
 	return mux
 }

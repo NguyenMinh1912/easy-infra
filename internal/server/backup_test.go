@@ -98,6 +98,68 @@ func TestBackupReattachesRunning(t *testing.T) {
 	}
 }
 
+func decodeList(t *testing.T, rec *httptest.ResponseRecorder) backupListResponse {
+	t.Helper()
+	var got backupListResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode list: %v (body %q)", err, rec.Body.String())
+	}
+	return got
+}
+
+// TestBackupListAndDelete runs two backups, lists them (newest first, with
+// pagination), then deletes one and confirms it leaves the list.
+func TestBackupListAndDelete(t *testing.T) {
+	paths, reg := initProject(t, "postgres", "redis")
+	srv := New(reg, paths, emptyUI)
+
+	first := decodeSession(t, doRequest(t, srv, http.MethodPost, "/api/services/redis/backup", ""))
+	pollUntilDone(t, srv, first.ID)
+	second := decodeSession(t, doRequest(t, srv, http.MethodPost, "/api/services/redis/backup", ""))
+	pollUntilDone(t, srv, second.ID)
+
+	list := decodeList(t, doRequest(t, srv, http.MethodGet, "/api/backups", ""))
+	if !list.Initialized || list.Total != 2 || len(list.Sessions) != 2 {
+		t.Fatalf("list = %+v, want 2 initialized sessions", list)
+	}
+	if list.Sessions[0].ID != second.ID {
+		t.Errorf("first listed = %q, want newest %q", list.Sessions[0].ID, second.ID)
+	}
+
+	// Pagination: one per page, second page holds the older session.
+	pageTwo := decodeList(t, doRequest(t, srv, http.MethodGet, "/api/backups?page=2&pageSize=1", ""))
+	if pageTwo.Total != 2 || len(pageTwo.Sessions) != 1 || pageTwo.Sessions[0].ID != first.ID {
+		t.Errorf("page 2 = %+v, want only the older session %q", pageTwo, first.ID)
+	}
+
+	// Delete the newer one; the list shrinks to just the older session.
+	rec := doRequest(t, srv, http.MethodDelete, "/api/backups/"+second.ID, "")
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("delete code = %d, want 204 (body %q)", rec.Code, rec.Body.String())
+	}
+	after := decodeList(t, doRequest(t, srv, http.MethodGet, "/api/backups", ""))
+	if after.Total != 1 || len(after.Sessions) != 1 || after.Sessions[0].ID != first.ID {
+		t.Errorf("after delete = %+v, want only %q", after, first.ID)
+	}
+}
+
+func TestBackupDeleteUnknownID(t *testing.T) {
+	paths, reg := initProject(t, "postgres")
+	srv := New(reg, paths, emptyUI)
+	rec := doRequest(t, srv, http.MethodDelete, "/api/backups/nope", "")
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("code = %d, want 404", rec.Code)
+	}
+}
+
+func TestBackupListNotInitialized(t *testing.T) {
+	srv := New(service.DefaultRegistry(), newPaths(t), emptyUI)
+	list := decodeList(t, doRequest(t, srv, http.MethodGet, "/api/backups", ""))
+	if list.Initialized || len(list.Sessions) != 0 {
+		t.Errorf("list = %+v, want uninitialized with no sessions", list)
+	}
+}
+
 func TestBackupNotInitialized(t *testing.T) {
 	srv := New(service.DefaultRegistry(), newPaths(t), emptyUI)
 	rec := doRequest(t, srv, http.MethodPost, "/api/services/redis/backup", "")
