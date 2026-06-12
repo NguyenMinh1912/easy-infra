@@ -40,7 +40,10 @@ export function QueryResultTable({ result }: QueryResultTableProps) {
             <TableHeader>
               <TableRow>
                 {result.columns.map((column, i) => (
-                  <TableHead key={i} className="font-mono">
+                  <TableHead
+                    key={i}
+                    className="sticky top-0 z-10 bg-background font-mono shadow-[inset_0_-1px_0_var(--border)]"
+                  >
                     {column}
                   </TableHead>
                 ))}
