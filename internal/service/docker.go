@@ -3,8 +3,10 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -51,17 +53,30 @@ type realDocker struct{}
 // the named container first so an existing one is reused (started if stopped)
 // rather than re-created, making provisioning safe to run repeatedly.
 func (realDocker) EnsureContainer(ctx context.Context, c containerSpec) error {
-	switch running, exists, err := dockerInspectRunning(ctx, c.Name); {
-	case err != nil:
+	state, err := dockerInspect(ctx, c.Name)
+	if err != nil {
 		return err
-	case exists && running:
-		return nil
-	case exists:
-		// Present but stopped — start it back up rather than re-creating.
-		if out, err := runDocker(ctx, "start", c.Name); err != nil {
-			return fmt.Errorf("starting container %s: %w: %s", c.Name, err, out)
+	}
+	if state.exists {
+		// Docker bakes published ports into a container at creation time, so a
+		// restart re-binds whatever port the container was created with — ignoring
+		// any change to the profile's port. If the existing container's ports no
+		// longer match the desired spec (e.g. the user moved 5432 -> 5433 to dodge
+		// a clash), reusing it would re-bind the stale port and fail; replace it.
+		if !samePorts(state.ports, c.Ports) {
+			if out, err := runDocker(ctx, "rm", "-f", c.Name); err != nil {
+				return fmt.Errorf("replacing container %s: %w: %s", c.Name, err, out)
+			}
+		} else if state.running {
+			return nil
+		} else {
+			// Present, stopped, and still matches the spec — start it back up
+			// rather than re-creating.
+			if out, err := runDocker(ctx, "start", c.Name); err != nil {
+				return fmt.Errorf("starting container %s: %w: %s", c.Name, err, out)
+			}
+			return nil
 		}
-		return nil
 	}
 
 	args := []string{"run", "-d", "--name", c.Name}
@@ -78,22 +93,91 @@ func (realDocker) EnsureContainer(ctx context.Context, c containerSpec) error {
 	return nil
 }
 
-// dockerInspectRunning reports whether the named container exists and, if so,
-// whether it is running. A container that docker does not know about is reported
-// as (false, false, nil) — the caller then creates it.
-func dockerInspectRunning(ctx context.Context, name string) (running, exists bool, err error) {
-	out, err := runDocker(ctx, "inspect", "-f", "{{.State.Running}}", name)
+// containerState captures what EnsureContainer needs to know about an existing
+// container: whether it exists, whether it is running, and the host ports it was
+// created with (so a stale port binding can be detected).
+type containerState struct {
+	exists  bool
+	running bool
+	ports   []portMapping
+}
+
+// dockerInspect reports the state of the named container. A container that docker
+// does not know about is reported as a zero containerState (exists=false) — the
+// caller then creates it.
+func dockerInspect(ctx context.Context, name string) (containerState, error) {
+	// Combine the running flag and the configured port bindings into one inspect
+	// so EnsureContainer can decide between reuse, restart, and replace.
+	out, err := runDocker(ctx, "inspect", "-f", "{{.State.Running}}|{{json .HostConfig.PortBindings}}", name)
 	if err != nil {
 		// `docker inspect` exits non-zero for an unknown container; treat that as
 		// "does not exist" rather than a hard failure, but surface a daemon that is
 		// genuinely unreachable. The "no such object/container" wording varies by
 		// docker version and casing, so match case-insensitively.
 		if low := strings.ToLower(out); strings.Contains(low, "no such object") || strings.Contains(low, "no such container") {
-			return false, false, nil
+			return containerState{}, nil
 		}
-		return false, false, fmt.Errorf("inspecting container %s: %w: %s", name, err, strings.TrimSpace(out))
+		return containerState{}, fmt.Errorf("inspecting container %s: %w: %s", name, err, strings.TrimSpace(out))
 	}
-	return strings.TrimSpace(out) == "true", true, nil
+	runningStr, bindingsJSON, _ := strings.Cut(strings.TrimSpace(out), "|")
+	ports, err := parsePortBindings(bindingsJSON)
+	if err != nil {
+		return containerState{}, fmt.Errorf("inspecting container %s: %w", name, err)
+	}
+	return containerState{exists: true, running: strings.TrimSpace(runningStr) == "true", ports: ports}, nil
+}
+
+// parsePortBindings decodes docker's HostConfig.PortBindings JSON (e.g.
+// {"5432/tcp":[{"HostIp":"127.0.0.1","HostPort":"5433"}]}) into portMappings.
+// An empty or null value means no published ports.
+func parsePortBindings(s string) ([]portMapping, error) {
+	s = strings.TrimSpace(s)
+	if s == "" || s == "null" {
+		return nil, nil
+	}
+	var raw map[string][]struct {
+		HostIP   string `json:"HostIp"`
+		HostPort string `json:"HostPort"`
+	}
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return nil, fmt.Errorf("parsing port bindings %q: %w", s, err)
+	}
+	var ports []portMapping
+	for containerPort, binds := range raw {
+		cp, err := strconv.Atoi(strings.SplitN(containerPort, "/", 2)[0])
+		if err != nil {
+			continue
+		}
+		for _, b := range binds {
+			hp, err := strconv.Atoi(b.HostPort)
+			if err != nil {
+				continue
+			}
+			ports = append(ports, portMapping{Host: hp, Container: cp})
+		}
+	}
+	return ports, nil
+}
+
+// samePorts reports whether two sets of port mappings are equal, ignoring order.
+func samePorts(a, b []portMapping) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	type key struct{ host, container int }
+	counts := make(map[key]int, len(a))
+	for _, p := range a {
+		counts[key{p.Host, p.Container}]++
+	}
+	for _, p := range b {
+		counts[key{p.Host, p.Container}]--
+	}
+	for _, n := range counts {
+		if n != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // runDocker runs the docker CLI with args and returns its combined output. The
