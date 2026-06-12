@@ -18,6 +18,7 @@ export {
 } from "./services";
 export type {
   BackupStatus,
+  BackupKind,
   BackupSession,
   BackupLog,
   BackupPoll,

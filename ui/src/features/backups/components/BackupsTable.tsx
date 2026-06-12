@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { metaFor } from "@/features/services";
 import type { BackupSession } from "@/services/api";
 
+import { KIND_META } from "../kind-meta";
 import { STATUS_META } from "../status-meta";
 
 interface BackupsTableProps {
@@ -42,6 +43,7 @@ export function BackupsTable({
         <TableRow>
           <TableHead>Service</TableHead>
           <TableHead>Profile</TableHead>
+          <TableHead>Type</TableHead>
           <TableHead>Status</TableHead>
           <TableHead>Created</TableHead>
           <TableHead className="text-right">Actions</TableHead>
@@ -51,6 +53,8 @@ export function BackupsTable({
         {sessions.map((session) => {
           const svc = metaFor(session.service);
           const SvcIcon = svc.icon;
+          const kind = KIND_META[session.kind];
+          const KindIcon = kind.icon;
           const status = STATUS_META[session.status];
           const StatusIcon = status.icon;
           const running = session.status === "running";
@@ -78,6 +82,12 @@ export function BackupsTable({
               </TableCell>
               <TableCell className="font-mono text-xs text-muted-foreground">
                 {session.profile}
+              </TableCell>
+              <TableCell>
+                <Badge variant={kind.variant}>
+                  <KindIcon className="size-3" aria-hidden />
+                  {kind.label}
+                </Badge>
               </TableCell>
               <TableCell>
                 <Badge variant={status.variant}>
