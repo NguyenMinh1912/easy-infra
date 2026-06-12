@@ -165,7 +165,15 @@ export function PostgresConsoleTabs({
           </div>
 
           {tabs.map((tab) => (
-            <TabsContent key={tab.id} value={tab.id} className="mt-2">
+            // Keep every console mounted (hidden when inactive) so switching
+            // tabs preserves each console's result table — results live in the
+            // console's local state and would otherwise be lost on unmount.
+            <TabsContent
+              key={tab.id}
+              value={tab.id}
+              forceMount
+              className="mt-2 data-[state=inactive]:hidden"
+            >
               <PostgresConsole
                 profile={profile}
                 service={service}
