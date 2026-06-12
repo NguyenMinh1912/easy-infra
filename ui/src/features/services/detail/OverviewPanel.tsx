@@ -6,8 +6,8 @@ import type { OverviewProps } from "./types";
 
 /**
  * Generic service overview: identity (icon + label + blurb) and a read-only
- * summary of the definition. The fallback used for any service without a
- * tailored overview, so a new backend service renders without a code change.
+ * summary of the config. The fallback used for any service without a tailored
+ * overview, so a new backend service renders without a code change.
  */
 export function OverviewPanel({ service }: OverviewProps) {
   const meta = metaFor(service.name);
@@ -28,7 +28,7 @@ export function OverviewPanel({ service }: OverviewProps) {
           </div>
         </CardHeader>
       </Card>
-      <DefinitionSummary definition={service.definition} />
+      <DefinitionSummary config={service.config} />
     </div>
   );
 }

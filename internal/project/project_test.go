@@ -9,15 +9,13 @@ import (
 	"github.com/minhnc/easy-infra/internal/state"
 )
 
-// newTestProject builds an in-memory project rooted at a temp dir with the
-// given services defined and no profiles yet.
-func newTestProject(t *testing.T, services ...string) *Project {
+// newTestProject builds an in-memory project rooted at a temp dir with no
+// profiles yet. New profiles scaffold the conventional default services
+// (project.DefaultServices).
+func newTestProject(t *testing.T) *Project {
 	t.Helper()
 	reg := service.DefaultRegistry()
-	cfg, err := config.Scaffold(reg, services...)
-	if err != nil {
-		t.Fatalf("Scaffold config: %v", err)
-	}
+	cfg := config.Scaffold()
 	dir := t.TempDir()
 	return &Project{
 		Config:   cfg,
@@ -32,7 +30,7 @@ func newTestProject(t *testing.T, services ...string) *Project {
 }
 
 func TestAddProfile(t *testing.T) {
-	p := newTestProject(t, "postgres", "redis")
+	p := newTestProject(t)
 
 	prof, err := p.AddProfile("staging")
 	if err != nil {
@@ -59,7 +57,7 @@ func TestAddProfile(t *testing.T) {
 }
 
 func TestAddProfileDuplicate(t *testing.T) {
-	p := newTestProject(t, "postgres", "redis")
+	p := newTestProject(t)
 	if _, err := p.AddProfile("staging"); err != nil {
 		t.Fatalf("AddProfile: %v", err)
 	}
@@ -69,7 +67,7 @@ func TestAddProfileDuplicate(t *testing.T) {
 }
 
 func TestRemoveProfile(t *testing.T) {
-	p := newTestProject(t, "postgres", "redis")
+	p := newTestProject(t)
 	if _, err := p.AddProfile("staging"); err != nil {
 		t.Fatalf("AddProfile: %v", err)
 	}
@@ -86,7 +84,7 @@ func TestRemoveProfile(t *testing.T) {
 }
 
 func TestForkLocalProfile(t *testing.T) {
-	p := newTestProject(t, "postgres", "redis")
+	p := newTestProject(t)
 	if _, err := p.AddProfile("staging"); err != nil {
 		t.Fatalf("AddProfile: %v", err)
 	}
@@ -117,7 +115,7 @@ func TestForkLocalProfile(t *testing.T) {
 }
 
 func TestForkLocalProfilePreservesPriorForks(t *testing.T) {
-	p := newTestProject(t, "postgres", "redis")
+	p := newTestProject(t)
 	if _, err := p.AddProfile("staging"); err != nil {
 		t.Fatalf("AddProfile: %v", err)
 	}
@@ -148,14 +146,14 @@ func TestForkLocalProfilePreservesPriorForks(t *testing.T) {
 }
 
 func TestRemoveProfileMissing(t *testing.T) {
-	p := newTestProject(t, "postgres", "redis")
+	p := newTestProject(t)
 	if err := p.RemoveProfile("nope"); err == nil {
 		t.Error("RemoveProfile(missing) error = nil, want error")
 	}
 }
 
 func TestRemoveProfileActive(t *testing.T) {
-	p := newTestProject(t, "postgres", "redis")
+	p := newTestProject(t)
 	if _, err := p.AddProfile("staging"); err != nil {
 		t.Fatalf("AddProfile: %v", err)
 	}

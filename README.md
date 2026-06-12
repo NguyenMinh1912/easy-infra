@@ -9,22 +9,24 @@ Supported services: **postgres**, **minio**, **redis**, **localstack**.
 
 ## Concepts
 
-Configuration is split into two layers:
+Configuration is organised around **profiles**:
 
-- **Project config** (`easy-infra.yml`, YAML) is user-authored and the source of
-  truth for *which* services the project uses and their environment-independent
-  definition (image/version). It is tracked in git and contains no secrets.
-- **Profile config** (`.easy-infra/profiles/<name>.yml`, YAML) describes *how to
-  reach* each service in one environment — host, port, user, password, database
-  URL. A **profile** is one such environment (e.g. `default`, `ci`, `staging`).
-  Profiles hold credentials and are gitignored.
+- **Project config** (`easy-infra.yml`, YAML) is a thin marker that records the
+  schema version and tells the tool a folder is an easy-infra project. It is
+  tracked in git and holds no services or secrets.
+- **Profile config** (`.easy-infra/profiles/<name>.yml`, YAML) is where services
+  live. Each profile **owns its own services** and can add, edit, or remove them
+  independently. A profile is keyed by service name, and each service block holds
+  the full config in one place — both *what* the service is (e.g. `version`,
+  `cleanable`) and *how to reach* it (host, port, user, password, database URL).
+  A **profile** is one environment (e.g. `default`, `ci`, `staging`); profiles
+  hold credentials and are gitignored.
 - **State** (`.easy-infra/state.json`, JSON) is tool-owned. It records derived
   facts — most importantly the active profile — and is not hand-edited. Exactly
   one profile is active at a time.
 
-See [`easy-infra.example.yml`](./easy-infra.example.yml) (project) and
-[`easy-infra.profile.example.yml`](./easy-infra.profile.example.yml) (profile)
-for worked examples.
+See [`easy-infra.profile.example.yml`](./easy-infra.profile.example.yml) for a
+worked profile example.
 
 ## Commands
 

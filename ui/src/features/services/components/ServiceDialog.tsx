@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import type { CatalogEntry, ServiceConfig, ServiceDefinition } from "@/types/service";
+import type { CatalogEntry, ServiceConfig, ServiceInstance } from "@/types/service";
 import { metaFor } from "../catalog-meta";
 import {
   DefinitionEditor,
@@ -23,7 +23,7 @@ import {
 /** What the dialog is doing: adding a new service, or editing an existing one. */
 export type DialogState =
   | { mode: "add" }
-  | { mode: "edit"; service: ServiceDefinition };
+  | { mode: "edit"; service: ServiceInstance };
 
 interface ServiceDialogProps {
   dialog: DialogState;
@@ -55,7 +55,7 @@ export function ServiceDialog({
   const isAdd = dialog.mode === "add";
 
   const defaultFor = (name: string): ServiceConfig =>
-    catalog.find((entry) => entry.name === name)?.defaultDefinition ?? {};
+    catalog.find((entry) => entry.name === name)?.defaultConfig ?? {};
 
   const [selected, setSelected] = useState(() =>
     isAdd ? (available[0]?.name ?? "") : dialog.service.name,
@@ -63,7 +63,7 @@ export function ServiceDialog({
   const [rows, setRows] = useState<DefinitionRow[]>(() =>
     isAdd
       ? rowsFromConfig(defaultFor(available[0]?.name ?? ""))
-      : rowsFromConfig(dialog.service.definition),
+      : rowsFromConfig(dialog.service.config),
   );
 
   // Switching the chosen service in add mode re-seeds the settings editor with
@@ -95,8 +95,8 @@ export function ServiceDialog({
           </DialogTitle>
           <DialogDescription>
             {isAdd
-              ? "Choose a service, adjust its settings, then add it to this project."
-              : "Edit this service's settings for the project."}
+              ? "Choose a service, adjust its settings, then add it to this profile."
+              : "Edit this service's settings for this profile."}
           </DialogDescription>
         </DialogHeader>
 

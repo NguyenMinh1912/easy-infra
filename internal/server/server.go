@@ -48,14 +48,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/profiles/{name}", s.handleUpdateProfile)
 	mux.HandleFunc("DELETE /api/profiles/{name}", s.handleDeleteProfile)
 	mux.HandleFunc("POST /api/profiles/{name}/activate", s.handleActivateProfile)
+	mux.HandleFunc("POST /api/profiles/{name}/services", s.handleCreateProfileService)
+	mux.HandleFunc("PUT /api/profiles/{name}/services/{service}", s.handleUpdateProfileService)
+	mux.HandleFunc("DELETE /api/profiles/{name}/services/{service}", s.handleDeleteProfileService)
 	mux.HandleFunc("POST /api/profiles/{name}/services/{service}/check", s.handleCheckConnection)
 	mux.HandleFunc("POST /api/profiles/{name}/services/{service}/query", s.handleConsoleQuery)
 	mux.HandleFunc("GET /api/profiles/{name}/services/{service}/schema", s.handleConsoleSchema)
 	mux.HandleFunc("GET /api/services/catalog", s.handleServiceCatalog)
-	mux.HandleFunc("GET /api/services", s.handleListServices)
-	mux.HandleFunc("POST /api/services", s.handleCreateService)
-	mux.HandleFunc("PUT /api/services/{name}", s.handleUpdateService)
-	mux.HandleFunc("DELETE /api/services/{name}", s.handleDeleteService)
 	mux.HandleFunc("POST /api/services/{name}/backup", s.handleStartBackup)
 	mux.HandleFunc("GET /api/services/{name}/snapshots", s.handleListSnapshots)
 	mux.HandleFunc("POST /api/services/{name}/apply", s.handleStartApply)
@@ -117,11 +116,22 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		profiles = append(profiles, profile{Name: name, Active: name == active})
 	}
 
+	// Services now belong to a profile, so report the active profile's set. With
+	// no active profile (or one that fails to load) the list is simply empty.
+	services := []string{}
+	if active != "" {
+		if defs, err := proj.ProfileServices(active); err == nil {
+			for _, d := range defs {
+				services = append(services, d.Name)
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, statusResponse{
 		Initialized:   true,
 		ActiveProfile: active,
 		Profiles:      profiles,
-		Services:      proj.Config.ServiceNames(),
+		Services:      services,
 	})
 }
 

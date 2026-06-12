@@ -1,8 +1,9 @@
 # Example easy-infra PROFILE config.
 #
-# A profile describes how to reach each service in one environment (local, ci,
-# staging, a VPS, ...). It is keyed by service name; the services must be the
-# ones defined in the project config (easy-infra.yml).
+# A profile owns its own services and their full config for one environment
+# (local, ci, staging, a VPS, ...). It is keyed by service name; each block holds
+# both what the service is (e.g. `version`, `cleanable`) and how to reach it
+# (host, port, credentials, ...). Add or remove services per profile as needed.
 #
 # Real profiles live at .easy-infra/profiles/<name>.yml and are gitignored
 # because they carry credentials. Copy this file there, e.g.:
@@ -11,6 +12,8 @@
 #   easy-infra use staging
 
 postgres:
+  version: "16"               # image/version for this service
+  cleanable: true             # set false to protect data from `clean`
   host: db.staging.internal   # VPS / host info
   port: 5432
   user: app
@@ -25,10 +28,12 @@ postgres:
   #   url: jdbc:postgresql://app:change-me@db.staging.internal:5432/app?currentSchema=app_dynamic
 
 redis:
+  version: "7"
   host: cache.staging.internal
   port: 6379
 
 minio:
+  version: latest
   host: storage.staging.internal
   port: 9000
   consolePort: 9001
@@ -36,5 +41,7 @@ minio:
   password: change-me
 
 localstack:
+  version: latest
+  services: s3,sqs,sns          # which AWS APIs to emulate
   host: localhost
   port: 4566

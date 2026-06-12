@@ -23,11 +23,11 @@ func TestScaffoldSaveLoadRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if err := loaded.Validate(reg, []string{"postgres", "redis"}); err != nil {
+	if err := loaded.Validate(reg); err != nil {
 		t.Fatalf("Validate roundtripped profile: %v", err)
 	}
 	if _, ok := loaded.Services["postgres"]; !ok {
-		t.Error("expected postgres env after roundtrip")
+		t.Error("expected postgres config after roundtrip")
 	}
 }
 
@@ -61,16 +61,15 @@ func TestListMissingDir(t *testing.T) {
 
 func TestValidate(t *testing.T) {
 	reg := service.DefaultRegistry()
-	defined := []string{"postgres", "redis"}
 
-	// env returns a service's default env config; fatal if the service is
+	// cfg returns a service's default (merged) config; fatal if the service is
 	// somehow unregistered.
-	env := func(name string) service.Config {
+	cfg := func(name string) service.Config {
 		svc, ok := reg.Get(name)
 		if !ok {
 			t.Fatalf("service %q not registered", name)
 		}
-		return svc.DefaultEnv()
+		return service.DefaultConfig(svc)
 	}
 
 	tests := []struct {
@@ -79,41 +78,36 @@ func TestValidate(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "valid covers all defined services",
+			name: "valid",
 			profile: &Profile{Services: map[string]service.Config{
-				"postgres": env("postgres"),
-				"redis":    env("redis"),
+				"postgres": cfg("postgres"),
+				"redis":    cfg("redis"),
 			}},
 			wantErr: false,
 		},
 		{
-			name: "missing a defined service",
+			name:    "no services",
+			profile: &Profile{Services: map[string]service.Config{}},
+			wantErr: true,
+		},
+		{
+			name: "unknown service",
 			profile: &Profile{Services: map[string]service.Config{
-				"postgres": env("postgres"),
+				"mongodb": {},
 			}},
 			wantErr: true,
 		},
 		{
-			name: "configures undefined service",
-			profile: &Profile{Services: map[string]service.Config{
-				"postgres": env("postgres"),
-				"redis":    env("redis"),
-				"minio":    env("minio"),
-			}},
-			wantErr: true,
-		},
-		{
-			name: "invalid env",
+			name: "invalid config",
 			profile: &Profile{Services: map[string]service.Config{
 				"postgres": {"port": 5432}, // missing required host/user/database
-				"redis":    env("redis"),
 			}},
 			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.profile.Validate(reg, defined)
+			err := tt.profile.Validate(reg)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}

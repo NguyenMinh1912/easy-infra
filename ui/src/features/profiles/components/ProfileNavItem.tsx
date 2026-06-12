@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Boxes,
   Check,
@@ -12,15 +12,16 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useAsync } from "@/hooks/useAsync";
+import { getProfileConfig } from "@/services/api";
 import { cn } from "@/lib/utils";
 import type { Profile } from "@/types/status";
 
+import { onProfilesChanged } from "../profiles-events";
 import type { ProfileActions } from "../hooks/useProfiles";
 
 interface ProfileNavItemProps {
   profile: Profile;
-  /** Project service names shown as this profile's submenu. */
-  services: string[];
   /** Current hash route, for highlighting the active service link. */
   route: string;
   actions: Pick<ProfileActions, "activate" | "remove">;
@@ -34,12 +35,29 @@ interface ProfileNavItemProps {
  */
 export function ProfileNavItem({
   profile,
-  services,
   route,
   actions,
 }: ProfileNavItemProps) {
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [nonce, setNonce] = useState(0);
+
+  // Refresh this profile's services when one changes elsewhere (e.g. added on
+  // the Services screen), so the submenu stays in sync.
+  useEffect(() => onProfilesChanged(() => setNonce((n) => n + 1)), []);
+
+  // Load this profile's own services lazily, only once its submenu is open.
+  const servicesState = useAsync(
+    async (signal) =>
+      expanded
+        ? (await getProfileConfig(profile.name, signal)).services.map(
+            (s) => s.name,
+          )
+        : [],
+    [expanded, profile.name, nonce],
+  );
+  const services =
+    servicesState.status === "success" ? servicesState.data : [];
 
   const settingsHref = `#/profiles/${encodeURIComponent(profile.name)}/settings`;
   const settingsActive = route === `/profiles/${profile.name}/settings`;
@@ -135,7 +153,11 @@ export function ProfileNavItem({
 
       {expanded && (
         <ul className="mt-0.5 space-y-0.5 border-l border-border pl-3 ml-3">
-          {services.length === 0 ? (
+          {servicesState.status === "loading" ? (
+            <li className="px-2 py-1.5 text-xs text-muted-foreground">
+              Loading…
+            </li>
+          ) : services.length === 0 ? (
             <li className="px-2 py-1.5 text-xs text-muted-foreground">
               No services defined.
             </li>

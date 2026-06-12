@@ -11,15 +11,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// scaffoldServices are the services included in the scaffolded project and its
-// default profile.
-var scaffoldServices = []string{"postgres", "redis"}
-
 func newInitCmd(reg *service.Registry, paths project.Paths) *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
 		Short: "Initialize a project in the current folder",
-		Long:  "Scaffold the project config (service definitions), a default profile (env settings), and the state file.",
+		Long:  "Scaffold the project marker (easy-infra.yml), a default profile with its services, and the state file.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runInit(cmd, reg, paths)
@@ -32,15 +28,12 @@ func runInit(cmd *cobra.Command, reg *service.Registry, paths project.Paths) err
 		return fmt.Errorf("project already initialized (%s exists)", paths.Config)
 	}
 
-	cfg, err := config.Scaffold(reg, scaffoldServices...)
-	if err != nil {
-		return err
-	}
+	cfg := config.Scaffold()
 	if err := cfg.Save(paths.Config); err != nil {
 		return err
 	}
 
-	prof, err := profile.Scaffold(reg, scaffoldServices...)
+	prof, err := profile.Scaffold(reg, project.DefaultServices...)
 	if err != nil {
 		return err
 	}

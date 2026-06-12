@@ -65,7 +65,7 @@ func (s *Server) handleStartFork(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, fmt.Sprintf("unknown service %q", name))
 		return
 	}
-	def := proj.Config.Services[name]
+	def := env
 	store, err := s.backups.Store()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

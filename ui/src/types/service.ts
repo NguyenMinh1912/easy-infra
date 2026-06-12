@@ -1,26 +1,24 @@
-// Domain models for managing project service definitions. These mirror the
-// JSON contract exposed by `easy-infra serve` under /api/services and are the
-// single source of truth for the shapes flowing through the services feature.
+// Domain models for managing a profile's services. These mirror the JSON
+// contract exposed by `easy-infra serve` and are the single source of truth for
+// the shapes flowing through the services feature.
+//
+// Services belong to profiles: each profile owns its own services, and each
+// service block is a single merged config — both what the service is (e.g.
+// `version`, `cleanable`) and how to reach it (host, port, credentials).
 
-/** A service's project-level definition: a free-form string→value map. */
+/** A service's config: a free-form string→value map. */
 export type ServiceConfig = Record<string, unknown>;
 
-/** One project service definition (easy-infra.yml). */
-export interface ServiceDefinition {
+/** One service within a profile: its name and merged config block. */
+export interface ServiceInstance {
   name: string;
-  definition: ServiceConfig;
+  config: ServiceConfig;
 }
 
-/** Response of GET /api/services. */
-export interface ServicesResponse {
-  initialized: boolean;
-  services: ServiceDefinition[];
-}
-
-/** A service easy-infra supports, with the definition used when adding it. */
+/** A service easy-infra supports, with the default config used when adding it. */
 export interface CatalogEntry {
   name: string;
-  defaultDefinition: ServiceConfig;
+  defaultConfig: ServiceConfig;
 }
 
 /** Response of GET /api/services/catalog. */

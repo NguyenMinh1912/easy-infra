@@ -3,16 +3,10 @@ package config
 import (
 	"path/filepath"
 	"testing"
-
-	"github.com/minhnc/easy-infra/internal/service"
 )
 
 func TestScaffoldSaveLoadRoundtrip(t *testing.T) {
-	reg := service.DefaultRegistry()
-	cfg, err := Scaffold(reg, "postgres", "redis")
-	if err != nil {
-		t.Fatalf("Scaffold: %v", err)
-	}
+	cfg := Scaffold()
 
 	path := filepath.Join(t.TempDir(), "easy-infra.yml")
 	if err := cfg.Save(path); err != nil {
@@ -22,22 +16,15 @@ func TestScaffoldSaveLoadRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if err := loaded.Validate(reg); err != nil {
+	if err := loaded.Validate(); err != nil {
 		t.Fatalf("Validate roundtripped config: %v", err)
 	}
-	if !loaded.HasService("postgres") {
-		t.Error("expected postgres service after roundtrip")
-	}
-}
-
-func TestScaffoldUnknownService(t *testing.T) {
-	if _, err := Scaffold(service.DefaultRegistry(), "mongodb"); err == nil {
-		t.Error("expected error scaffolding unknown service")
+	if loaded.Version != CurrentVersion {
+		t.Errorf("Version = %d, want %d", loaded.Version, CurrentVersion)
 	}
 }
 
 func TestValidate(t *testing.T) {
-	reg := service.DefaultRegistry()
 	tests := []struct {
 		name    string
 		cfg     Config
@@ -45,33 +32,23 @@ func TestValidate(t *testing.T) {
 	}{
 		{
 			name:    "valid",
-			cfg:     Config{Version: CurrentVersion, Services: map[string]service.Config{"redis": {"version": "7"}}},
+			cfg:     Config{Version: CurrentVersion},
 			wantErr: false,
 		},
 		{
 			name:    "wrong version",
-			cfg:     Config{Version: 999, Services: map[string]service.Config{"redis": {}}},
+			cfg:     Config{Version: 999},
 			wantErr: true,
 		},
 		{
-			name:    "no services",
-			cfg:     Config{Version: CurrentVersion},
-			wantErr: true,
-		},
-		{
-			name:    "unknown service",
-			cfg:     Config{Version: CurrentVersion, Services: map[string]service.Config{"mongodb": {}}},
-			wantErr: true,
-		},
-		{
-			name:    "invalid definition",
-			cfg:     Config{Version: CurrentVersion, Services: map[string]service.Config{"redis": {"version": 7}}},
+			name:    "zero version",
+			cfg:     Config{},
 			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.cfg.Validate(reg)
+			err := tt.cfg.Validate()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
