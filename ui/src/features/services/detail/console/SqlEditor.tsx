@@ -8,6 +8,8 @@ import { useMemo, useRef, type MutableRefObject } from "react";
 
 import { useTheme } from "@/components/theme/ThemeProvider";
 
+import { columnCompletionSource } from "./sqlCompletion";
+
 interface SqlEditorProps {
   value: string;
   onChange: (value: string) => void;
@@ -47,8 +49,8 @@ export function SqlEditor({
   const runRef = useRef(onRun);
   runRef.current = onRun;
 
-  const extensions = useMemo(
-    () => [
+  const extensions = useMemo(() => {
+    const exts = [
       sql({ dialect: PostgreSQL, schema, upperCaseKeywords: true }),
       // Highest precedence so Mod-Enter beats the default newline binding.
       Prec.highest(
@@ -62,9 +64,19 @@ export function SqlEditor({
           },
         ]),
       ),
-    ],
-    [schema],
-  );
+    ];
+    // lang-sql suggests table names (and qualified `alias.column`) but not bare
+    // column names in a WHERE/SELECT context; this fills that gap from the
+    // statement's FROM clause. Only meaningful once the schema is known.
+    if (schema) {
+      exts.push(
+        PostgreSQL.language.data.of({
+          autocomplete: columnCompletionSource(schema),
+        }),
+      );
+    }
+    return exts;
+  }, [schema]);
 
   return (
     <CodeMirror
