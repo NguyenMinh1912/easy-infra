@@ -2,11 +2,32 @@ import { Plus, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type { ServiceConfig } from "@/types/service";
 
 /** One editable key/value pair of a service definition. */
 export interface DefinitionRow {
   key: string;
   value: string;
+}
+
+/** Expand a service definition into editable rows (values stringified). */
+export function rowsFromConfig(definition: ServiceConfig): DefinitionRow[] {
+  return Object.entries(definition).map(([key, value]) => ({
+    key,
+    value: String(value),
+  }));
+}
+
+/** Collapse editable rows back into a definition, dropping blank keys. */
+export function configFromRows(rows: DefinitionRow[]): ServiceConfig {
+  const config: ServiceConfig = {};
+  for (const { key, value } of rows) {
+    const trimmed = key.trim();
+    if (trimmed) {
+      config[trimmed] = value;
+    }
+  }
+  return config;
 }
 
 interface DefinitionEditorProps {
