@@ -24,6 +24,7 @@ export type {
   SnapshotsResponse,
 } from "./services";
 export { executeQuery, getSchema } from "./console";
+export { listBuckets, listObjects } from "./browse";
 export {
   activateProfile,
   checkServiceConnection,

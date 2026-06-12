@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -77,6 +78,34 @@ func (f *fakeS3) ListObjects(_ context.Context, bucket string) ([]string, error)
 	}
 	sort.Strings(keys)
 	return keys, nil
+}
+
+func (f *fakeS3) ListObjectsPage(_ context.Context, bucket, prefix string) (objectPage, error) {
+	var page objectPage
+	seen := map[string]bool{}
+	for k := range f.buckets[bucket] {
+		if k == "" || !strings.HasPrefix(k, prefix) {
+			continue
+		}
+		rest := k[len(prefix):]
+		if i := strings.IndexByte(rest, '/'); i >= 0 {
+			// A nested key: surface its immediate sub-folder once.
+			folder := prefix + rest[:i+1]
+			if !seen[folder] {
+				seen[folder] = true
+				page.prefixes = append(page.prefixes, folder)
+			}
+			continue
+		}
+		page.objects = append(page.objects, objectListEntry{
+			key:         k,
+			size:        int64(len(f.buckets[bucket][k])),
+			contentType: f.types[bucket][k],
+		})
+	}
+	sort.Strings(page.prefixes)
+	sort.Slice(page.objects, func(i, j int) bool { return page.objects[i].key < page.objects[j].key })
+	return page, nil
 }
 
 func (f *fakeS3) GetObject(_ context.Context, bucket, key string) (io.ReadCloser, objectInfo, error) {
@@ -225,6 +254,55 @@ func TestMinIOValidateDefinitionBuckets(t *testing.T) {
 		if err := (MinIO{}).ValidateDefinition(cfg); err == nil {
 			t.Errorf("ValidateDefinition(%v): expected an error, got nil", cfg)
 		}
+	}
+}
+
+// TestMinIOBrowse drives the Browser capability: Buckets lists the store's
+// buckets, and Objects lists one folder level — the immediate sub-folders as
+// prefixes and the objects directly at that level, not recursively.
+func TestMinIOBrowse(t *testing.T) {
+	f := newFakeS3()
+	f.put("assets", "logo.png", []byte("PNGDATA"), "image/png")
+	f.put("assets", "docs/readme.txt", []byte("hello"), "text/plain")
+	f.put("assets", "docs/guide/intro.md", []byte("# intro"), "text/markdown")
+	f.put("empty", "", nil, "")
+
+	m := withS3(f)
+	spec := Spec{Env: minioEnv()}
+
+	buckets, err := m.Buckets(context.Background(), spec)
+	if err != nil {
+		t.Fatalf("Buckets: %v", err)
+	}
+	if len(buckets) != 2 || buckets[0] != "assets" || buckets[1] != "empty" {
+		t.Fatalf("Buckets = %v, want [assets empty]", buckets)
+	}
+
+	// Root of "assets": one object (logo.png) and one sub-folder (docs/).
+	root, err := m.Objects(context.Background(), spec, "assets", "")
+	if err != nil {
+		t.Fatalf("Objects(root): %v", err)
+	}
+	if len(root.Prefixes) != 1 || root.Prefixes[0] != "docs/" {
+		t.Errorf("root prefixes = %v, want [docs/]", root.Prefixes)
+	}
+	if len(root.Objects) != 1 || root.Objects[0].Key != "logo.png" {
+		t.Fatalf("root objects = %+v, want only logo.png", root.Objects)
+	}
+	if root.Objects[0].Size != 7 || root.Objects[0].ContentType != "image/png" {
+		t.Errorf("logo.png entry = %+v, want size 7, image/png", root.Objects[0])
+	}
+
+	// Inside "docs/": one object (readme.txt) and one sub-folder (docs/guide/).
+	docs, err := m.Objects(context.Background(), spec, "assets", "docs/")
+	if err != nil {
+		t.Fatalf("Objects(docs/): %v", err)
+	}
+	if len(docs.Prefixes) != 1 || docs.Prefixes[0] != "docs/guide/" {
+		t.Errorf("docs/ prefixes = %v, want [docs/guide/]", docs.Prefixes)
+	}
+	if len(docs.Objects) != 1 || docs.Objects[0].Key != "docs/readme.txt" {
+		t.Errorf("docs/ objects = %+v, want only docs/readme.txt", docs.Objects)
 	}
 }
 

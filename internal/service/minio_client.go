@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
+	"time"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -14,6 +16,21 @@ import (
 type objectInfo struct {
 	Size        int64
 	ContentType string
+}
+
+// objectPage is one folder level of a bucket: the sub-folder prefixes and the
+// objects directly at that level, as returned by a delimited listing.
+type objectPage struct {
+	prefixes []string
+	objects  []objectListEntry
+}
+
+// objectListEntry is one object's key and metadata within a delimited listing.
+type objectListEntry struct {
+	key          string
+	size         int64
+	lastModified time.Time
+	contentType  string
 }
 
 // s3Client is the subset of the S3 / MinIO API the minio lifecycle relies on.
@@ -31,6 +48,10 @@ type s3Client interface {
 	RemoveBucket(ctx context.Context, bucket string) error
 	// ListObjects returns the keys of every object in bucket, recursively.
 	ListObjects(ctx context.Context, bucket string) ([]string, error)
+	// ListObjectsPage lists the immediate children under prefix in bucket,
+	// folder-style: the object entries at that level plus the sub-folder
+	// prefixes (each ending in "/"). An empty prefix lists the bucket root.
+	ListObjectsPage(ctx context.Context, bucket, prefix string) (objectPage, error)
 	// GetObject opens the object's contents for reading and returns its metadata.
 	// The caller closes the reader.
 	GetObject(ctx context.Context, bucket, key string) (io.ReadCloser, objectInfo, error)
@@ -96,6 +117,28 @@ func (c *realS3Client) ListObjects(ctx context.Context, bucket string) ([]string
 		keys = append(keys, obj.Key)
 	}
 	return keys, nil
+}
+
+func (c *realS3Client) ListObjectsPage(ctx context.Context, bucket, prefix string) (objectPage, error) {
+	var page objectPage
+	// A non-recursive listing applies the "/" delimiter: sub-folders come back
+	// as zero-size keys ending in "/", objects as keys at this level.
+	for obj := range c.cl.ListObjects(ctx, bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: false}) {
+		if obj.Err != nil {
+			return objectPage{}, obj.Err
+		}
+		if strings.HasSuffix(obj.Key, "/") {
+			page.prefixes = append(page.prefixes, obj.Key)
+			continue
+		}
+		page.objects = append(page.objects, objectListEntry{
+			key:          obj.Key,
+			size:         obj.Size,
+			lastModified: obj.LastModified,
+			contentType:  obj.ContentType,
+		})
+	}
+	return page, nil
 }
 
 func (c *realS3Client) GetObject(ctx context.Context, bucket, key string) (io.ReadCloser, objectInfo, error) {
