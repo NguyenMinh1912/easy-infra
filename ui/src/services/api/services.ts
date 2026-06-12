@@ -193,15 +193,18 @@ export function startServiceApply(
 /**
  * Start (or re-attach to) a background fork of a service from the active
  * profile to a local container, seeded from `snapshot`. An empty `snapshot`
- * means "create a new backup of the source first, then fork from it".
+ * means "create a new backup of the source first, then fork from it". An
+ * optional `port` publishes the local container on a different port than the
+ * source; omitting it keeps the source's port.
  */
 export function startServiceFork(
   name: string,
   snapshot: string,
+  port?: number,
 ): Promise<BackupSession> {
   return apiSend<BackupSession>(
     "POST",
     `/services/${encodeURIComponent(name)}/fork`,
-    { snapshot },
+    port ? { snapshot, port } : { snapshot },
   );
 }

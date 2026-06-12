@@ -68,6 +68,7 @@ export function ServiceActions({ service }: ServiceActionsProps) {
   const [forkOpen, setForkOpen] = useState(false);
   const [forkLogOpen, setForkLogOpen] = useState(false);
   const [forkSnapshot, setForkSnapshot] = useState("");
+  const [forkPort, setForkPort] = useState<number | undefined>(undefined);
 
   const run = (action: ServiceAction) => {
     if (action.id === "backup") {
@@ -161,8 +162,9 @@ export function ServiceActions({ service }: ServiceActionsProps) {
         serviceName={service.name}
         open={forkOpen}
         onOpenChange={setForkOpen}
-        onFork={(snapshot) => {
+        onFork={(snapshot, port) => {
           setForkSnapshot(snapshot);
+          setForkPort(port);
           setForkLogOpen(true);
         }}
       />
@@ -170,6 +172,7 @@ export function ServiceActions({ service }: ServiceActionsProps) {
       <ForkLogDialog
         serviceName={service.name}
         snapshot={forkSnapshot}
+        port={forkPort}
         open={forkLogOpen}
         onOpenChange={setForkLogOpen}
       />

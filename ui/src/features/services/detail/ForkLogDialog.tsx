@@ -29,6 +29,8 @@ interface ForkLogDialogProps {
   serviceName: string;
   /** Snapshot version to seed from; an empty string takes a fresh backup. */
   snapshot: string;
+  /** Local port to publish the fork on; undefined keeps the source's port. */
+  port?: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -72,12 +74,13 @@ const STATUS_META: Record<
 export function ForkLogDialog({
   serviceName,
   snapshot,
+  port,
   open,
   onOpenChange,
 }: ForkLogDialogProps) {
   const starter = useCallback(
-    () => startServiceFork(serviceName, snapshot),
-    [serviceName, snapshot],
+    () => startServiceFork(serviceName, snapshot, port),
+    [serviceName, snapshot, port],
   );
   const { state, start, cancel, reset } = useBackupSession(starter);
   const logRef = useRef<HTMLDivElement>(null);

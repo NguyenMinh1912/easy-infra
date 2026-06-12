@@ -32,6 +32,9 @@ func (s *Server) handleStartFork(w http.ResponseWriter, r *http.Request) {
 
 	var body struct {
 		Snapshot string `json:"snapshot"`
+		// Port overrides the local container's published port; 0 keeps the
+		// source profile's port.
+		Port int `json:"port"`
 	}
 	if r.Body != nil {
 		// An empty body is allowed and means "create a new backup"; only a
@@ -106,6 +109,16 @@ func (s *Server) handleStartFork(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	// Let the caller publish the local container on a different port than the
+	// source (e.g. to avoid clashing with a port already in use locally). 0
+	// keeps the derived source port.
+	if body.Port != 0 {
+		if body.Port < 1 || body.Port > 65535 {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("port must be between 1 and 65535, got %d", body.Port))
+			return
+		}
+		localEnv["port"] = body.Port
 	}
 	localProfile, err := proj.ForkLocalProfile(sourceProfile, name, localEnv)
 	if err != nil {
