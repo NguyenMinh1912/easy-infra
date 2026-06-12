@@ -26,7 +26,12 @@ export type {
   SnapshotsResponse,
 } from "./services";
 export { executeQuery, getSchema } from "./console";
-export { listBuckets, listObjects, objectDownloadUrl } from "./browse";
+export {
+  listBuckets,
+  listObjects,
+  objectDownloadUrl,
+  objectsArchiveUrl,
+} from "./browse";
 export {
   activateProfile,
   checkServiceConnection,
