@@ -15,7 +15,9 @@ import {
 import { Button } from "@/components/ui/button";
 import type { ServiceDefinition } from "@/types/service";
 
+import { ApplyLogDialog } from "./ApplyLogDialog";
 import { BackupLogDialog } from "./BackupLogDialog";
+import { SnapshotSelectDialog } from "./SnapshotSelectDialog";
 
 interface ServiceActionsProps {
   service: ServiceDefinition;
@@ -39,18 +41,26 @@ const ACTIONS: ServiceAction[] = [
 
 /**
  * The navbar action bar for a single service: status, backup, apply, and clean,
- * laid out as a horizontal row of buttons. Backup is wired to the API — it
- * confirms, then streams the snapshot's verbose log into a modal. The remaining
+ * laid out as a horizontal row of buttons. Backup and apply are wired to the
+ * API — backup confirms then streams the snapshot's verbose log into a modal;
+ * apply picks a backup version then streams the restore's log. The remaining
  * operations run server-side but are not exposed yet, so they announce that they
  * are coming rather than calling a missing endpoint.
  */
 export function ServiceActions({ service }: ServiceActionsProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
+  const [snapshotOpen, setSnapshotOpen] = useState(false);
+  const [applyOpen, setApplyOpen] = useState(false);
+  const [applySnapshot, setApplySnapshot] = useState("");
 
   const run = (action: ServiceAction) => {
     if (action.id === "backup") {
       setConfirmOpen(true);
+      return;
+    }
+    if (action.id === "apply") {
+      setSnapshotOpen(true);
       return;
     }
     toast.info(`"${action.label}" is not available yet`, {
@@ -109,6 +119,23 @@ export function ServiceActions({ service }: ServiceActionsProps) {
         serviceName={service.name}
         open={logOpen}
         onOpenChange={setLogOpen}
+      />
+
+      <SnapshotSelectDialog
+        serviceName={service.name}
+        open={snapshotOpen}
+        onOpenChange={setSnapshotOpen}
+        onApply={(snapshot) => {
+          setApplySnapshot(snapshot);
+          setApplyOpen(true);
+        }}
+      />
+
+      <ApplyLogDialog
+        serviceName={service.name}
+        snapshot={applySnapshot}
+        open={applyOpen}
+        onOpenChange={setApplyOpen}
       />
     </>
   );

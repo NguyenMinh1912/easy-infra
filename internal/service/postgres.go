@@ -94,17 +94,27 @@ func (p Postgres) Health(ctx context.Context, spec Spec) error {
 
 // Apply implements Service: ensure the target database exists (creating it if
 // absent) and, if a snapshot exists for the active profile, restore postgres
-// from the latest one. With no snapshot yet (or one without a postgres
-// artifact), Apply just leaves the freshly-created empty database in place.
+// from it. spec.Snapshot selects which version to restore; when empty the latest
+// snapshot is used. With no snapshot yet (or one without a postgres artifact),
+// Apply just leaves the freshly-created empty database in place.
 func (p Postgres) Apply(ctx context.Context, spec Spec) error {
+	spec.logf("ensuring database exists\n")
 	if err := p.ensureDatabase(ctx, spec); err != nil {
 		return err
 	}
-	dir, err := latestSnapshotDir(spec.Profile)
-	if err != nil {
-		return err
+
+	var dir string
+	if spec.Snapshot != "" {
+		dir = SnapshotDir(spec.Profile, spec.Snapshot)
+	} else {
+		latest, err := latestSnapshotDir(spec.Profile)
+		if err != nil {
+			return err
+		}
+		dir = latest
 	}
 	if dir == "" {
+		spec.logf("no snapshot found for profile %q; leaving the database empty\n", spec.Profile)
 		return nil
 	}
 	path := filepath.Join(dir, postgresBackupFile)
@@ -112,6 +122,7 @@ func (p Postgres) Apply(ctx context.Context, spec Spec) error {
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			spec.logf("snapshot %s has no postgres artifact; nothing to restore\n", filepath.Base(dir))
 			return nil
 		}
 		return fmt.Errorf("opening backup %s: %w", path, err)
@@ -124,9 +135,11 @@ func (p Postgres) Apply(ctx context.Context, spec Spec) error {
 	}
 	defer conn.Close(ctx)
 
+	spec.logf("restoring from %s\n", path)
 	if err := restore(ctx, conn, f); err != nil {
 		return fmt.Errorf("restoring %s: %w", path, err)
 	}
+	spec.logf("restore complete\n")
 	return nil
 }
 

@@ -17,14 +17,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { startServiceBackup } from "@/services/api";
+import { startServiceApply } from "@/services/api";
 import { cn } from "@/lib/utils";
 
 import { useBackupSession, type SessionState } from "./useBackupSession";
 
-interface BackupLogDialogProps {
-  /** Service to back up; also drives the stream once the dialog opens. */
+interface ApplyLogDialogProps {
+  /** Service to apply; also drives the stream once the dialog opens. */
   serviceName: string;
+  /** Snapshot version to restore; an empty string applies the latest. */
+  snapshot: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -34,50 +36,51 @@ const STATUS_META: Record<
   SessionState["status"],
   { icon: LucideIcon; label: string; spin?: boolean; className?: string }
 > = {
-  idle: { icon: Loader2, label: "Backup" },
-  running: { icon: Loader2, label: "Backing up…", spin: true },
+  idle: { icon: Loader2, label: "Apply" },
+  running: { icon: Loader2, label: "Applying…", spin: true },
   success: {
     icon: CheckCircle2,
-    label: "Backup complete",
+    label: "Apply complete",
     className: "text-emerald-600 dark:text-emerald-400",
   },
   unsupported: {
     icon: Info,
-    label: "Backup not supported yet",
+    label: "Apply not supported yet",
     className: "text-muted-foreground",
   },
   cancelled: {
     icon: Ban,
-    label: "Backup cancelled",
+    label: "Apply cancelled",
     className: "text-muted-foreground",
   },
   error: {
     icon: XCircle,
-    label: "Backup failed",
+    label: "Apply failed",
     className: "text-destructive",
   },
 };
 
 /**
- * Modal showing a backup's verbose log, polled from the server. It starts (or
+ * Modal showing an apply's verbose log, polled from the server. It starts (or
  * re-attaches to) the run when opened and accumulates log lines via
- * {@link useBackupSession}. While running it offers "Cancel backup" (stops it
- * server-side) and "Close" — closing only stops polling, so the backup keeps
+ * {@link useBackupSession}. While running it offers "Cancel apply" (stops it
+ * server-side) and "Close" — closing only stops polling, so the apply keeps
  * running and can be re-attached by reopening.
  */
-export function BackupLogDialog({
+export function ApplyLogDialog({
   serviceName,
+  snapshot,
   open,
   onOpenChange,
-}: BackupLogDialogProps) {
+}: ApplyLogDialogProps) {
   const starter = useCallback(
-    () => startServiceBackup(serviceName),
-    [serviceName],
+    () => startServiceApply(serviceName, snapshot),
+    [serviceName, snapshot],
   );
   const { state, start, cancel, reset } = useBackupSession(starter);
   const logRef = useRef<HTMLDivElement>(null);
 
-  // Start (or re-attach) on open; stop polling — but keep the backup — on close.
+  // Start (or re-attach) on open; stop polling — but keep the apply — on close.
   useEffect(() => {
     if (open) {
       void start();
@@ -97,6 +100,7 @@ export function BackupLogDialog({
   const running = state.status === "running";
   const meta = STATUS_META[state.status];
   const Icon = meta.icon;
+  const version = snapshot || "the latest snapshot";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -110,8 +114,10 @@ export function BackupLogDialog({
             {meta.label}
           </DialogTitle>
           <DialogDescription>
-            Snapshotting <span className="font-mono">{serviceName}</span> for the
-            active profile. This runs in the background — closing keeps it going.
+            Restoring <span className="font-mono">{serviceName}</span> for the
+            active profile from{" "}
+            <span className="font-mono">{version}</span>. This runs in the
+            background — closing keeps it going.
           </DialogDescription>
         </DialogHeader>
 
@@ -122,7 +128,7 @@ export function BackupLogDialog({
           aria-live="polite"
         >
           {state.lines.length === 0 && running ? (
-            <p className="text-muted-foreground">Starting backup…</p>
+            <p className="text-muted-foreground">Starting apply…</p>
           ) : (
             state.lines.map((line, i) => (
               <div key={i} className="whitespace-pre-wrap break-all">
@@ -135,9 +141,9 @@ export function BackupLogDialog({
               {state.error}
             </div>
           )}
-          {state.status === "success" && state.snapshot && (
+          {state.status === "success" && (
             <div className={cn("mt-2", meta.className)}>
-              Saved snapshot {state.snapshot}
+              Restored from {state.snapshot || version}
             </div>
           )}
         </div>
@@ -145,7 +151,7 @@ export function BackupLogDialog({
         <DialogFooter>
           {running && (
             <Button variant="destructive" onClick={() => void cancel()}>
-              Cancel backup
+              Cancel apply
             </Button>
           )}
           <Button

@@ -12,6 +12,8 @@ export {
   cancelBackup,
   listBackups,
   deleteBackup,
+  listSnapshots,
+  startServiceApply,
 } from "./services";
 export type {
   BackupStatus,
@@ -19,6 +21,7 @@ export type {
   BackupLog,
   BackupPoll,
   BackupList,
+  SnapshotsResponse,
 } from "./services";
 export {
   activateProfile,
