@@ -5,10 +5,16 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAsync } from "@/hooks/useAsync";
 import { getSchema } from "@/services/api";
+import type { TableInfo } from "@/types/console";
 
 import { PostgresConsole } from "./PostgresConsole";
 import { SchemaSidebar } from "./SchemaSidebar";
 import { useConsoleTabs } from "./useConsoleTabs";
+
+/** Quote a SQL identifier, doubling any embedded quotes. */
+function quoteIdent(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
 
 interface PostgresConsoleTabsProps {
   /** Profile whose saved connection config the statements run against. */
@@ -31,8 +37,20 @@ export function PostgresConsoleTabs({
   profile,
   service,
 }: PostgresConsoleTabsProps) {
-  const { tabs, activeId, setActive, addTab, removeTab, updateSql } =
+  const { tabs, activeId, setActive, addTab, openTab, removeTab, updateSql } =
     useConsoleTabs(profile, service);
+
+  // The console opened pre-filled (via a table double-click) that should run its
+  // statement once on mount. Transient — never persisted — so reopening the page
+  // doesn't re-run it.
+  const [pendingRunId, setPendingRunId] = useState<string | null>(null);
+
+  // Open a fresh console previewing a table's rows, then run it.
+  const openTable = (table: TableInfo) => {
+    const ref = `${quoteIdent(table.schema)}.${quoteIdent(table.name)}`;
+    const id = openTab(table.name, `SELECT *\nFROM ${ref}\nLIMIT 50;`);
+    setPendingRunId(id);
+  };
 
   // The schema browsed in the sidebar. Defaults to the connection's configured
   // schema once introspection lands (see the effect below).
@@ -101,6 +119,7 @@ export function PostgresConsoleTabs({
         selected={selectedSchema}
         onSelect={setSelectedSchema}
         tables={tablesInSchema}
+        onTableOpen={openTable}
       />
       <div className="min-w-0 flex-1">
         <Tabs value={activeId} onValueChange={setActive}>
@@ -154,6 +173,8 @@ export function PostgresConsoleTabs({
                 onSqlChange={(sql) => updateSql(tab.id, sql)}
                 completionSchema={completionSchema}
                 schemaResolved={schemaState.status === "success"}
+                autoRun={tab.id === pendingRunId}
+                onAutoRun={() => setPendingRunId(null)}
               />
             </TabsContent>
           ))}

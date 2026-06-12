@@ -23,6 +23,8 @@ interface SchemaSidebarProps {
   onSelect: (schema: string) => void;
   /** Tables belonging to the selected schema. */
   tables: TableInfo[];
+  /** Double-clicking a table opens a console previewing its rows. */
+  onTableOpen?: (table: TableInfo) => void;
 }
 
 /**
@@ -37,6 +39,7 @@ export function SchemaSidebar({
   selected,
   onSelect,
   tables,
+  onTableOpen,
 }: SchemaSidebarProps) {
   // Cap the table list to the height still visible below it so a long list
   // scrolls within the sidebar instead of growing the page past the viewport.
@@ -107,10 +110,15 @@ export function SchemaSidebar({
             {tables.map((table) => (
               <li
                 key={table.name}
-                title={`${table.name} · ${table.columns.length} columns`}
+                title={`${table.name} · ${table.columns.length} columns${
+                  onTableOpen ? " · double-click to preview rows" : ""
+                }`}
+                onDoubleClick={() => onTableOpen?.(table)}
                 className={cn(
                   "flex items-center gap-2 rounded-sm px-2 py-1 text-sm",
                   "text-foreground",
+                  onTableOpen &&
+                    "cursor-pointer select-none hover:bg-muted",
                 )}
               >
                 <Table2
