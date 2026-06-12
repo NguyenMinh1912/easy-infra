@@ -4,7 +4,7 @@ import { AdminLayout } from "@/components/layout/AdminLayout";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Toaster } from "@/components/ui/sonner";
 import { DashboardPage } from "@/features/dashboard";
-import { ProfilesPage } from "@/features/profiles";
+import { ProfilesPage, ProfileSettingsPage } from "@/features/profiles";
 import { ServicesPage } from "@/features/services";
 import { useHashRoute } from "@/hooks/useHashRoute";
 
@@ -21,6 +21,15 @@ function screenForRoute(route: string): Screen {
       title: "Services",
       subtitle: "Manage the services your project defines",
       content: <ServicesPage />,
+    };
+  }
+  const settings = route.match(/^\/profiles\/(.+)\/settings$/);
+  if (settings) {
+    const name = decodeURIComponent(settings[1]);
+    return {
+      title: "Profile settings",
+      subtitle: `Configure the "${name}" profile`,
+      content: <ProfileSettingsPage name={name} />,
     };
   }
   if (route.startsWith("/profiles")) {

@@ -12,5 +12,7 @@ export {
   activateProfile,
   createProfile,
   deleteProfile,
+  getProfileConfig,
   listProfiles,
+  updateProfileConfig,
 } from "./profiles";

@@ -2,12 +2,39 @@
 // `ProfilesResult` type. Components and hooks depend on these functions, not on
 // `fetch` directly.
 
-import type { ProfilesResult } from "@/types/profiles";
+import type {
+  ProfileConfig,
+  ProfileServiceConfig,
+  ProfilesResult,
+} from "@/types/profiles";
 import { apiGet, apiSend } from "./client";
 
 /** List the project's profiles and the active one. */
 export function listProfiles(signal?: AbortSignal): Promise<ProfilesResult> {
   return apiGet<ProfilesResult>("/profiles", signal);
+}
+
+/** Fetch a single profile's per-service environment config. */
+export function getProfileConfig(
+  name: string,
+  signal?: AbortSignal,
+): Promise<ProfileConfig> {
+  return apiGet<ProfileConfig>(
+    `/profiles/${encodeURIComponent(name)}`,
+    signal,
+  );
+}
+
+/** Replace a profile's per-service environment config; returns the saved config. */
+export function updateProfileConfig(
+  name: string,
+  services: ProfileServiceConfig[],
+): Promise<ProfileConfig> {
+  return apiSend<ProfileConfig>(
+    "PUT",
+    `/profiles/${encodeURIComponent(name)}`,
+    { services },
+  );
 }
 
 /** Create a profile scaffolded with default service config; returns the new list. */

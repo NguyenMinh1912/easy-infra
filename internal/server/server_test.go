@@ -293,6 +293,92 @@ func TestDeleteProfileMissing(t *testing.T) {
 	}
 }
 
+func decodeProfileConfig(t *testing.T, rec *httptest.ResponseRecorder) profileConfigResponse {
+	t.Helper()
+	var got profileConfigResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode profile config: %v (body %q)", err, rec.Body.String())
+	}
+	return got
+}
+
+func TestGetProfileConfig(t *testing.T) {
+	paths, reg := initProject(t, "postgres", "redis")
+	srv := New(reg, paths, emptyUI)
+
+	rec := doRequest(t, srv, http.MethodGet, "/api/profiles/default", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+	}
+	got := decodeProfileConfig(t, rec)
+	if got.Name != "default" {
+		t.Errorf("Name = %q, want \"default\"", got.Name)
+	}
+	// Scaffolded profile carries env config for every defined service, sorted.
+	if len(got.Services) != 2 || got.Services[0].Name != "postgres" || got.Services[1].Name != "redis" {
+		t.Errorf("Services = %+v, want sorted postgres,redis", got.Services)
+	}
+	if len(got.Services[0].Config) == 0 {
+		t.Error("postgres config is empty, want default env keys")
+	}
+}
+
+func TestGetProfileConfigMissing(t *testing.T) {
+	paths, reg := initProject(t, "postgres")
+	srv := New(reg, paths, emptyUI)
+
+	rec := doRequest(t, srv, http.MethodGet, "/api/profiles/ghost", "")
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("code = %d, want 404", rec.Code)
+	}
+}
+
+func TestUpdateProfileConfig(t *testing.T) {
+	paths, reg := initProject(t, "postgres")
+	srv := New(reg, paths, emptyUI)
+
+	// Load the scaffolded config, change one value, and write it back.
+	current := decodeProfileConfig(t, doRequest(t, srv, http.MethodGet, "/api/profiles/default", ""))
+	current.Services[0].Config["host"] = "db.internal"
+	body, err := json.Marshal(profileConfigRequest{Services: current.Services})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	rec := doRequest(t, srv, http.MethodPut, "/api/profiles/default", string(body))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+	}
+
+	// The change is persisted and visible on the next read.
+	got := decodeProfileConfig(t, doRequest(t, srv, http.MethodGet, "/api/profiles/default", ""))
+	if got.Services[0].Config["host"] != "db.internal" {
+		t.Errorf("host = %v, want \"db.internal\"", got.Services[0].Config["host"])
+	}
+}
+
+func TestUpdateProfileConfigMissingService(t *testing.T) {
+	paths, reg := initProject(t, "postgres")
+	srv := New(reg, paths, emptyUI)
+
+	// Omitting the defined service leaves the profile invalid; the update is
+	// refused rather than silently dropping config.
+	rec := doRequest(t, srv, http.MethodPut, "/api/profiles/default", `{"services":[]}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("code = %d, want 400 (body %q)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdateProfileConfigMissingProfile(t *testing.T) {
+	paths, reg := initProject(t, "postgres")
+	srv := New(reg, paths, emptyUI)
+
+	rec := doRequest(t, srv, http.MethodPut, "/api/profiles/ghost", `{"services":[]}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("code = %d, want 400", rec.Code)
+	}
+}
+
 func TestSPAUnbuilt(t *testing.T) {
 	srv := New(service.DefaultRegistry(), newPaths(t), emptyUI)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)

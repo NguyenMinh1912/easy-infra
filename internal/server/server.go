@@ -36,6 +36,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("GET /api/profiles", s.handleListProfiles)
 	mux.HandleFunc("POST /api/profiles", s.handleCreateProfile)
+	mux.HandleFunc("GET /api/profiles/{name}", s.handleGetProfile)
+	mux.HandleFunc("PUT /api/profiles/{name}", s.handleUpdateProfile)
 	mux.HandleFunc("DELETE /api/profiles/{name}", s.handleDeleteProfile)
 	mux.HandleFunc("POST /api/profiles/{name}/activate", s.handleActivateProfile)
 	mux.HandleFunc("GET /api/services/catalog", s.handleServiceCatalog)
