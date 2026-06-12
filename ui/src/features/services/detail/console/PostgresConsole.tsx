@@ -1,3 +1,4 @@
+import { EditorView } from "@uiw/react-codemirror";
 import { AlertCircle, Play } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -10,6 +11,7 @@ import type { QueryResult } from "@/types/console";
 
 import { QueryResultTable } from "./QueryResultTable";
 import { SqlEditor } from "./SqlEditor";
+import { statementToRun } from "./statement";
 
 interface PostgresConsoleProps {
   /** Profile whose saved connection config the statements run against. */
@@ -28,12 +30,18 @@ type RunState =
 /**
  * SQL console against one profile's postgres: an editor with keyword and
  * schema-aware completion, a run action, and the last execution's result.
- * Statement failures come back inside the response envelope, so they render
- * as an expected outcome, not a transport error.
+ * The editor may hold several `;`-separated statements; a run executes just
+ * one — the selection if there is one, otherwise the statement under the
+ * cursor. Statement failures come back inside the response envelope, so they
+ * render as an expected outcome, not a transport error.
  */
 export function PostgresConsole({ profile, service }: PostgresConsoleProps) {
   const [sql, setSql] = useState("");
   const [run, setRun] = useState<RunState>({ status: "idle" });
+
+  // The live editor view, used to read the cursor/selection when choosing
+  // which statement to run.
+  const viewRef = useRef<EditorView | null>(null);
 
   // Fetched once per mount; completion degrades to keywords-only while it
   // loads or when introspection fails.
@@ -66,7 +74,12 @@ export function PostgresConsole({ profile, service }: PostgresConsoleProps) {
   useEffect(() => () => controllerRef.current?.abort(), []);
 
   const runQuery = useCallback(() => {
-    const statement = sql.trim();
+    // Run the selection if there is one, otherwise the statement under the
+    // cursor; fall back to the whole buffer before the editor mounts.
+    const view = viewRef.current;
+    const statement = view
+      ? statementToRun(view.state.doc.toString(), view.state.selection.main)
+      : sql.trim();
     if (!statement) return;
     controllerRef.current?.abort();
     const controller = new AbortController();
@@ -101,13 +114,14 @@ export function PostgresConsole({ profile, service }: PostgresConsoleProps) {
           onChange={setSql}
           schema={completionSchema}
           onRun={runQuery}
+          viewRef={viewRef}
         />
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs text-muted-foreground">
             <kbd className="rounded border border-border px-1 font-mono">
               ⌘↵
             </kbd>{" "}
-            to run
+            runs the statement at the cursor, or the selection
             {schemaState.status === "success" &&
               (completionSchema
                 ? " · table & column suggestions on"
