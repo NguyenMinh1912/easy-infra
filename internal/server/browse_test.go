@@ -1,6 +1,8 @@
 package server
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -19,8 +21,10 @@ type stubBrowser struct {
 	buckets    []string
 	bucketsErr error
 	listing    *service.ObjectListing
+	listings   map[string]*service.ObjectListing
 	listErr    error
 	object     string
+	objects    map[string]string
 	objectInfo service.ObjectContent
 	objectErr  error
 	gotBucket  string
@@ -38,6 +42,11 @@ func (s *stubBrowser) Objects(_ context.Context, spec service.Spec, bucket, pref
 	s.gotSpec = spec
 	s.gotBucket = bucket
 	s.gotPrefix = prefix
+	// A per-prefix map (when set) serves the recursive archive walk; otherwise
+	// the single canned listing answers any prefix.
+	if s.listings != nil {
+		return s.listings[prefix], s.listErr
+	}
 	return s.listing, s.listErr
 }
 
@@ -48,7 +57,13 @@ func (s *stubBrowser) Object(_ context.Context, spec service.Spec, bucket, key s
 	if s.objectErr != nil {
 		return nil, service.ObjectContent{}, s.objectErr
 	}
-	return io.NopCloser(strings.NewReader(s.object)), s.objectInfo, nil
+	// Per-key bodies (when set) let an archive test distinguish entries;
+	// otherwise every object yields the single canned body.
+	body := s.object
+	if s.objects != nil {
+		body = s.objects[key]
+	}
+	return io.NopCloser(strings.NewReader(body)), s.objectInfo, nil
 }
 
 func TestBrowseBucketsHappyPath(t *testing.T) {
@@ -139,6 +154,89 @@ func TestBrowseObjectDownload(t *testing.T) {
 	}
 	if stub.gotBucket != "assets" || stub.gotKey != "docs/logo.png" {
 		t.Errorf("got bucket=%q key=%q, want assets/docs/logo.png", stub.gotBucket, stub.gotKey)
+	}
+}
+
+func TestBrowseArchiveKeysAndPrefix(t *testing.T) {
+	stub := &stubBrowser{
+		stubService: stubService{name: "stub"},
+		// "docs/" expands to its two objects; "top.txt" is taken as-is.
+		listings: map[string]*service.ObjectListing{
+			"docs/": {
+				Prefixes: []string{"docs/img/"},
+				Objects:  []service.ObjectEntry{{Key: "docs/readme.md"}},
+			},
+			"docs/img/": {
+				Objects: []service.ObjectEntry{{Key: "docs/img/logo.png"}},
+			},
+		},
+		objects: map[string]string{
+			"top.txt":           "TOP",
+			"docs/readme.md":    "README",
+			"docs/img/logo.png": "PNG",
+		},
+	}
+	srv := newConsoleServer(t, stub)
+	rec := doJSON(t, srv, http.MethodGet,
+		"/api/profiles/default/services/stub/objects/archive?bucket=assets&key=top.txt&prefix=docs/", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/zip" {
+		t.Errorf("Content-Type = %q, want application/zip", ct)
+	}
+	if cd := rec.Header().Get("Content-Disposition"); cd != `attachment; filename="assets.zip"` {
+		t.Errorf("Content-Disposition = %q, want assets.zip attachment", cd)
+	}
+
+	zr, err := zip.NewReader(bytes.NewReader(rec.Body.Bytes()), int64(rec.Body.Len()))
+	if err != nil {
+		t.Fatalf("open zip: %v", err)
+	}
+	got := map[string]string{}
+	for _, f := range zr.File {
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatalf("open entry %q: %v", f.Name, err)
+		}
+		data, _ := io.ReadAll(rc)
+		rc.Close()
+		got[f.Name] = string(data)
+	}
+	want := map[string]string{
+		"top.txt":           "TOP",
+		"docs/readme.md":    "README",
+		"docs/img/logo.png": "PNG",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("archive entries = %v, want %v", got, want)
+	}
+	for name, body := range want {
+		if got[name] != body {
+			t.Errorf("entry %q = %q, want %q", name, got[name], body)
+		}
+	}
+}
+
+func TestBrowseArchiveNoSelection(t *testing.T) {
+	srv := newConsoleServer(t, &stubBrowser{stubService: stubService{name: "stub"}})
+	rec := doJSON(t, srv, http.MethodGet,
+		"/api/profiles/default/services/stub/objects/archive?bucket=assets", nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body %q)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestBrowseArchiveListError(t *testing.T) {
+	stub := &stubBrowser{
+		stubService: stubService{name: "stub"},
+		listErr:     errors.New("store unreachable"),
+	}
+	srv := newConsoleServer(t, stub)
+	rec := doJSON(t, srv, http.MethodGet,
+		"/api/profiles/default/services/stub/objects/archive?bucket=assets&prefix=docs/", nil)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502 (body %q)", rec.Code, rec.Body.String())
 	}
 }
 

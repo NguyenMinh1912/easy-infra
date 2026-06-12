@@ -53,3 +53,21 @@ export function objectDownloadUrl(
   const query = new URLSearchParams({ bucket, key });
   return `/api/profiles/${encodeURIComponent(profile)}/services/${encodeURIComponent(service)}/object?${query.toString()}`;
 }
+
+/**
+ * The URL that streams a zip of the selected objects (`keys`) and folders
+ * (`prefixes`, expanded recursively server-side) within `bucket`. Like
+ * {@link objectDownloadUrl} the endpoint responds as an attachment, so an
+ * anchor pointing at it saves the archive.
+ */
+export function objectsArchiveUrl(
+  profile: string,
+  service: string,
+  bucket: string,
+  selection: { keys: string[]; prefixes: string[] },
+): string {
+  const query = new URLSearchParams({ bucket });
+  for (const key of selection.keys) query.append("key", key);
+  for (const prefix of selection.prefixes) query.append("prefix", prefix);
+  return `/api/profiles/${encodeURIComponent(profile)}/services/${encodeURIComponent(service)}/objects/archive?${query.toString()}`;
+}
