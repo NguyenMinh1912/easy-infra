@@ -6,67 +6,67 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { useHashRoute } from "@/hooks/useHashRoute";
 import { cn } from "@/lib/utils";
-
-/** The feature screens the sidebar can navigate between. */
-export type View = "dashboard" | "profiles";
 
 interface NavItem {
   label: string;
   icon: LucideIcon;
-  /** The screen this item opens; items without one are not navigable yet. */
-  view?: View;
+  /** Hash route this item links to, e.g. "/services". */
+  route?: string;
 }
 
 /**
  * Navigation entries for the admin sidebar. Mirrors the tool's domain
- * (dashboard, profiles, services, backup). Dashboard and Profiles are wired up;
- * the rest are placeholders for future screens.
+ * (dashboard, profiles, services, backup). Items with a `route` are wired to a
+ * screen via hash routing; the rest are placeholders for future screens.
  */
 const navItems: NavItem[] = [
-  { label: "Dashboard", icon: LayoutDashboard, view: "dashboard" },
-  { label: "Profiles", icon: Layers, view: "profiles" },
-  { label: "Services", icon: Boxes },
+  { label: "Dashboard", icon: LayoutDashboard, route: "/" },
+  { label: "Profiles", icon: Layers, route: "/profiles" },
+  { label: "Services", icon: Boxes, route: "/services" },
   { label: "Backup", icon: Database },
 ];
 
-interface SidebarProps {
-  current: View;
-  onNavigate: (view: View) => void;
+/** Whether a nav item's route matches the current route. */
+function isActive(itemRoute: string, route: string): boolean {
+  if (itemRoute === "/") {
+    return route === "/" || route === "";
+  }
+  return route.startsWith(itemRoute);
 }
 
 /**
- * Admin sidebar: brand block plus primary navigation. Highlights the active
- * screen and reports navigation intent upward; the app shell owns which screen
- * is shown.
+ * Admin sidebar: brand block plus primary navigation. Reads the current hash
+ * route to highlight the active item and links each routable entry to its
+ * screen.
  */
-export function Sidebar({ current, onNavigate }: SidebarProps) {
+export function Sidebar() {
+  const route = useHashRoute();
+
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r bg-card">
       <div className="flex h-16 items-center border-b px-6">
         <span className="text-lg font-bold tracking-tight">easy-infra</span>
       </div>
       <nav className="flex-1 space-y-1 p-4">
-        {navItems.map(({ label, icon: Icon, view }) => {
-          const active = view === current;
+        {navItems.map(({ label, icon: Icon, route: itemRoute }) => {
+          const active = itemRoute !== undefined && isActive(itemRoute, route);
           return (
-            <button
+            <a
               key={label}
-              type="button"
-              disabled={!view}
+              href={itemRoute ? `#${itemRoute}` : "#"}
               aria-current={active ? "page" : undefined}
-              onClick={view ? () => onNavigate(view) : undefined}
               className={cn(
-                "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors",
+                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                 active
                   ? "bg-accent text-accent-foreground"
                   : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                !view && "cursor-not-allowed opacity-50 hover:bg-transparent",
               )}
             >
-              <Icon className="size-4 shrink-0" aria-hidden />
+              <Icon className="size-4 shrink-0" />
               {label}
-            </button>
+            </a>
           );
         })}
       </nav>

@@ -219,8 +219,8 @@ func TestCreateProfileInvalidName(t *testing.T) {
 func TestCreateProfileNotInitialized(t *testing.T) {
 	srv := New(service.DefaultRegistry(), newPaths(t), emptyUI)
 	rec := doRequest(t, srv, http.MethodPost, "/api/profiles", `{"name":"staging"}`)
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("code = %d, want 400", rec.Code)
+	if rec.Code != http.StatusConflict {
+		t.Errorf("code = %d, want 409", rec.Code)
 	}
 }
 

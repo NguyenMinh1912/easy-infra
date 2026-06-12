@@ -49,6 +49,10 @@ Install `easy-infra` as a global command (drops the binary in `go env GOPATH`'s
 make install
 ```
 
+No Go toolchain installed? `make install` bootstraps one automatically: if `go`
+isn't on your `PATH` it downloads a pinned Go release into `./.go` (via
+`scripts/ensure-go.sh`) and builds with that — no manual setup required.
+
 Make sure that directory is on your `PATH`, then run `easy-infra` from anywhere:
 
 ```sh
