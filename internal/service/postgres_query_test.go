@@ -172,6 +172,11 @@ func TestSchemaGroupsTables(t *testing.T) {
 	if !reflect.DeepEqual(info.Tables, want) {
 		t.Errorf("Tables = %+v, want %+v", info.Tables, want)
 	}
+	// Schema reports the connection's current schema so the editor can default
+	// completion to it; here current_schema() is unset, so it falls back.
+	if info.CurrentSchema != "public" {
+		t.Errorf("CurrentSchema = %q, want %q", info.CurrentSchema, "public")
+	}
 }
 
 func TestRenderValue(t *testing.T) {

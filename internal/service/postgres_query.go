@@ -82,6 +82,13 @@ func (p Postgres) Schema(ctx context.Context, spec Spec) (*SchemaInfo, error) {
 	}
 	defer conn.Close(ctx)
 
+	// The schema the connection resolves unqualified names against follows the
+	// profile's configured search_path, so the editor can default to it.
+	current, err := currentSchema(ctx, conn)
+	if err != nil {
+		return nil, err
+	}
+
 	rows, err := conn.Query(ctx, `
 		SELECT table_schema, table_name, column_name
 		FROM information_schema.columns
@@ -92,7 +99,7 @@ func (p Postgres) Schema(ctx context.Context, spec Spec) (*SchemaInfo, error) {
 	}
 	defer rows.Close()
 
-	info := &SchemaInfo{Tables: []TableInfo{}}
+	info := &SchemaInfo{Tables: []TableInfo{}, CurrentSchema: current}
 	for rows.Next() {
 		var schema, table, column string
 		if err := rows.Scan(&schema, &table, &column); err != nil {

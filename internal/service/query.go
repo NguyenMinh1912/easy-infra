@@ -34,6 +34,10 @@ type QueryResult struct {
 // SchemaInfo lists the tables a console user can query.
 type SchemaInfo struct {
 	Tables []TableInfo `json:"tables"`
+	// CurrentSchema is the schema the profile's connection resolves unqualified
+	// names against (its search_path), so the editor can suggest that schema's
+	// tables without a prefix — matching where statements actually execute.
+	CurrentSchema string `json:"currentSchema"`
 }
 
 // TableInfo names one table and its columns within a schema (e.g. "public").
