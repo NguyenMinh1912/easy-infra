@@ -34,6 +34,11 @@ func New(reg *service.Registry, paths project.Paths, ui fs.FS) *Server {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/status", s.handleStatus)
+	mux.HandleFunc("GET /api/services/catalog", s.handleServiceCatalog)
+	mux.HandleFunc("GET /api/services", s.handleListServices)
+	mux.HandleFunc("POST /api/services", s.handleCreateService)
+	mux.HandleFunc("PUT /api/services/{name}", s.handleUpdateService)
+	mux.HandleFunc("DELETE /api/services/{name}", s.handleDeleteService)
 	mux.Handle("/", s.spaHandler())
 	return mux
 }
