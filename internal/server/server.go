@@ -49,6 +49,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/profiles/{name}", s.handleDeleteProfile)
 	mux.HandleFunc("POST /api/profiles/{name}/activate", s.handleActivateProfile)
 	mux.HandleFunc("POST /api/profiles/{name}/services/{service}/check", s.handleCheckConnection)
+	mux.HandleFunc("POST /api/profiles/{name}/services/{service}/query", s.handleConsoleQuery)
+	mux.HandleFunc("GET /api/profiles/{name}/services/{service}/schema", s.handleConsoleSchema)
 	mux.HandleFunc("GET /api/services/catalog", s.handleServiceCatalog)
 	mux.HandleFunc("GET /api/services", s.handleListServices)
 	mux.HandleFunc("POST /api/services", s.handleCreateService)

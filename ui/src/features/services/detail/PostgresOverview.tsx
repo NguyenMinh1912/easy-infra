@@ -1,18 +1,57 @@
-import { Database } from "lucide-react";
+import { Database, Terminal } from "lucide-react";
+import { lazy, Suspense } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { DefinitionSummary } from "./DefinitionSummary";
 import type { OverviewProps } from "./types";
 
+// Loaded on demand: the console pulls in CodeMirror, which would otherwise
+// dominate the main bundle for users who never open it.
+const PostgresConsole = lazy(() =>
+  import("./console/PostgresConsole").then((m) => ({
+    default: m.PostgresConsole,
+  })),
+);
+
 /**
  * Postgres-specific overview. Surfaces the image version prominently and
  * explains the split between the project-level definition (this screen) and the
- * per-profile connection settings, then lists the raw definition. The first
- * tailored service view embedded in {@link ServiceDetailLayout}.
+ * per-profile connection settings, then lists the raw definition. On a
+ * profile-scoped page it gains a Console tab — a SQL client against that
+ * profile's connection.
  */
-export function PostgresOverview({ service }: OverviewProps) {
+export function PostgresOverview({ service, profile }: OverviewProps) {
+  if (!profile) {
+    return <PostgresSummary service={service} />;
+  }
+  return (
+    <Tabs defaultValue="overview">
+      <TabsList>
+        <TabsTrigger value="overview">
+          <Database aria-hidden /> Overview
+        </TabsTrigger>
+        <TabsTrigger value="console">
+          <Terminal aria-hidden /> Console
+        </TabsTrigger>
+      </TabsList>
+      <TabsContent value="overview">
+        <PostgresSummary service={service} />
+      </TabsContent>
+      <TabsContent value="console">
+        <Suspense fallback={<Skeleton className="h-40 w-full" />}>
+          <PostgresConsole profile={profile} service={service.name} />
+        </Suspense>
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+/** The project-level postgres summary (version badge plus raw definition). */
+function PostgresSummary({ service }: Pick<OverviewProps, "service">) {
   const version = String(service.definition.version ?? "—");
 
   return (
