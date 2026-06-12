@@ -141,8 +141,8 @@ export function ProfileNavItem({
             </li>
           ) : (
             services.map((name) => {
-              const href = `#/services/${encodeURIComponent(name)}`;
-              const active = route === `/services/${name}`;
+              const href = `#/profiles/${encodeURIComponent(profile.name)}/services/${encodeURIComponent(name)}`;
+              const active = route === `/profiles/${profile.name}/services/${name}`;
               return (
                 <li key={name}>
                   <a
