@@ -2,7 +2,7 @@
 #
 # Common targets:
 #   make build     compile the binary into ./easy-infra
-#   make install   install easy-infra into $(GOBIN) so it is on your PATH
+#   make install   build the UI bundle, then install easy-infra into $(GOBIN) so it is on your PATH
 #   make uninstall remove the installed binary
 #   make test      run the test suite
 #   make vet       run static checks
@@ -40,10 +40,11 @@ ui: ui-install
 ui-dev:
 	cd ui && npm run dev
 
-# Install easy-infra as a global command. go install drops the binary in
-# $(GOBIN); if that directory is not on the user's PATH, print the exact
-# line to add it so '$(BINARY)' is runnable from anywhere.
-install:
+# Install easy-infra as a global command. Builds the UI bundle first so the
+# installed binary embeds the production frontend, then go install drops the
+# binary in $(GOBIN); if that directory is not on the user's PATH, print the
+# exact line to add it so '$(BINARY)' is runnable from anywhere.
+install: ui
 	go install .
 	@echo "Installed $(BINARY) to $(GOBIN)"
 	@case ":$$PATH:" in \
