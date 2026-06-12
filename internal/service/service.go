@@ -26,6 +26,26 @@ import (
 //     reach it in a given environment: host, port, credentials, database URL.
 type Config map[string]any
 
+// cleanableKey is the definition flag controlling whether a service may be
+// cleaned. It is a common, service-agnostic field: any service's definition may
+// set `cleanable: false` to protect its data from Clean. When absent, a service
+// is cleanable, preserving the prior behaviour.
+const cleanableKey = "cleanable"
+
+// cleanable reports whether a service definition permits Clean. A service is
+// cleanable unless its definition explicitly sets `cleanable: false`.
+func cleanable(def Config) (bool, error) {
+	return optionalBool(def, cleanableKey, true)
+}
+
+// validateCleanable checks the common `cleanable` definition flag. Each
+// service's ValidateDefinition calls it so the flag is validated uniformly,
+// rather than every service re-implementing the same rule.
+func validateCleanable(def Config) error {
+	_, err := cleanable(def)
+	return err
+}
+
 // Service is the common interface every supported service implements. Each
 // service owns the schema for both halves of its config — the project-level
 // definition and the per-profile environment — keeping that knowledge in one

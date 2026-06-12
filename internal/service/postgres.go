@@ -43,13 +43,15 @@ func (Postgres) Name() string { return "postgres" }
 
 // DefaultDefinition implements Service.
 func (Postgres) DefaultDefinition() Config {
-	return Config{"version": "16"}
+	return Config{"version": "16", cleanableKey: true}
 }
 
 // ValidateDefinition implements Service.
 func (Postgres) ValidateDefinition(cfg Config) error {
-	_, err := optionalString(cfg, "version", "16")
-	return err
+	if _, err := optionalString(cfg, "version", "16"); err != nil {
+		return err
+	}
+	return validateCleanable(cfg)
 }
 
 // DefaultEnv implements Service.
@@ -193,6 +195,9 @@ func (p Postgres) Backup(ctx context.Context, spec Spec) error {
 // Clean implements Service: drop and recreate the public schema, returning the
 // database to an empty state. Destructive — callers confirm before invoking.
 func (p Postgres) Clean(ctx context.Context, spec Spec) error {
+	if err := spec.ensureCleanable(); err != nil {
+		return err
+	}
 	conn, err := p.connect(ctx, spec.Env, "")
 	if err != nil {
 		return err

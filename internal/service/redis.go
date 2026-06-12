@@ -10,13 +10,15 @@ func (Redis) Name() string { return "redis" }
 
 // DefaultDefinition implements Service.
 func (Redis) DefaultDefinition() Config {
-	return Config{"version": "7"}
+	return Config{"version": "7", cleanableKey: true}
 }
 
 // ValidateDefinition implements Service.
 func (Redis) ValidateDefinition(cfg Config) error {
-	_, err := optionalString(cfg, "version", "7")
-	return err
+	if _, err := optionalString(cfg, "version", "7"); err != nil {
+		return err
+	}
+	return validateCleanable(cfg)
 }
 
 // DefaultEnv implements Service.
@@ -51,4 +53,9 @@ func (Redis) Health(context.Context, Spec) error { return notImplemented("redis"
 func (Redis) Backup(context.Context, Spec) error { return notImplemented("redis", "backup") }
 
 // Clean implements Service.
-func (Redis) Clean(context.Context, Spec) error { return notImplemented("redis", "clean") }
+func (Redis) Clean(_ context.Context, spec Spec) error {
+	if err := spec.ensureCleanable(); err != nil {
+		return err
+	}
+	return notImplemented("redis", "clean")
+}
