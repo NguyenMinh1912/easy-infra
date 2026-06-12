@@ -7,6 +7,11 @@ export {
   createService,
   updateService,
   deleteService,
+  streamServiceBackup,
+} from "./services";
+export type {
+  BackupResult,
+  BackupStreamHandlers,
 } from "./services";
 export {
   activateProfile,
