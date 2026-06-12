@@ -4,7 +4,6 @@ import { AdminLayout } from "@/components/layout/AdminLayout";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Toaster } from "@/components/ui/sonner";
 import { BackupsPage } from "@/features/backups";
-import { DashboardPage } from "@/features/dashboard";
 import { ProfilesPage } from "@/features/profiles";
 import { metaFor, ServiceDetailPage } from "@/features/services";
 import { useHashRoute } from "@/hooks/useHashRoute";
@@ -41,17 +40,10 @@ function screenForRoute(route: string): Screen {
       hideHeader: true,
     };
   }
-  if (route.startsWith("/profiles")) {
-    return {
-      title: "Profiles",
-      subtitle: "Create, switch, and remove environment profiles",
-      content: <ProfilesPage />,
-    };
-  }
   return {
-    title: "Dashboard",
-    subtitle: "Local/dev infrastructure overview",
-    content: <DashboardPage />,
+    title: "Profiles",
+    subtitle: "Create, switch, and remove environment profiles",
+    content: <ProfilesPage />,
   };
 }
 
