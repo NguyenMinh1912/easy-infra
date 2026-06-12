@@ -6,7 +6,6 @@ import {
   Loader2,
   Pencil,
   Plus,
-  Settings,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -83,9 +82,6 @@ export function ProfileNavItem({
   const catalog = data?.catalog ?? [];
   const defined = new Set(services.map((s) => s.name));
   const available = catalog.filter((entry) => !defined.has(entry.name));
-
-  const settingsHref = `#/profiles/${encodeURIComponent(profile.name)}/settings`;
-  const settingsActive = route === `/profiles/${profile.name}/settings`;
 
   const activate = async () => {
     setBusy(true);
@@ -328,21 +324,6 @@ export function ProfileNavItem({
               </li>
             </>
           )}
-          <li>
-            <a
-              href={settingsHref}
-              aria-current={settingsActive ? "page" : undefined}
-              className={cn(
-                "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
-                settingsActive
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-              )}
-            >
-              <Settings className="size-3.5 shrink-0" aria-hidden />
-              <span className="truncate text-xs">Settings</span>
-            </a>
-          </li>
         </ul>
       )}
 

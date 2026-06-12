@@ -26,7 +26,7 @@ interface ServiceDetailPageProps {
  * (postgres ships its own).
  */
 export function ServiceDetailPage({ name, profile }: ServiceDetailPageProps) {
-  const { state } = useServices(profile);
+  const { state, reload } = useServices(profile);
 
   switch (state.status) {
     case "loading":
@@ -50,7 +50,7 @@ export function ServiceDetailPage({ name, profile }: ServiceDetailPageProps) {
       }
       const service = state.data.services.find((s) => s.name === name);
       if (!service) {
-        return <ServiceNotFound name={name} profile={profile} />;
+        return <ServiceNotFound name={name} />;
       }
 
       const Overview = overviewFor(service.name);
@@ -58,7 +58,13 @@ export function ServiceDetailPage({ name, profile }: ServiceDetailPageProps) {
       return (
         <ServiceDetailLayout
           key={service.name}
-          actions={<ServiceActions service={service} profile={profile} />}
+          actions={
+            <ServiceActions
+              service={service}
+              profile={state.data.activeProfile}
+              onChanged={reload}
+            />
+          }
         >
           <Overview service={service} profile={profile} />
         </ServiceDetailLayout>
@@ -68,16 +74,8 @@ export function ServiceDetailPage({ name, profile }: ServiceDetailPageProps) {
 }
 
 /** Shown when the route names a service the profile does not define. */
-function ServiceNotFound({
-  name,
-  profile,
-}: {
-  name: string;
-  profile?: string;
-}) {
-  const backHref = profile
-    ? `#/profiles/${encodeURIComponent(profile)}/settings`
-    : "#/profiles";
+function ServiceNotFound({ name }: { name: string }) {
+  const backHref = "#/profiles";
   return (
     <Card className="flex flex-col items-center gap-3 p-10 text-center">
       <span className="flex size-10 items-center justify-center rounded-lg bg-muted">

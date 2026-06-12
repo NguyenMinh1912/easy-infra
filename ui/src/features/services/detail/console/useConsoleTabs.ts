@@ -94,6 +94,15 @@ export function useConsoleTabs(profile: string, service: string) {
     });
   }, []);
 
+  // Open a console pre-filled with a statement (e.g. double-clicking a table in
+  // the sidebar), making it active. Returns the new tab's id so the caller can,
+  // for instance, trigger an initial run.
+  const openTab = useCallback((title: string, sql: string) => {
+    const tab: ConsoleTab = { id: crypto.randomUUID(), title, sql };
+    setState((s) => ({ tabs: [...s.tabs, tab], activeId: tab.id }));
+    return tab.id;
+  }, []);
+
   const removeTab = useCallback((id: string) => {
     setState((s) => {
       if (s.tabs.length <= 1) return s; // always keep at least one console
@@ -119,6 +128,7 @@ export function useConsoleTabs(profile: string, service: string) {
     activeId: state.activeId,
     setActive,
     addTab,
+    openTab,
     removeTab,
     updateSql,
   };

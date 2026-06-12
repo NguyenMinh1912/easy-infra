@@ -5,6 +5,7 @@ import {
   GitFork,
   Play,
   Save,
+  Settings,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -17,16 +18,20 @@ import { BackupLogDialog } from "./BackupLogDialog";
 import { BackupSelectDialog } from "./BackupSelectDialog";
 import { ForkDialog } from "./ForkDialog";
 import { ForkLogDialog } from "./ForkLogDialog";
+import { ServiceSettingsDialog } from "./ServiceSettingsDialog";
 import { SnapshotSelectDialog } from "./SnapshotSelectDialog";
 
 interface ServiceActionsProps {
   service: ServiceInstance;
   /**
-   * Profile the service is viewed under, so each action targets that profile
-   * rather than whatever profile is active server-side. Omitted falls back to
-   * the active profile.
+   * Profile the service is viewed under. Scopes every action — settings,
+   * backup, apply, fork — to that profile rather than whatever profile is
+   * active server-side, and is required to open and save the service's
+   * settings.
    */
-  profile?: string;
+  profile: string;
+  /** Called after settings are saved, so the detail screen can reload. */
+  onChanged?: () => void;
 }
 
 /** One operation offered in the service action menu. */
@@ -39,6 +44,7 @@ interface ServiceAction {
 }
 
 const ACTIONS: ServiceAction[] = [
+  { id: "settings", label: "Settings", icon: Settings },
   { id: "status", label: "Service status", icon: Activity },
   { id: "backup", label: "Backup", icon: Save },
   { id: "apply", label: "Apply", icon: Play },
@@ -47,16 +53,18 @@ const ACTIONS: ServiceAction[] = [
 ];
 
 /**
- * The navbar action bar for a single service: status, backup, apply, fork, and
- * clean, laid out as a horizontal row of buttons. Backup, apply, and fork are
- * wired to the API — backup confirms then streams the snapshot's verbose log
+ * The navbar action bar for a single service: settings, status, backup, apply,
+ * fork, and clean, laid out as a horizontal row of buttons. Settings opens a
+ * modal to edit this service's config for the profile. Backup, apply, and fork
+ * are wired to the API — backup confirms then streams the snapshot's verbose log
  * into a modal; apply picks a backup version then streams the restore's log;
  * fork picks a seed (an existing version or a fresh backup), launches a local
  * container with the same config, and streams the fork's log. The remaining
  * operations run server-side but are not exposed yet, so they announce that they
  * are coming rather than calling a missing endpoint.
  */
-export function ServiceActions({ service, profile }: ServiceActionsProps) {
+export function ServiceActions({ service, profile, onChanged }: ServiceActionsProps) {
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
   const [backupBuckets, setBackupBuckets] = useState<string[] | undefined>(
@@ -71,6 +79,10 @@ export function ServiceActions({ service, profile }: ServiceActionsProps) {
   const [forkPort, setForkPort] = useState<number | undefined>(undefined);
 
   const run = (action: ServiceAction) => {
+    if (action.id === "settings") {
+      setSettingsOpen(true);
+      return;
+    }
     if (action.id === "backup") {
       setConfirmOpen(true);
       return;
@@ -110,6 +122,15 @@ export function ServiceActions({ service, profile }: ServiceActionsProps) {
           );
         })}
       </div>
+
+      {settingsOpen && (
+        <ServiceSettingsDialog
+          service={service}
+          profile={profile}
+          onClose={() => setSettingsOpen(false)}
+          onSaved={onChanged}
+        />
+      )}
 
       <BackupSelectDialog
         serviceName={service.name}
