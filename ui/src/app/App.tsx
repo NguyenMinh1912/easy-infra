@@ -12,6 +12,8 @@ interface Screen {
   title: string;
   subtitle: string;
   content: ReactNode;
+  /** Render the screen at full remaining width instead of the centered cap. */
+  fullWidth?: boolean;
 }
 
 /** Map the current hash route onto the screen to render. */
@@ -24,6 +26,7 @@ function screenForRoute(route: string): Screen {
       title: meta.label,
       subtitle: meta.blurb,
       content: <ServiceDetailPage name={name} />,
+      fullWidth: true,
     };
   }
   if (route.startsWith("/services")) {
@@ -63,10 +66,10 @@ function screenForRoute(route: string): Screen {
  */
 export default function App() {
   const route = useHashRoute();
-  const { title, subtitle, content } = screenForRoute(route);
+  const { title, subtitle, content, fullWidth } = screenForRoute(route);
 
   return (
-    <AdminLayout>
+    <AdminLayout fullWidth={fullWidth}>
       <PageHeader title={title} subtitle={subtitle} />
       {content}
       <Toaster position="bottom-right" richColors closeButton />

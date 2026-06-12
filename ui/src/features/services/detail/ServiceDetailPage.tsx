@@ -1,4 +1,4 @@
-import { AlertCircle, Boxes, LayoutDashboard, SlidersHorizontal } from "lucide-react";
+import { AlertCircle, Boxes } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -7,9 +7,9 @@ import { Card } from "@/components/ui/card";
 import { NoProject } from "../components/NoProject";
 import { ServicesSkeleton } from "../components/ServicesSkeleton";
 import { useServices } from "../hooks/useServices";
-import { ConfigurationPanel } from "./ConfigurationPanel";
 import { overviewFor } from "./overview-registry";
-import { ServiceDetailLayout, type ServiceSection } from "./ServiceDetailLayout";
+import { ServiceActions } from "./ServiceActions";
+import { ServiceDetailLayout } from "./ServiceDetailLayout";
 
 interface ServiceDetailPageProps {
   /** Service to show, taken from the `#/services/{name}` route. */
@@ -18,12 +18,13 @@ interface ServiceDetailPageProps {
 
 /**
  * Container for a single service's detail screen: owns data loading via
- * {@link useServices}, maps each async state onto a view, and assembles the
- * sections embedded in the shared {@link ServiceDetailLayout}. The overview is
- * service-specific (postgres ships its own); the configuration editor is shared.
+ * {@link useServices}, maps each async state onto a view, and renders the
+ * service's profile info inside the shared {@link ServiceDetailLayout}. The
+ * navbar carries the service action menu; the overview is service-specific
+ * (postgres ships its own).
  */
 export function ServiceDetailPage({ name }: ServiceDetailPageProps) {
-  const { state, reload } = useServices();
+  const { state } = useServices();
 
   switch (state.status) {
     case "loading":
@@ -51,22 +52,15 @@ export function ServiceDetailPage({ name }: ServiceDetailPageProps) {
       }
 
       const Overview = overviewFor(service.name);
-      const sections: ServiceSection[] = [
-        {
-          id: "overview",
-          label: "Overview",
-          icon: LayoutDashboard,
-          content: <Overview service={service} />,
-        },
-        {
-          id: "configuration",
-          label: "Configuration",
-          icon: SlidersHorizontal,
-          content: <ConfigurationPanel service={service} onSaved={reload} />,
-        },
-      ];
 
-      return <ServiceDetailLayout key={service.name} sections={sections} />;
+      return (
+        <ServiceDetailLayout
+          key={service.name}
+          actions={<ServiceActions service={service} />}
+        >
+          <Overview service={service} />
+        </ServiceDetailLayout>
+      );
     }
   }
 }
