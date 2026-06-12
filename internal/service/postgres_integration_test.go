@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -56,10 +57,16 @@ func TestPostgresIntegration(t *testing.T) {
 	}
 	_ = conn.Close(ctx)
 
-	// Back up, wipe, then restore via Apply.
+	// Back up (capturing verbose logs), wipe, then restore via Apply.
+	var logs strings.Builder
+	spec.Log = &logs
 	if err := p.Backup(ctx, spec); err != nil {
 		t.Fatalf("Backup: %v", err)
 	}
+	if !strings.Contains(logs.String(), `dumping table "widget"`) {
+		t.Errorf("verbose backup logs missing table line:\n%s", logs.String())
+	}
+	spec.Log = nil
 	if err := p.Clean(ctx, spec); err != nil {
 		t.Fatalf("Clean: %v", err)
 	}

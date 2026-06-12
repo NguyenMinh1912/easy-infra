@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"io"
+	"strings"
 	"testing"
 
 	"github.com/minhnc/easy-infra/internal/service"
@@ -24,5 +26,23 @@ func TestEndpoint(t *testing.T) {
 				t.Errorf("endpoint(%v) = %q, want %q", tc.cfg, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestPrefixWriter(t *testing.T) {
+	var sb strings.Builder
+	w := &prefixWriter{w: &sb, prefix: "  - postgres: "}
+	// Each line gets the prefix, even when several arrive in one or split writes.
+	io.WriteString(w, "dumping database\n")
+	io.WriteString(w, "found 2 table(s)\nwrote 42 bytes\n")
+	io.WriteString(w, "split ")
+	io.WriteString(w, "line\n")
+
+	want := "  - postgres: dumping database\n" +
+		"  - postgres: found 2 table(s)\n" +
+		"  - postgres: wrote 42 bytes\n" +
+		"  - postgres: split line\n"
+	if got := sb.String(); got != want {
+		t.Errorf("prefixWriter output =\n%q\nwant\n%q", got, want)
 	}
 }

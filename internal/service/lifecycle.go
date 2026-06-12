@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"io"
 )
 
 // Spec is a service's fully-resolved configuration for a lifecycle operation:
@@ -22,6 +23,21 @@ type Spec struct {
 	// layer sets it so every service in one snapshot shares a single folder. When
 	// empty, Backup falls back to its own fresh snapshot.
 	BackupDir string
+	// Log receives human-readable progress messages emitted during a lifecycle
+	// operation. The command layer wires it up (e.g. for `backup snapshot
+	// --verbose`) so users can follow what a service is doing; when nil, the
+	// operation runs quietly.
+	Log io.Writer
+}
+
+// logf writes a progress line to spec.Log when one is set, and is a no-op
+// otherwise, so lifecycle methods can narrate their work without each one
+// guarding against a nil writer.
+func (s Spec) logf(format string, a ...any) {
+	if s.Log == nil {
+		return
+	}
+	fmt.Fprintf(s.Log, format, a...)
 }
 
 // ErrNotImplemented is returned by lifecycle operations whose Docker-backed

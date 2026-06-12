@@ -17,7 +17,9 @@ import (
 // foreign-key/check constraints, indexes, and sequences. Out of scope (and
 // documented): extensions, custom types/domains, functions/triggers, views,
 // row-level security, and partitioning.
-func dump(ctx context.Context, conn pgConn, w io.Writer) error {
+// logf narrates the dump's progress (one line per object); callers pass
+// Spec.logf, which is a no-op unless verbose logging is wired up.
+func dump(ctx context.Context, conn pgConn, w io.Writer, logf func(string, ...any)) error {
 	out := &sqlWriter{w: w}
 	out.printf("-- easy-infra postgres backup\n")
 	out.printf("SET client_encoding = 'UTF8';\n\n")
@@ -45,6 +47,7 @@ func dump(ctx context.Context, conn pgConn, w io.Writer) error {
 	if err != nil {
 		return err
 	}
+	logf("found %d table(s), %d sequence(s) in schema %q\n", len(tables), len(seqs), schema)
 
 	for _, s := range seqs {
 		out.printf("%s\n", s.createSQL(qSchema))
@@ -62,6 +65,7 @@ func dump(ctx context.Context, conn pgConn, w io.Writer) error {
 	}
 
 	for _, t := range tables {
+		logf("dumping table %q\n", t.name)
 		if err := dumpTableData(ctx, conn, out, qSchema, t); err != nil {
 			return err
 		}
