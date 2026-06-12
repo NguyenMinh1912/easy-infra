@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  Boxes,
   Check,
   ChevronDown,
   ChevronRight,
@@ -14,7 +13,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { ServiceDialog, type DialogState } from "@/features/services";
+import { metaFor, ServiceDialog, type DialogState } from "@/features/services";
 import { useAsync } from "@/hooks/useAsync";
 import {
   createService,
@@ -253,6 +252,7 @@ export function ProfileNavItem({
                   const active =
                     route ===
                     `/profiles/${profile.name}/services/${service.name}`;
+                  const Icon = metaFor(service.name).icon;
                   return (
                     <li key={service.name}>
                       <div
@@ -268,7 +268,7 @@ export function ProfileNavItem({
                           aria-current={active ? "page" : undefined}
                           className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm"
                         >
-                          <Boxes className="size-3.5 shrink-0" aria-hidden />
+                          <Icon className="size-3.5 shrink-0" aria-hidden />
                           <span className="truncate font-mono text-xs">
                             {service.name}
                           </span>
