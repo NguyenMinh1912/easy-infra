@@ -38,3 +38,76 @@ export function updateService(
 export function deleteService(name: string): Promise<void> {
   return apiSend<void>("DELETE", `/services/${encodeURIComponent(name)}`);
 }
+
+// --- Backup sessions ---------------------------------------------------------
+//
+// A backup runs server-side as a persisted session, decoupled from the request
+// that started it. The UI starts one, then polls for status + new log lines
+// (rather than holding a stream), so the browser can disconnect and reconnect.
+
+/** Lifecycle state of a backup session, mirroring the server's statuses. */
+export type BackupStatus =
+  | "running"
+  | "success"
+  | "unsupported"
+  | "error"
+  | "cancelled";
+
+/** A backup run as reported by the API. */
+export interface BackupSession {
+  id: string;
+  service: string;
+  profile: string;
+  status: BackupStatus;
+  snapshot?: string;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** One verbose log line, keyed by a per-session sequence number. */
+export interface BackupLog {
+  seq: number;
+  line: string;
+}
+
+/** Response of GET /api/backups/{id}: current session plus new log lines. */
+export interface BackupPoll {
+  session: BackupSession;
+  logs: BackupLog[];
+}
+
+/**
+ * Start (or re-attach to) a background backup of a service for the active
+ * profile. If one is already running for the service, the server returns that
+ * session instead of starting a second.
+ */
+export function startServiceBackup(name: string): Promise<BackupSession> {
+  return apiSend<BackupSession>(
+    "POST",
+    `/services/${encodeURIComponent(name)}/backup`,
+  );
+}
+
+/**
+ * Fetch a backup's current status and the log lines after `after` (the highest
+ * seq seen so far), so polling only transfers new output.
+ */
+export function getBackup(
+  id: string,
+  after: number,
+  signal?: AbortSignal,
+): Promise<BackupPoll> {
+  return apiGet<BackupPoll>(
+    `/backups/${encodeURIComponent(id)}?after=${after}`,
+    signal,
+  );
+}
+
+/** Cancel a running backup; the session settles to "cancelled" shortly after. */
+export function cancelBackup(id: string): Promise<BackupSession> {
+  return apiSend<BackupSession>(
+    "POST",
+    `/backups/${encodeURIComponent(id)}/cancel`,
+  );
+}

@@ -7,6 +7,15 @@ export {
   createService,
   updateService,
   deleteService,
+  startServiceBackup,
+  getBackup,
+  cancelBackup,
+} from "./services";
+export type {
+  BackupStatus,
+  BackupSession,
+  BackupLog,
+  BackupPoll,
 } from "./services";
 export {
   activateProfile,

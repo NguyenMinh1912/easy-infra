@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"path/filepath"
 
 	"github.com/minhnc/easy-infra/internal/project"
 	"github.com/minhnc/easy-infra/internal/service"
@@ -18,15 +19,22 @@ import (
 // Server answers API requests and serves the embedded UI. It loads the project
 // fresh on each request so the API always reflects what is on disk.
 type Server struct {
-	reg   *service.Registry
-	paths project.Paths
-	ui    fs.FS
+	reg     *service.Registry
+	paths   project.Paths
+	ui      fs.FS
+	backups *backupManager
 }
 
 // New builds a Server from the injected service registry, project paths, and the
 // embedded UI filesystem (see the ui package).
 func New(reg *service.Registry, paths project.Paths, ui fs.FS) *Server {
-	return &Server{reg: reg, paths: paths, ui: ui}
+	return &Server{reg: reg, paths: paths, ui: ui, backups: newBackupManager(backupDBPath(paths))}
+}
+
+// backupDBPath places the backup session database alongside the JSON state, in
+// the project's .easy-infra directory.
+func backupDBPath(paths project.Paths) string {
+	return filepath.Join(filepath.Dir(paths.State), "backups.db")
 }
 
 // Handler returns the HTTP handler tree: the JSON API under /api and the SPA on
@@ -45,6 +53,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/services", s.handleCreateService)
 	mux.HandleFunc("PUT /api/services/{name}", s.handleUpdateService)
 	mux.HandleFunc("DELETE /api/services/{name}", s.handleDeleteService)
+	mux.HandleFunc("POST /api/services/{name}/backup", s.handleStartBackup)
+	mux.HandleFunc("GET /api/backups/{id}", s.handleGetBackup)
+	mux.HandleFunc("POST /api/backups/{id}/cancel", s.handleCancelBackup)
 	mux.Handle("/", s.spaHandler())
 	return mux
 }

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Activity,
   Eraser,
@@ -8,6 +9,16 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -18,6 +29,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { ServiceDefinition } from "@/types/service";
+
+import { BackupLogDialog } from "./BackupLogDialog";
 
 interface ServiceActionsProps {
   service: ServiceDefinition;
@@ -41,42 +54,81 @@ const ACTIONS: ServiceAction[] = [
 
 /**
  * The navbar action menu for a single service: status, backup, apply, and
- * clean, grouped behind one icon trigger. The operations run server-side
- * (`easy-infra apply`/`backup`/…) which the API does not yet expose, so each
- * item announces that it is coming rather than calling a missing endpoint.
- * Wiring a real action later is a one-line swap of its handler.
+ * clean, grouped behind one icon trigger. Backup is wired to the API — it
+ * confirms, then streams the snapshot's verbose log into a modal. The remaining
+ * operations run server-side but are not exposed yet, so they announce that they
+ * are coming rather than calling a missing endpoint.
  */
 export function ServiceActions({ service }: ServiceActionsProps) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
+
   const run = (action: ServiceAction) => {
+    if (action.id === "backup") {
+      setConfirmOpen(true);
+      return;
+    }
     toast.info(`"${action.label}" is not available yet`, {
       description: `Running ${action.id} for ${service.name} from the UI is coming soon.`,
     });
   };
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="icon" aria-label="Service actions">
-          <Settings2 />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuLabel>Actions</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {ACTIONS.map((action) => {
-          const Icon = action.icon;
-          return (
-            <DropdownMenuItem
-              key={action.id}
-              variant={action.destructive ? "destructive" : "default"}
-              onSelect={() => run(action)}
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="icon" aria-label="Service actions">
+            <Settings2 />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuLabel>Actions</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          {ACTIONS.map((action) => {
+            const Icon = action.icon;
+            return (
+              <DropdownMenuItem
+                key={action.id}
+                variant={action.destructive ? "destructive" : "default"}
+                onSelect={() => run(action)}
+              >
+                <Icon aria-hidden />
+                {action.label}
+              </DropdownMenuItem>
+            );
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Back up {service.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This snapshots the active profile's{" "}
+              <span className="font-mono">{service.name}</span> data into a new
+              backup folder. You can follow the progress in the next step.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmOpen(false);
+                setLogOpen(true);
+              }}
             >
-              <Icon aria-hidden />
-              {action.label}
-            </DropdownMenuItem>
-          );
-        })}
-      </DropdownMenuContent>
-    </DropdownMenu>
+              Back up
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <BackupLogDialog
+        serviceName={service.name}
+        open={logOpen}
+        onOpenChange={setLogOpen}
+      />
+    </>
   );
 }
