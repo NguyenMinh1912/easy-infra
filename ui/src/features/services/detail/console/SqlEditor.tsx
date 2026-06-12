@@ -1,6 +1,10 @@
 import { PostgreSQL, sql } from "@codemirror/lang-sql";
-import CodeMirror, { keymap, Prec } from "@uiw/react-codemirror";
-import { useMemo, useRef } from "react";
+import CodeMirror, {
+  EditorView,
+  keymap,
+  Prec,
+} from "@uiw/react-codemirror";
+import { useMemo, useRef, type MutableRefObject } from "react";
 
 import { useTheme } from "@/components/theme/ThemeProvider";
 
@@ -15,6 +19,11 @@ interface SqlEditorProps {
   schema?: Record<string, string[]>;
   /** Invoked on Ctrl/Cmd-Enter; the same action as the Run button. */
   onRun: () => void;
+  /**
+   * Receives the live editor view so the parent can read the cursor/selection
+   * when deciding which statement to run.
+   */
+  viewRef?: MutableRefObject<EditorView | null>;
 }
 
 /**
@@ -23,7 +32,13 @@ interface SqlEditorProps {
  * the schema is known. Presentational — the parent owns the text and the run
  * action.
  */
-export function SqlEditor({ value, onChange, schema, onRun }: SqlEditorProps) {
+export function SqlEditor({
+  value,
+  onChange,
+  schema,
+  onRun,
+  viewRef,
+}: SqlEditorProps) {
   const { resolvedTheme } = useTheme();
 
   // The keymap extension captures its handler once; route it through a ref so
@@ -55,6 +70,9 @@ export function SqlEditor({ value, onChange, schema, onRun }: SqlEditorProps) {
     <CodeMirror
       value={value}
       onChange={onChange}
+      onCreateEditor={(view) => {
+        if (viewRef) viewRef.current = view;
+      }}
       theme={resolvedTheme}
       extensions={extensions}
       minHeight="10rem"
