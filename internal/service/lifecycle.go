@@ -44,6 +44,26 @@ func (s Spec) logf(format string, a ...any) {
 	fmt.Fprintf(s.Log, format, a...)
 }
 
+// ErrProtected is returned by Clean when the service's definition marks it as
+// not cleanable (`cleanable: false`). The service is left untouched, protecting
+// its data from an accidental teardown.
+var ErrProtected = errors.New("service: protected from clean (cleanable is false)")
+
+// ensureCleanable guards a Clean against a protected service: it returns
+// ErrProtected when the definition sets `cleanable: false`, and nil otherwise.
+// Clean implementations call it before doing any destructive work, so the
+// protection is honoured uniformly across services.
+func (s Spec) ensureCleanable() error {
+	ok, err := cleanable(s.Definition)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrProtected
+	}
+	return nil
+}
+
 // ErrNotImplemented is returned by lifecycle operations whose Docker-backed
 // provisioning is not wired up yet. Callers can detect it with errors.Is and
 // degrade gracefully (e.g. report the action they would take) until the

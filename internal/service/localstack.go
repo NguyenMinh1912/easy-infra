@@ -13,8 +13,9 @@ func (LocalStack) DefaultDefinition() Config {
 	// Which AWS services to emulate is a property of the service itself, so it
 	// lives in the project-level definition rather than per environment.
 	return Config{
-		"version":  "latest",
-		"services": "s3,sqs,sns",
+		"version":    "latest",
+		"services":   "s3,sqs,sns",
+		cleanableKey: true,
 	}
 }
 
@@ -26,7 +27,7 @@ func (LocalStack) ValidateDefinition(cfg Config) error {
 	if _, err := requireString(cfg, "services"); err != nil {
 		return err
 	}
-	return nil
+	return validateCleanable(cfg)
 }
 
 // DefaultEnv implements Service.
@@ -61,4 +62,9 @@ func (LocalStack) Health(context.Context, Spec) error { return notImplemented("l
 func (LocalStack) Backup(context.Context, Spec) error { return notImplemented("localstack", "backup") }
 
 // Clean implements Service.
-func (LocalStack) Clean(context.Context, Spec) error { return notImplemented("localstack", "clean") }
+func (LocalStack) Clean(_ context.Context, spec Spec) error {
+	if err := spec.ensureCleanable(); err != nil {
+		return err
+	}
+	return notImplemented("localstack", "clean")
+}

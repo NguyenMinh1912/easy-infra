@@ -45,6 +45,29 @@ func optionalString(cfg Config, key, def string) (string, error) {
 	return s, nil
 }
 
+// optionalBool returns the bool stored under key, or def if absent. It accepts
+// a real boolean as well as the strings "true"/"false", since the JSON API (the
+// web UI) submits every field as a string. Any other value is reported as an
+// actionable error.
+func optionalBool(cfg Config, key string, def bool) (bool, error) {
+	raw, ok := cfg[key]
+	if !ok {
+		return def, nil
+	}
+	switch v := raw.(type) {
+	case bool:
+		return v, nil
+	case string:
+		b, err := strconv.ParseBool(strings.TrimSpace(v))
+		if err != nil {
+			return false, fmt.Errorf("%q must be true or false, got %v", key, raw)
+		}
+		return b, nil
+	default:
+		return false, fmt.Errorf("%q must be true or false, got %v", key, raw)
+	}
+}
+
 // requireString returns a non-empty string stored under key, or an error if it
 // is missing, empty, or not a string.
 func requireString(cfg Config, key string) (string, error) {
