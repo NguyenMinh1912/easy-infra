@@ -19,6 +19,10 @@ interface PostgresConsoleProps {
   profile: string;
   /** Service name within the profile (the API path segment). */
   service: string;
+  /** Current editor text — owned by the parent so it persists across tabs. */
+  sql: string;
+  /** Notified as the user edits the statement buffer. */
+  onSqlChange: (sql: string) => void;
 }
 
 /** State of the current (or last) statement execution. */
@@ -36,8 +40,12 @@ type RunState =
  * cursor. Statement failures come back inside the response envelope, so they
  * render as an expected outcome, not a transport error.
  */
-export function PostgresConsole({ profile, service }: PostgresConsoleProps) {
-  const [sql, setSql] = useState("");
+export function PostgresConsole({
+  profile,
+  service,
+  sql,
+  onSqlChange,
+}: PostgresConsoleProps) {
   const [run, setRun] = useState<RunState>({ status: "idle" });
   // The schema browsed in the sidebar. Defaults to the connection's configured
   // schema once introspection lands (see the effect below).
@@ -153,7 +161,7 @@ export function PostgresConsole({ profile, service }: PostgresConsoleProps) {
       <div className="space-y-2">
         <SqlEditor
           value={sql}
-          onChange={setSql}
+          onChange={onSqlChange}
           schema={completionSchema}
           onRun={runQuery}
           viewRef={viewRef}
