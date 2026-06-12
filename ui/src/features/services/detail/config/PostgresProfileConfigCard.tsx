@@ -10,7 +10,7 @@ import {
   buildPostgresUrl,
   parsePostgresUrl,
   type PostgresFields,
-} from "../postgres-url";
+} from "./postgres-url";
 import type { ConfigRow } from "./ProfileServiceConfigCard";
 import type { ProfileServiceConfigCardProps } from "./ProfileServiceConfigCard";
 
