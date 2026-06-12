@@ -13,6 +13,8 @@ import { ServicesTable } from "./ServicesTable";
 interface ServicesManagerProps {
   data: ServicesData;
   reload: () => void;
+  /** Service to scroll to and highlight, deep-linked from the sidebar. */
+  focusService?: string;
 }
 
 /**
@@ -21,7 +23,11 @@ interface ServicesManagerProps {
  * update / delete runs through a single helper that toasts the outcome and
  * refreshes the list on success.
  */
-export function ServicesManager({ data, reload }: ServicesManagerProps) {
+export function ServicesManager({
+  data,
+  reload,
+  focusService,
+}: ServicesManagerProps) {
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<DialogState | null>(null);
 
@@ -129,6 +135,7 @@ export function ServicesManager({ data, reload }: ServicesManagerProps) {
           <ServicesTable
             services={data.services}
             busy={busy}
+            focusService={focusService}
             onEdit={(service) => setDialog({ mode: "edit", service })}
             onRemove={remove}
           />

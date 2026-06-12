@@ -2,12 +2,12 @@ import {
   Boxes,
   Database,
   LayoutDashboard,
-  Layers,
   Server,
   type LucideIcon,
 } from "lucide-react";
 
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
+import { ProfileNav } from "@/features/profiles";
 import { useHashRoute } from "@/hooks/useHashRoute";
 import { cn } from "@/lib/utils";
 
@@ -19,13 +19,13 @@ interface NavItem {
 }
 
 /**
- * Navigation entries for the admin sidebar. Mirrors the tool's domain
- * (dashboard, profiles, services, backup). Items with a `route` are wired to a
- * screen via hash routing; the rest are placeholders for future screens.
+ * Top-level navigation entries for the admin sidebar. Profiles is rendered
+ * separately by {@link ProfileNav} as an expandable section, so it is not
+ * listed here. Items with a `route` are wired to a screen via hash routing;
+ * the rest are placeholders for future screens.
  */
 const navItems: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, route: "/" },
-  { label: "Profiles", icon: Layers, route: "/profiles" },
   { label: "Services", icon: Boxes, route: "/services" },
   { label: "Backup", icon: Database },
 ];
@@ -36,6 +36,27 @@ function isActive(itemRoute: string, route: string): boolean {
     return route === "/" || route === "";
   }
   return route.startsWith(itemRoute);
+}
+
+/** A single top-level sidebar link, highlighted when its route is active. */
+function NavLink({ item, route }: { item: NavItem; route: string }) {
+  const { label, icon: Icon, route: itemRoute } = item;
+  const active = itemRoute !== undefined && isActive(itemRoute, route);
+  return (
+    <a
+      href={itemRoute ? `#${itemRoute}` : "#"}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+        active
+          ? "bg-accent text-accent-foreground"
+          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+      )}
+    >
+      <Icon className="size-4 shrink-0" />
+      {label}
+    </a>
+  );
 }
 
 /**
@@ -55,25 +76,11 @@ export function Sidebar() {
         <span className="text-lg font-bold tracking-tight">easy-infra</span>
       </div>
       <nav className="flex-1 space-y-1 p-4">
-        {navItems.map(({ label, icon: Icon, route: itemRoute }) => {
-          const active = itemRoute !== undefined && isActive(itemRoute, route);
-          return (
-            <a
-              key={label}
-              href={itemRoute ? `#${itemRoute}` : "#"}
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                active
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-              )}
-            >
-              <Icon className="size-4 shrink-0" />
-              {label}
-            </a>
-          );
-        })}
+        <NavLink item={navItems[0]} route={route} />
+        <ProfileNav />
+        {navItems.slice(1).map((item) => (
+          <NavLink key={item.label} item={item} route={route} />
+        ))}
       </nav>
       <div className="border-t p-4">
         <ThemeToggle />

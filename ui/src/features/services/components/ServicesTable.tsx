@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -10,12 +11,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 import type { ServiceConfig, ServiceDefinition } from "@/types/service";
 import { metaFor } from "../catalog-meta";
 
 interface ServicesTableProps {
   services: ServiceDefinition[];
   busy: boolean;
+  /** Service to scroll to and highlight, deep-linked from the sidebar. */
+  focusService?: string;
   onEdit: (service: ServiceDefinition) => void;
   onRemove: (name: string) => void;
 }
@@ -31,9 +35,19 @@ const PREVIEW_LIMIT = 3;
 export function ServicesTable({
   services,
   busy,
+  focusService,
   onEdit,
   onRemove,
 }: ServicesTableProps) {
+  const focusRef = useRef<HTMLTableRowElement>(null);
+
+  // Deep-linked from the sidebar: bring the highlighted row into view.
+  useEffect(() => {
+    if (focusService) {
+      focusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [focusService]);
+
   return (
     <Table>
       <TableHeader>
@@ -47,8 +61,13 @@ export function ServicesTable({
         {services.map((service) => {
           const meta = metaFor(service.name);
           const Icon = meta.icon;
+          const highlighted = service.name === focusService;
           return (
-            <TableRow key={service.name}>
+            <TableRow
+              key={service.name}
+              ref={highlighted ? focusRef : undefined}
+              className={cn("scroll-mt-6", highlighted && "bg-accent")}
+            >
               <TableCell>
                 <div className="flex items-center gap-3">
                   <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
