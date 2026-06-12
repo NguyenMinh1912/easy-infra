@@ -1,16 +1,14 @@
 import { EditorView } from "@uiw/react-codemirror";
 import { AlertCircle, Play } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAsync } from "@/hooks/useAsync";
-import { executeQuery, getSchema } from "@/services/api";
+import { executeQuery } from "@/services/api";
 import type { QueryResult } from "@/types/console";
 
 import { QueryResultTable } from "./QueryResultTable";
-import { SchemaSidebar } from "./SchemaSidebar";
 import { SqlEditor } from "./SqlEditor";
 import { statementToRun } from "./statement";
 
@@ -19,6 +17,18 @@ interface PostgresConsoleProps {
   profile: string;
   /** Service name within the profile (the API path segment). */
   service: string;
+  /** Current editor text — owned by the parent so it persists across tabs. */
+  sql: string;
+  /** Notified as the user edits the statement buffer. */
+  onSqlChange: (sql: string) => void;
+  /**
+   * Tables/columns for editor autocomplete, keyed by table name. Owned by the
+   * tabs host (shared across consoles); absent while the schema loads or when
+   * introspection failed.
+   */
+  completionSchema?: Record<string, string[]>;
+  /** Whether schema introspection has finished (drives the help text). */
+  schemaResolved: boolean;
 }
 
 /** State of the current (or last) statement execution. */
@@ -36,70 +46,19 @@ type RunState =
  * cursor. Statement failures come back inside the response envelope, so they
  * render as an expected outcome, not a transport error.
  */
-export function PostgresConsole({ profile, service }: PostgresConsoleProps) {
-  const [sql, setSql] = useState("");
+export function PostgresConsole({
+  profile,
+  service,
+  sql,
+  onSqlChange,
+  completionSchema,
+  schemaResolved,
+}: PostgresConsoleProps) {
   const [run, setRun] = useState<RunState>({ status: "idle" });
-  // The schema browsed in the sidebar. Defaults to the connection's configured
-  // schema once introspection lands (see the effect below).
-  const [selectedSchema, setSelectedSchema] = useState<string | null>(null);
 
   // The live editor view, used to read the cursor/selection when choosing
   // which statement to run.
   const viewRef = useRef<EditorView | null>(null);
-
-  // Fetched once per mount; completion degrades to keywords-only while it
-  // loads or when introspection fails.
-  const schemaState = useAsync(
-    (signal) => getSchema(profile, service, signal),
-    [profile, service],
-  );
-  const completionSchema = useMemo(() => {
-    if (schemaState.status !== "success" || schemaState.data.error) {
-      return undefined;
-    }
-    // Tables in the connection's current schema (its search_path) complete
-    // unqualified, matching how unqualified names resolve when the statement
-    // runs; tables in other schemas keep their schema prefix.
-    const current = schemaState.data.currentSchema || "public";
-    const schema: Record<string, string[]> = {};
-    for (const table of schemaState.data.tables) {
-      const key =
-        table.schema === current
-          ? table.name
-          : `${table.schema}.${table.name}`;
-      schema[key] = table.columns;
-    }
-    return schema;
-  }, [schemaState]);
-
-  // Schema introspection lands either with usable data or an `error` envelope
-  // (database unreachable); the sidebar mirrors the latter as "unavailable".
-  const schemaInfo =
-    schemaState.status === "success" && !schemaState.data.error
-      ? schemaState.data
-      : null;
-
-  // Distinct schemas the connection can see, plus the configured one even if it
-  // holds no tables, so the default selection always appears in the dropdown.
-  const schemas = useMemo(() => {
-    if (!schemaInfo) return [];
-    const names = new Set<string>();
-    for (const table of schemaInfo.tables) names.add(table.schema);
-    if (schemaInfo.currentSchema) names.add(schemaInfo.currentSchema);
-    return Array.from(names).sort();
-  }, [schemaInfo]);
-
-  // Default the sidebar to the connection's configured schema; reselect when it
-  // changes (a different profile/service was navigated to).
-  const currentSchema = schemaInfo?.currentSchema || null;
-  useEffect(() => {
-    if (currentSchema) setSelectedSchema(currentSchema);
-  }, [currentSchema]);
-
-  const tablesInSchema = useMemo(() => {
-    if (!schemaInfo || !selectedSchema) return [];
-    return schemaInfo.tables.filter((t) => t.schema === selectedSchema);
-  }, [schemaInfo, selectedSchema]);
 
   // The console keeps its own controller (rather than useAsync) because runs
   // are user-triggered, not mount-triggered.
@@ -140,20 +99,11 @@ export function PostgresConsole({ profile, service }: PostgresConsoleProps) {
   const running = run.status === "running";
 
   return (
-    <div className="flex gap-4">
-      <SchemaSidebar
-        loading={schemaState.status === "loading"}
-        unavailable={schemaState.status === "success" && !schemaInfo}
-        schemas={schemas}
-        selected={selectedSchema}
-        onSelect={setSelectedSchema}
-        tables={tablesInSchema}
-      />
-      <div className="min-w-0 flex-1 space-y-4">
+    <div className="space-y-4">
       <div className="space-y-2">
         <SqlEditor
           value={sql}
-          onChange={setSql}
+          onChange={onSqlChange}
           schema={completionSchema}
           onRun={runQuery}
           viewRef={viewRef}
@@ -164,7 +114,7 @@ export function PostgresConsole({ profile, service }: PostgresConsoleProps) {
               ⌘↵
             </kbd>{" "}
             runs the statement at the cursor, or the selection
-            {schemaState.status === "success" &&
+            {schemaResolved &&
               (completionSchema
                 ? " · table & column suggestions on"
                 : " · schema unavailable, keyword suggestions only")}
@@ -198,7 +148,6 @@ export function PostgresConsole({ profile, service }: PostgresConsoleProps) {
         </Alert>
       )}
       {run.status === "done" && <QueryResultTable result={run.result} />}
-      </div>
     </div>
   );
 }

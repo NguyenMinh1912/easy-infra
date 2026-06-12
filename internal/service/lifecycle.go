@@ -28,6 +28,11 @@ type Spec struct {
 	// (the timestamp folder name). When empty, Apply restores the latest
 	// snapshot, preserving the default `easy-infra apply` behaviour.
 	Snapshot string
+	// Buckets optionally narrows a Backup to a subset of an object store's
+	// buckets, by name. When empty, services that organise data into buckets
+	// (minio) back up every bucket — the default `easy-infra backup` behaviour;
+	// services without a bucket concept ignore it.
+	Buckets []string
 	// Log receives human-readable progress messages emitted during a lifecycle
 	// operation. The command layer wires it up (e.g. for `backup snapshot
 	// --verbose`) so users can follow what a service is doing; when nil, the

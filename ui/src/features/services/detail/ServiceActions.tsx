@@ -10,21 +10,12 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import type { ServiceInstance } from "@/types/service";
 
 import { ApplyLogDialog } from "./ApplyLogDialog";
 import { BackupLogDialog } from "./BackupLogDialog";
+import { BackupSelectDialog } from "./BackupSelectDialog";
 import { ForkDialog } from "./ForkDialog";
 import { ForkLogDialog } from "./ForkLogDialog";
 import { ServiceSettingsDialog } from "./ServiceSettingsDialog";
@@ -71,6 +62,9 @@ export function ServiceActions({ service, profile, onChanged }: ServiceActionsPr
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
+  const [backupBuckets, setBackupBuckets] = useState<string[] | undefined>(
+    undefined,
+  );
   const [snapshotOpen, setSnapshotOpen] = useState(false);
   const [applyOpen, setApplyOpen] = useState(false);
   const [applySnapshot, setApplySnapshot] = useState("");
@@ -133,32 +127,19 @@ export function ServiceActions({ service, profile, onChanged }: ServiceActionsPr
         />
       )}
 
-      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Back up {service.name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This snapshots the active profile's{" "}
-              <span className="font-mono">{service.name}</span> data into a new
-              backup folder. You can follow the progress in the next step.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setConfirmOpen(false);
-                setLogOpen(true);
-              }}
-            >
-              Back up
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <BackupSelectDialog
+        serviceName={service.name}
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        onBackup={(buckets) => {
+          setBackupBuckets(buckets);
+          setLogOpen(true);
+        }}
+      />
 
       <BackupLogDialog
         serviceName={service.name}
+        buckets={backupBuckets}
         open={logOpen}
         onOpenChange={setLogOpen}
       />

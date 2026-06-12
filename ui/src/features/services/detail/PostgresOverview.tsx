@@ -10,9 +10,9 @@ import type { OverviewProps } from "./types";
 
 // Loaded on demand: the console pulls in CodeMirror, which would otherwise
 // dominate the main bundle for users who never open it.
-const PostgresConsole = lazy(() =>
-  import("./console/PostgresConsole").then((m) => ({
-    default: m.PostgresConsole,
+const PostgresConsoleTabs = lazy(() =>
+  import("./console/PostgresConsoleTabs").then((m) => ({
+    default: m.PostgresConsoleTabs,
   })),
 );
 
@@ -28,7 +28,7 @@ export function PostgresOverview({ service, profile }: OverviewProps) {
   }
   return (
     <Suspense fallback={<Skeleton className="h-40 w-full" />}>
-      <PostgresConsole profile={profile} service={service.name} />
+      <PostgresConsoleTabs profile={profile} service={service.name} />
     </Suspense>
   );
 }

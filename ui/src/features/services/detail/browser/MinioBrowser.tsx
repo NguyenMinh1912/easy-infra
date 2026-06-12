@@ -1,6 +1,7 @@
 import {
   AlertCircle,
   ChevronRight,
+  ChevronsUpDown,
   File,
   Folder,
   HardDrive,
@@ -9,10 +10,15 @@ import { useEffect, useState } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAsync } from "@/hooks/useAsync";
 import { listBuckets } from "@/services/api";
-import { cn } from "@/lib/utils";
 
 import { BucketContents } from "./BucketContents";
 
@@ -21,6 +27,11 @@ interface MinioBrowserProps {
   profile: string;
   /** Service name within the profile (the API path segment). */
   service: string;
+  /**
+   * Bucket configured in the profile's service settings, preselected when it
+   * exists in the store. Falls back to the first listed bucket otherwise.
+   */
+  defaultBucket?: string;
 }
 
 /**
@@ -29,24 +40,33 @@ interface MinioBrowserProps {
  * failure (store unreachable) comes back inside the response envelope, so it
  * renders as an expected outcome rather than a transport error.
  */
-export function MinioBrowser({ profile, service }: MinioBrowserProps) {
+export function MinioBrowser({
+  profile,
+  service,
+  defaultBucket,
+}: MinioBrowserProps) {
   const state = useAsync(
     (signal) => listBuckets(profile, service, signal),
     [profile, service],
   );
   const [bucket, setBucket] = useState<string | null>(null);
 
-  // Select the first bucket once the list loads, so the user lands on content
-  // rather than an empty pane. Re-selects if the active bucket disappears.
+  // Pick a bucket once the list loads, so the user lands on content rather than
+  // an empty pane: prefer the profile's configured bucket, else the first one.
+  // Re-selects if the active bucket disappears.
   const buckets = state.status === "success" ? state.data.buckets : undefined;
   useEffect(() => {
     if (!buckets) return;
     if (buckets.length === 0) {
       setBucket(null);
     } else if (bucket === null || !buckets.includes(bucket)) {
-      setBucket(buckets[0]);
+      const preferred =
+        defaultBucket && buckets.includes(defaultBucket)
+          ? defaultBucket
+          : buckets[0];
+      setBucket(preferred);
     }
-  }, [buckets, bucket]);
+  }, [buckets, bucket, defaultBucket]);
 
   if (state.status === "loading") {
     return <Skeleton className="h-48 w-full" />;
@@ -89,22 +109,48 @@ export function MinioBrowser({ profile, service }: MinioBrowserProps) {
   }
 
   return (
-    <div className="grid gap-4 sm:grid-cols-[12rem_1fr]">
-      <nav aria-label="Buckets" className="flex flex-col gap-1">
-        {state.data.buckets.map((name) => (
+    <div className="space-y-4">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
           <Button
-            key={name}
             type="button"
-            variant={name === bucket ? "secondary" : "ghost"}
+            variant="outline"
             size="sm"
-            className={cn("justify-start gap-2", name !== bucket && "font-normal")}
-            onClick={() => setBucket(name)}
+            className="w-full justify-between gap-2 sm:w-64"
+            aria-label="Select bucket"
           >
-            <Folder className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-            <span className="truncate">{name}</span>
+            <span className="flex min-w-0 items-center gap-2">
+              <Folder
+                className="size-4 shrink-0 text-muted-foreground"
+                aria-hidden
+              />
+              <span className="truncate">{bucket}</span>
+            </span>
+            <ChevronsUpDown
+              className="size-4 shrink-0 text-muted-foreground"
+              aria-hidden
+            />
           </Button>
-        ))}
-      </nav>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="start"
+          className="max-h-72 w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto"
+        >
+          {state.data.buckets.map((name) => (
+            <DropdownMenuItem
+              key={name}
+              onSelect={() => setBucket(name)}
+              className="gap-2"
+            >
+              <Folder
+                className="size-4 shrink-0 text-muted-foreground"
+                aria-hidden
+              />
+              <span className="truncate">{name}</span>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
       {bucket && (
         // Keyed so switching bucket resets the folder path and reloads.
         <BucketContents
