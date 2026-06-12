@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { createService, deleteService, updateService } from "@/services/api";
+import { notifyProfilesChanged } from "@/features/profiles";
 import type { ServiceConfig } from "@/types/service";
 import type { ServicesData } from "../hooks/useServices";
 import { ServiceDialog, type DialogState } from "./ServiceDialog";
@@ -31,6 +32,8 @@ export function ServicesManager({
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<DialogState | null>(null);
 
+  const profile = data.activeProfile;
+
   const run = useCallback(
     async (
       action: () => Promise<unknown>,
@@ -41,6 +44,8 @@ export function ServicesManager({
         await action();
         toast.success(messages.success);
         reload();
+        // A profile's service list changed, so refresh the sidebar submenu too.
+        notifyProfilesChanged();
         return true;
       } catch (cause) {
         toast.error(messages.error, {
@@ -58,25 +63,25 @@ export function ServicesManager({
   const available = data.catalog.filter((entry) => !defined.has(entry.name));
 
   // Create with defaults, then persist any edits the user made in the dialog.
-  const add = (name: string, definition: ServiceConfig) => {
+  const add = (name: string, config: ServiceConfig) => {
     const defaults =
-      data.catalog.find((entry) => entry.name === name)?.defaultDefinition ?? {};
-    const edited = !sameConfig(definition, defaults);
+      data.catalog.find((entry) => entry.name === name)?.defaultConfig ?? {};
+    const edited = !sameConfig(config, defaults);
     return run(
       async () => {
-        await createService(name);
-        if (edited) await updateService(name, definition);
+        await createService(profile, name);
+        if (edited) await updateService(profile, name, config);
       },
       { success: `Service "${name}" added`, error: `Could not add "${name}"` },
     );
   };
 
-  const submit = async (name: string, definition: ServiceConfig) => {
+  const submit = async (name: string, config: ServiceConfig) => {
     if (!dialog) return;
     const ok =
       dialog.mode === "add"
-        ? await add(name, definition)
-        : await run(() => updateService(name, definition), {
+        ? await add(name, config)
+        : await run(() => updateService(profile, name, config), {
             success: `Service "${name}" updated`,
             error: `Could not update "${name}"`,
           });
@@ -84,7 +89,7 @@ export function ServicesManager({
   };
 
   const remove = (name: string) =>
-    run(() => deleteService(name), {
+    run(() => deleteService(profile, name), {
       success: `Service "${name}" removed`,
       error: `Could not remove "${name}"`,
     });
@@ -93,7 +98,8 @@ export function ServicesManager({
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
-          {data.services.length} of {data.catalog.length} defined
+          {data.services.length} of {data.catalog.length} in profile{" "}
+          <span className="font-medium text-foreground">{profile}</span>
         </p>
         <Button
           size="sm"

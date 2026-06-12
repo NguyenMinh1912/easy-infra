@@ -26,7 +26,7 @@ interface ServiceDetailPageProps {
  * (postgres ships its own).
  */
 export function ServiceDetailPage({ name, profile }: ServiceDetailPageProps) {
-  const { state } = useServices();
+  const { state } = useServices(profile);
 
   switch (state.status) {
     case "loading":
@@ -79,7 +79,7 @@ function ServiceNotFound({ name }: { name: string }) {
           No service named <span className="font-mono">{name}</span>
         </p>
         <p className="text-sm text-muted-foreground">
-          It is not defined in this project.
+          It is not defined in this profile.
         </p>
       </div>
       <Button asChild size="sm" variant="outline">

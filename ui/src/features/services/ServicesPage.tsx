@@ -38,10 +38,25 @@ export function ServicesPage() {
         </Alert>
       );
     case "success":
-      return state.data.initialized ? (
+      if (!state.data.initialized) {
+        return <NoProject />;
+      }
+      if (!state.data.activeProfile) {
+        return (
+          <Alert>
+            <AlertCircle />
+            <div>
+              <AlertTitle>No active profile</AlertTitle>
+              <AlertDescription>
+                Services belong to a profile. Activate a profile from the
+                sidebar to manage its services.
+              </AlertDescription>
+            </div>
+          </Alert>
+        );
+      }
+      return (
         <ServicesManager data={state.data} reload={reload} focusService={focus} />
-      ) : (
-        <NoProject />
       );
   }
 }

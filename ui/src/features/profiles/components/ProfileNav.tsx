@@ -11,9 +11,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useAsync } from "@/hooks/useAsync";
 import { useHashRoute } from "@/hooks/useHashRoute";
-import { listServices } from "@/services/api";
 import { cn } from "@/lib/utils";
 
 import { useProfiles } from "../hooks/useProfiles";
@@ -21,15 +19,14 @@ import { ProfileNavItem } from "./ProfileNavItem";
 
 /**
  * Sidebar "Profiles" section: an expandable group listing the project's
- * profiles, with inline create/activate/delete. Each profile expands to the
- * project's service list as submenu items. Owns its own data via
- * {@link useProfiles}; the service names are loaded once and shared across
- * profiles since service definitions are project-wide.
+ * profiles, with inline create/activate/delete. Each profile expands to its own
+ * service list as submenu items (loaded by {@link ProfileNavItem}, since
+ * services now belong to a profile). Owns its profile data via
+ * {@link useProfiles}.
  */
 export function ProfileNav() {
   const route = useHashRoute();
   const { state, actions } = useProfiles();
-  const services = useAsync((signal) => listServices(signal), []);
 
   const [open, setOpen] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -37,10 +34,6 @@ export function ProfileNav() {
   const [submitting, setSubmitting] = useState(false);
 
   const profiles = state.status === "success" ? state.data.profiles : [];
-  const serviceNames =
-    services.status === "success"
-      ? services.data.services.map((s) => s.name)
-      : [];
   const groupActive = route === "/profiles" || route.startsWith("/profiles/");
 
   const trimmed = name.trim();
@@ -166,7 +159,6 @@ export function ProfileNav() {
                   <ProfileNavItem
                     key={profile.name}
                     profile={profile}
-                    services={serviceNames}
                     route={route}
                     actions={actions}
                   />

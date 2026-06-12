@@ -12,15 +12,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import type { ServiceConfig, ServiceDefinition } from "@/types/service";
+import type { ServiceConfig, ServiceInstance } from "@/types/service";
 import { metaFor } from "../catalog-meta";
 
 interface ServicesTableProps {
-  services: ServiceDefinition[];
+  services: ServiceInstance[];
   busy: boolean;
   /** Service to scroll to and highlight, deep-linked from the sidebar. */
   focusService?: string;
-  onEdit: (service: ServiceDefinition) => void;
+  onEdit: (service: ServiceInstance) => void;
   onRemove: (name: string) => void;
 }
 
@@ -83,10 +83,10 @@ export function ServicesTable({
               </TableCell>
               <TableCell>
                 <span className="block max-w-md truncate font-mono text-xs text-muted-foreground">
-                  {preview(service.definition)}
+                  {preview(service.config)}
                 </span>
                 <span className="mt-0.5 block text-xs text-muted-foreground">
-                  {count(service.definition)}
+                  {count(service.config)}
                 </span>
               </TableCell>
               <TableCell>
@@ -112,7 +112,7 @@ export function ServicesTable({
                       </Button>
                     }
                     title={`Remove "${service.name}"?`}
-                    description="This drops the service and its config from every profile. This action cannot be undone."
+                    description="This removes the service and its config from this profile. This action cannot be undone."
                     confirmLabel="Remove"
                     variant="destructive"
                     onConfirm={() => onRemove(service.name)}

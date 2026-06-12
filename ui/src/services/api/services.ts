@@ -1,17 +1,15 @@
-// Services endpoints. Translate the /api/services REST surface into the domain
-// types. Components and hooks depend on these functions, not on `fetch`.
+// Services endpoints. Services belong to a profile, so create/update/delete are
+// scoped to a profile name; the catalog is project-wide. Components and hooks
+// depend on these functions, not on `fetch`.
 
-import type {
-  CatalogResponse,
-  ServiceConfig,
-  ServiceDefinition,
-  ServicesResponse,
-} from "@/types/service";
+import type { ProfileConfig } from "@/types/profiles";
+import type { CatalogResponse, ServiceConfig } from "@/types/service";
 import { apiGet, apiSend } from "./client";
 
-/** Fetch the project's service definitions. */
-export function listServices(signal?: AbortSignal): Promise<ServicesResponse> {
-  return apiGet<ServicesResponse>("/services", signal);
+/** Build the profile-scoped services path, encoding both segments. */
+function servicesPath(profile: string, service?: string): string {
+  const base = `/profiles/${encodeURIComponent(profile)}/services`;
+  return service ? `${base}/${encodeURIComponent(service)}` : base;
 }
 
 /** Fetch the catalog of services easy-infra supports. */
@@ -19,24 +17,26 @@ export function getServiceCatalog(signal?: AbortSignal): Promise<CatalogResponse
   return apiGet<CatalogResponse>("/services/catalog", signal);
 }
 
-/** Add a service to the project using its default definition. */
-export function createService(name: string): Promise<ServiceDefinition> {
-  return apiSend<ServiceDefinition>("POST", "/services", { name });
-}
-
-/** Replace a service's project-level definition. */
-export function updateService(
+/** Add a service to a profile using its default config; returns the profile. */
+export function createService(
+  profile: string,
   name: string,
-  definition: ServiceConfig,
-): Promise<ServiceDefinition> {
-  return apiSend<ServiceDefinition>("PUT", `/services/${encodeURIComponent(name)}`, {
-    definition,
-  });
+): Promise<ProfileConfig> {
+  return apiSend<ProfileConfig>("POST", servicesPath(profile), { name });
 }
 
-/** Remove a service from the project. */
-export function deleteService(name: string): Promise<void> {
-  return apiSend<void>("DELETE", `/services/${encodeURIComponent(name)}`);
+/** Replace a service's config within a profile; returns the profile. */
+export function updateService(
+  profile: string,
+  name: string,
+  config: ServiceConfig,
+): Promise<ProfileConfig> {
+  return apiSend<ProfileConfig>("PUT", servicesPath(profile, name), { config });
+}
+
+/** Remove a service from a profile. */
+export function deleteService(profile: string, name: string): Promise<void> {
+  return apiSend<void>("DELETE", servicesPath(profile, name));
 }
 
 // --- Backup sessions ---------------------------------------------------------

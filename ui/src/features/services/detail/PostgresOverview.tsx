@@ -17,9 +17,8 @@ const PostgresConsole = lazy(() =>
 );
 
 /**
- * Postgres-specific overview. Surfaces the image version prominently and
- * explains the split between the project-level definition (this screen) and the
- * per-profile connection settings, then lists the raw definition. On a
+ * Postgres-specific overview. Surfaces the image version prominently and lists
+ * the profile's raw config (version plus connection settings). On a
  * profile-scoped page it shows the SQL console directly — a client against that
  * profile's connection, defaulting to the profile's configured schema.
  */
@@ -34,9 +33,9 @@ export function PostgresOverview({ service, profile }: OverviewProps) {
   );
 }
 
-/** The project-level postgres summary (version badge plus raw definition). */
+/** The postgres summary for the profile (version badge plus raw config). */
 function PostgresSummary({ service }: Pick<OverviewProps, "service">) {
-  const version = String(service.definition.version ?? "—");
+  const version = String(service.config.version ?? "—");
 
   return (
     <div className="space-y-6">
@@ -57,10 +56,9 @@ function PostgresSummary({ service }: Pick<OverviewProps, "service">) {
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            This is the project-level definition (image version) tracked in{" "}
-            <code className="font-mono text-foreground">easy-infra.yml</code>.
-            Per-environment connection details — host, port, credentials,
-            database — are configured per profile under{" "}
+            This profile owns this service. Its config — image version plus the
+            connection details (host, port, credentials, database) — is edited
+            under{" "}
             <span className="font-medium text-foreground">
               Profiles → Settings
             </span>
@@ -68,7 +66,7 @@ function PostgresSummary({ service }: Pick<OverviewProps, "service">) {
           </p>
         </CardContent>
       </Card>
-      <DefinitionSummary definition={service.definition} />
+      <DefinitionSummary config={service.config} />
     </div>
   );
 }

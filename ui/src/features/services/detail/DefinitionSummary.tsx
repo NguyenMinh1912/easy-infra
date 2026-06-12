@@ -2,21 +2,21 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ServiceConfig } from "@/types/service";
 
 interface DefinitionSummaryProps {
-  definition: ServiceConfig;
+  config: ServiceConfig;
 }
 
 /**
- * Read-only view of a service's project-level definition as key/value pairs.
- * Service-agnostic — the definition is a free-form string map, so every
- * overview can drop this in to render the current settings without editing.
+ * Read-only view of a service's merged config as key/value pairs.
+ * Service-agnostic — the config is a free-form string map, so every overview
+ * can drop this in to render the current settings without editing.
  */
-export function DefinitionSummary({ definition }: DefinitionSummaryProps) {
-  const entries = Object.entries(definition);
+export function DefinitionSummary({ config }: DefinitionSummaryProps) {
+  const entries = Object.entries(config);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Definition</CardTitle>
+        <CardTitle className="text-base">Configuration</CardTitle>
       </CardHeader>
       <CardContent>
         {entries.length === 0 ? (

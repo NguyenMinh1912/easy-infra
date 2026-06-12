@@ -20,7 +20,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import type { ServiceDefinition } from "@/types/service";
+import type { ServiceInstance } from "@/types/service";
 
 import { ApplyLogDialog } from "./ApplyLogDialog";
 import { BackupLogDialog } from "./BackupLogDialog";
@@ -29,7 +29,7 @@ import { ForkLogDialog } from "./ForkLogDialog";
 import { SnapshotSelectDialog } from "./SnapshotSelectDialog";
 
 interface ServiceActionsProps {
-  service: ServiceDefinition;
+  service: ServiceInstance;
 }
 
 /** One operation offered in the service action menu. */
