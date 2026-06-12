@@ -12,6 +12,17 @@ function servicesPath(profile: string, service?: string): string {
   return service ? `${base}/${encodeURIComponent(service)}` : base;
 }
 
+/**
+ * Append a `?profile=` query so a per-service action targets the profile the UI
+ * is viewing rather than whatever profile is active server-side. Omitting the
+ * profile (undefined) keeps the active-profile default for non-UI callers.
+ */
+function withProfile(path: string, profile?: string): string {
+  if (!profile) return path;
+  const sep = path.includes("?") ? "&" : "?";
+  return `${path}${sep}profile=${encodeURIComponent(profile)}`;
+}
+
 /** Fetch the catalog of services easy-infra supports. */
 export function getServiceCatalog(signal?: AbortSignal): Promise<CatalogResponse> {
   return apiGet<CatalogResponse>("/services/catalog", signal);
@@ -103,33 +114,36 @@ export interface BackupOptions {
 
 /**
  * Fetch the buckets a service's backup can capture and the default selection,
- * for the active profile. Returns empty lists for services that have no
- * buckets, so callers can fall back to a plain "back up everything" flow.
+ * for the given profile (defaulting to the active one). Returns empty lists for
+ * services that have no buckets, so callers can fall back to a plain "back up
+ * everything" flow.
  */
 export function getBackupOptions(
   name: string,
+  profile?: string,
   signal?: AbortSignal,
 ): Promise<BackupOptions> {
   return apiGet<BackupOptions>(
-    `/services/${encodeURIComponent(name)}/backup-options`,
+    withProfile(`/services/${encodeURIComponent(name)}/backup-options`, profile),
     signal,
   );
 }
 
 /**
- * Start (or re-attach to) a background backup of a service for the active
- * profile. `buckets` optionally narrows the backup to those buckets (minio);
- * omitting it (or passing an empty list) backs up everything. If one is already
- * running for the service, the server returns that session instead of starting
- * a second.
+ * Start (or re-attach to) a background backup of a service for the given profile
+ * (defaulting to the active one). `buckets` optionally narrows the backup to
+ * those buckets (minio); omitting it (or passing an empty list) backs up
+ * everything. If one is already running for the service, the server returns that
+ * session instead of starting a second.
  */
 export function startServiceBackup(
   name: string,
   buckets?: string[],
+  profile?: string,
 ): Promise<BackupSession> {
   return apiSend<BackupSession>(
     "POST",
-    `/services/${encodeURIComponent(name)}/backup`,
+    withProfile(`/services/${encodeURIComponent(name)}/backup`, profile),
     buckets && buckets.length > 0 ? { buckets } : undefined,
   );
 }
@@ -191,27 +205,29 @@ export interface SnapshotsResponse {
 /** List the backup versions a service can be restored from, newest first. */
 export function listSnapshots(
   name: string,
+  profile?: string,
   signal?: AbortSignal,
 ): Promise<SnapshotsResponse> {
   return apiGet<SnapshotsResponse>(
-    `/services/${encodeURIComponent(name)}/snapshots`,
+    withProfile(`/services/${encodeURIComponent(name)}/snapshots`, profile),
     signal,
   );
 }
 
 /**
- * Start (or re-attach to) a background apply of a service for the active
- * profile, restoring from `snapshot` (an empty string means the latest). If one
- * is already running for the service, the server returns that session instead
- * of starting a second.
+ * Start (or re-attach to) a background apply of a service for the given profile
+ * (defaulting to the active one), restoring from `snapshot` (an empty string
+ * means the latest). If one is already running for the service, the server
+ * returns that session instead of starting a second.
  */
 export function startServiceApply(
   name: string,
   snapshot: string,
+  profile?: string,
 ): Promise<BackupSession> {
   return apiSend<BackupSession>(
     "POST",
-    `/services/${encodeURIComponent(name)}/apply`,
+    withProfile(`/services/${encodeURIComponent(name)}/apply`, profile),
     { snapshot },
   );
 }
@@ -224,20 +240,21 @@ export function startServiceApply(
 // snapshot tells the server to take a fresh backup of the source first.
 
 /**
- * Start (or re-attach to) a background fork of a service from the active
- * profile to a local container, seeded from `snapshot`. An empty `snapshot`
- * means "create a new backup of the source first, then fork from it". An
- * optional `port` publishes the local container on a different port than the
- * source; omitting it keeps the source's port.
+ * Start (or re-attach to) a background fork of a service from the given source
+ * profile (defaulting to the active one) to a local container, seeded from
+ * `snapshot`. An empty `snapshot` means "create a new backup of the source
+ * first, then fork from it". An optional `port` publishes the local container on
+ * a different port than the source; omitting it keeps the source's port.
  */
 export function startServiceFork(
   name: string,
   snapshot: string,
   port?: number,
+  profile?: string,
 ): Promise<BackupSession> {
   return apiSend<BackupSession>(
     "POST",
-    `/services/${encodeURIComponent(name)}/fork`,
+    withProfile(`/services/${encodeURIComponent(name)}/fork`, profile),
     port ? { snapshot, port } : { snapshot },
   );
 }

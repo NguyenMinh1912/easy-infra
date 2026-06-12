@@ -19,6 +19,8 @@ import { cn } from "@/lib/utils";
 interface SnapshotSelectDialogProps {
   /** Service whose backup versions are offered. */
   serviceName: string;
+  /** Profile the service is viewed under; scopes the snapshot lookup to it. */
+  profile?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Called with the chosen snapshot once the user confirms. */
@@ -32,6 +34,7 @@ interface SnapshotSelectDialogProps {
  */
 export function SnapshotSelectDialog({
   serviceName,
+  profile,
   open,
   onOpenChange,
   onApply,
@@ -40,8 +43,8 @@ export function SnapshotSelectDialog({
   // the request only fires when the picker is actually shown.
   const state = useAsync(
     async (signal) =>
-      open ? (await listSnapshots(serviceName, signal)).snapshots : [],
-    [serviceName, open],
+      open ? (await listSnapshots(serviceName, profile, signal)).snapshots : [],
+    [serviceName, profile, open],
   );
 
   const [selected, setSelected] = useState("");

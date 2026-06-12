@@ -23,7 +23,12 @@ import { SnapshotSelectDialog } from "./SnapshotSelectDialog";
 
 interface ServiceActionsProps {
   service: ServiceInstance;
-  /** Profile the service belongs to; required to open and save its settings. */
+  /**
+   * Profile the service is viewed under. Scopes every action — settings,
+   * backup, apply, fork — to that profile rather than whatever profile is
+   * active server-side, and is required to open and save the service's
+   * settings.
+   */
   profile: string;
   /** Called after settings are saved, so the detail screen can reload. */
   onChanged?: () => void;
@@ -129,6 +134,7 @@ export function ServiceActions({ service, profile, onChanged }: ServiceActionsPr
 
       <BackupSelectDialog
         serviceName={service.name}
+        profile={profile}
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         onBackup={(buckets) => {
@@ -139,6 +145,7 @@ export function ServiceActions({ service, profile, onChanged }: ServiceActionsPr
 
       <BackupLogDialog
         serviceName={service.name}
+        profile={profile}
         buckets={backupBuckets}
         open={logOpen}
         onOpenChange={setLogOpen}
@@ -146,6 +153,7 @@ export function ServiceActions({ service, profile, onChanged }: ServiceActionsPr
 
       <SnapshotSelectDialog
         serviceName={service.name}
+        profile={profile}
         open={snapshotOpen}
         onOpenChange={setSnapshotOpen}
         onApply={(snapshot) => {
@@ -156,6 +164,7 @@ export function ServiceActions({ service, profile, onChanged }: ServiceActionsPr
 
       <ApplyLogDialog
         serviceName={service.name}
+        profile={profile}
         snapshot={applySnapshot}
         open={applyOpen}
         onOpenChange={setApplyOpen}
@@ -163,6 +172,7 @@ export function ServiceActions({ service, profile, onChanged }: ServiceActionsPr
 
       <ForkDialog
         serviceName={service.name}
+        profile={profile}
         open={forkOpen}
         onOpenChange={setForkOpen}
         onFork={(snapshot, port) => {
@@ -174,6 +184,7 @@ export function ServiceActions({ service, profile, onChanged }: ServiceActionsPr
 
       <ForkLogDialog
         serviceName={service.name}
+        profile={profile}
         snapshot={forkSnapshot}
         port={forkPort}
         open={forkLogOpen}

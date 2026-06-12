@@ -15,9 +15,35 @@ import (
 	"time"
 
 	"github.com/minhnc/easy-infra/internal/backup"
+	profilepkg "github.com/minhnc/easy-infra/internal/profile"
 	"github.com/minhnc/easy-infra/internal/project"
 	"github.com/minhnc/easy-infra/internal/service"
 )
+
+// targetProfile resolves the profile a per-service operation acts on. The UI
+// scopes its service pages to a profile and passes it as the `profile` query
+// parameter, so an action backs up the profile being viewed rather than whatever
+// happens to be active. When the parameter is absent (e.g. CLI-driven callers)
+// the active profile is used, preserving the previous behaviour. An explicit but
+// unknown profile is a 404; a missing/invalid active profile stays a 409, each
+// matching how it is reached. On failure it writes the response and returns
+// ok=false.
+func (s *Server) targetProfile(w http.ResponseWriter, r *http.Request, proj *project.Project) (string, *profilepkg.Profile, bool) {
+	if name := r.URL.Query().Get("profile"); name != "" {
+		prof, err := proj.LoadProfile(name)
+		if err != nil {
+			writeError(w, http.StatusNotFound, err.Error())
+			return "", nil, false
+		}
+		return name, prof, true
+	}
+	name, prof, err := proj.ActiveProfile()
+	if err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return "", nil, false
+	}
+	return name, prof, true
+}
 
 // backupManager runs backups in the background and tracks the ones in flight so
 // they can be cancelled. A backup runs on a context derived from
@@ -136,9 +162,8 @@ func (s *Server) handleStartBackup(w http.ResponseWriter, r *http.Request) {
 		s.writeProjectError(w, err)
 		return
 	}
-	profileName, prof, err := proj.ActiveProfile()
-	if err != nil {
-		writeError(w, http.StatusConflict, err.Error())
+	profileName, prof, ok := s.targetProfile(w, r, proj)
+	if !ok {
 		return
 	}
 	env, ok := prof.Services[name]
@@ -199,9 +224,8 @@ func (s *Server) handleListSnapshots(w http.ResponseWriter, r *http.Request) {
 		s.writeProjectError(w, err)
 		return
 	}
-	profileName, prof, err := proj.ActiveProfile()
-	if err != nil {
-		writeError(w, http.StatusConflict, err.Error())
+	profileName, prof, ok := s.targetProfile(w, r, proj)
+	if !ok {
 		return
 	}
 	if _, ok := prof.Services[name]; !ok {
@@ -244,9 +268,8 @@ func (s *Server) handleBackupOptions(w http.ResponseWriter, r *http.Request) {
 		s.writeProjectError(w, err)
 		return
 	}
-	profileName, prof, err := proj.ActiveProfile()
-	if err != nil {
-		writeError(w, http.StatusConflict, err.Error())
+	profileName, prof, ok := s.targetProfile(w, r, proj)
+	if !ok {
 		return
 	}
 	env, ok := prof.Services[name]
@@ -346,9 +369,8 @@ func (s *Server) handleStartApply(w http.ResponseWriter, r *http.Request) {
 		s.writeProjectError(w, err)
 		return
 	}
-	profileName, prof, err := proj.ActiveProfile()
-	if err != nil {
-		writeError(w, http.StatusConflict, err.Error())
+	profileName, prof, ok := s.targetProfile(w, r, proj)
+	if !ok {
 		return
 	}
 	env, ok := prof.Services[name]

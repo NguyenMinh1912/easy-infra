@@ -25,6 +25,8 @@ import { useBackupSession, type SessionState } from "./useBackupSession";
 interface BackupLogDialogProps {
   /** Service to back up; also drives the stream once the dialog opens. */
   serviceName: string;
+  /** Profile the service is viewed under; scopes the backup to it. */
+  profile?: string;
   /**
    * Buckets to include (minio); omitted backs up everything. Chosen in the
    * preceding {@link BackupSelectDialog}.
@@ -72,13 +74,14 @@ const STATUS_META: Record<
  */
 export function BackupLogDialog({
   serviceName,
+  profile,
   buckets,
   open,
   onOpenChange,
 }: BackupLogDialogProps) {
   const starter = useCallback(
-    () => startServiceBackup(serviceName, buckets),
-    [serviceName, buckets],
+    () => startServiceBackup(serviceName, buckets, profile),
+    [serviceName, buckets, profile],
   );
   const { state, start, cancel, reset } = useBackupSession(starter);
   const logRef = useRef<HTMLDivElement>(null);
