@@ -3,35 +3,39 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   cancelBackup,
   getBackup,
-  startServiceBackup,
+  type BackupSession,
   type BackupStatus,
 } from "@/services/api";
 
-/** How often to poll a running backup for new log lines, in milliseconds. */
+/** How often to poll a running session for new log lines, in milliseconds. */
 const POLL_INTERVAL = 800;
 
-/** Reactive state of a single service's backup run. */
-export interface BackupState {
+/** Reactive state of a single backup or apply run. */
+export interface SessionState {
   status: BackupStatus | "idle";
   /** Verbose log lines accumulated from polling. */
   lines: string[];
   /** Error message when status is "error". */
   error?: string;
-  /** Snapshot folder name when the backup succeeded. */
+  /** Snapshot folder name the run backed up to or restored from. */
   snapshot?: string;
 }
 
-const initial: BackupState = { status: "idle", lines: [] };
+const initial: SessionState = { status: "idle", lines: [] };
 
 /**
- * Drive a backup of one service by polling. `start` kicks off (or re-attaches
- * to) the server-side session and polls it for new log lines until it settles;
- * `cancel` asks the server to stop it; `reset` stops polling and returns to idle
- * without cancelling — so closing the dialog leaves the backup running. Polling
- * is also torn down on unmount.
+ * Drive a backup or apply by polling. The kind of run is decided by the
+ * injected `starter`, which kicks off (or re-attaches to) the server-side
+ * session; the hook then polls it for new log lines until it settles. `cancel`
+ * asks the server to stop it; `reset` stops polling and returns to idle without
+ * cancelling — so closing the dialog leaves the run going. Polling is also torn
+ * down on unmount.
+ *
+ * Pass a memoized `starter` (e.g. via `useCallback`) so `start` keeps a stable
+ * identity across renders.
  */
-export function useBackup(serviceName: string) {
-  const [state, setState] = useState<BackupState>(initial);
+export function useBackupSession(starter: () => Promise<BackupSession>) {
+  const [state, setState] = useState<SessionState>(initial);
 
   const sessionId = useRef<string | null>(null);
   const lastSeq = useRef(0);
@@ -88,7 +92,7 @@ export function useBackup(serviceName: string) {
     setState({ status: "running", lines: [] });
 
     try {
-      const session = await startServiceBackup(serviceName);
+      const session = await starter();
       if (stopped.current) return;
       sessionId.current = session.id;
       void poll();
@@ -97,7 +101,7 @@ export function useBackup(serviceName: string) {
         setState((s) => ({ ...s, status: "error", error: String(cause) }));
       }
     }
-  }, [serviceName, stop, poll]);
+  }, [starter, stop, poll]);
 
   const cancel = useCallback(async () => {
     const id = sessionId.current;

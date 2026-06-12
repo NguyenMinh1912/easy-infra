@@ -21,6 +21,18 @@ import (
 	_ "modernc.org/sqlite" // pure-Go driver, registered as "sqlite"
 )
 
+// Kind distinguishes what a session is doing, so a backup and an apply for the
+// same service/profile are tracked (and re-attached to) independently rather
+// than conflated.
+type Kind string
+
+const (
+	// KindBackup is a session that snapshots a service's data.
+	KindBackup Kind = "backup"
+	// KindApply is a session that restores a service from a snapshot.
+	KindApply Kind = "apply"
+)
+
 // Status is the lifecycle state of a backup session.
 type Status string
 
@@ -46,6 +58,7 @@ type Session struct {
 	ID        string
 	Service   string
 	Profile   string
+	Kind      Kind
 	Status    Status
 	Snapshot  string
 	Error     string
@@ -102,13 +115,14 @@ CREATE TABLE IF NOT EXISTS backup_sessions (
 	id         TEXT PRIMARY KEY,
 	service    TEXT NOT NULL,
 	profile    TEXT NOT NULL,
+	kind       TEXT NOT NULL DEFAULT 'backup',
 	status     TEXT NOT NULL,
 	snapshot   TEXT NOT NULL DEFAULT '',
 	error      TEXT NOT NULL DEFAULT '',
 	created_at INTEGER NOT NULL,
 	updated_at INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_sessions_service ON backup_sessions(service, profile, created_at);
+CREATE INDEX IF NOT EXISTS idx_sessions_service ON backup_sessions(service, profile, kind, created_at);
 CREATE TABLE IF NOT EXISTS backup_logs (
 	session_id TEXT NOT NULL,
 	seq        INTEGER NOT NULL,
@@ -128,9 +142,9 @@ CREATE TABLE IF NOT EXISTS backup_logs (
 	return nil
 }
 
-// CreateSession inserts a new running session for service/profile and returns
-// it with a fresh id and timestamps.
-func (s *Store) CreateSession(service, profile string) (Session, error) {
+// CreateSession inserts a new running session of kind for service/profile and
+// returns it with a fresh id and timestamps.
+func (s *Store) CreateSession(service, profile string, kind Kind) (Session, error) {
 	id, err := newID()
 	if err != nil {
 		return Session{}, err
@@ -140,30 +154,31 @@ func (s *Store) CreateSession(service, profile string) (Session, error) {
 		ID:        id,
 		Service:   service,
 		Profile:   profile,
+		Kind:      kind,
 		Status:    StatusRunning,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
 	if _, err := s.db.Exec(
-		`INSERT INTO backup_sessions (id, service, profile, status, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		sess.ID, sess.Service, sess.Profile, sess.Status, sess.CreatedAt.UnixMilli(), sess.UpdatedAt.UnixMilli(),
+		`INSERT INTO backup_sessions (id, service, profile, kind, status, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		sess.ID, sess.Service, sess.Profile, sess.Kind, sess.Status, sess.CreatedAt.UnixMilli(), sess.UpdatedAt.UnixMilli(),
 	); err != nil {
 		return Session{}, fmt.Errorf("creating backup session: %w", err)
 	}
 	return sess, nil
 }
 
-// RunningForService returns the most recent running session for service/profile,
-// if any. It lets callers re-attach to an in-flight backup instead of starting a
-// duplicate.
-func (s *Store) RunningForService(service, profile string) (*Session, bool, error) {
+// RunningForService returns the most recent running session of kind for
+// service/profile, if any. It lets callers re-attach to an in-flight run instead
+// of starting a duplicate.
+func (s *Store) RunningForService(service, profile string, kind Kind) (*Session, bool, error) {
 	row := s.db.QueryRow(
-		`SELECT id, service, profile, status, snapshot, error, created_at, updated_at
+		`SELECT id, service, profile, kind, status, snapshot, error, created_at, updated_at
 		   FROM backup_sessions
-		  WHERE service = ? AND profile = ? AND status = ?
+		  WHERE service = ? AND profile = ? AND kind = ? AND status = ?
 		  ORDER BY created_at DESC LIMIT 1`,
-		service, profile, StatusRunning,
+		service, profile, kind, StatusRunning,
 	)
 	sess, err := scanSession(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -178,7 +193,7 @@ func (s *Store) RunningForService(service, profile string) (*Session, bool, erro
 // Get returns the session with id, or ErrNotFound.
 func (s *Store) Get(id string) (Session, error) {
 	row := s.db.QueryRow(
-		`SELECT id, service, profile, status, snapshot, error, created_at, updated_at
+		`SELECT id, service, profile, kind, status, snapshot, error, created_at, updated_at
 		   FROM backup_sessions WHERE id = ?`, id)
 	sess, err := scanSession(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -242,11 +257,12 @@ func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 	var (
 		sess             Session
 		created, updated int64
-		status           string
+		kind, status     string
 	)
-	if err := row.Scan(&sess.ID, &sess.Service, &sess.Profile, &status, &sess.Snapshot, &sess.Error, &created, &updated); err != nil {
+	if err := row.Scan(&sess.ID, &sess.Service, &sess.Profile, &kind, &status, &sess.Snapshot, &sess.Error, &created, &updated); err != nil {
 		return Session{}, err
 	}
+	sess.Kind = Kind(kind)
 	sess.Status = Status(status)
 	sess.CreatedAt = time.UnixMilli(created).UTC()
 	sess.UpdatedAt = time.UnixMilli(updated).UTC()

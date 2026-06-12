@@ -51,6 +51,13 @@ func ListSnapshots(profile string) ([]string, error) {
 	return ids, nil
 }
 
+// SnapshotDir returns the path of the snapshot folder named id under profile.
+// The id is a folder name produced by NewSnapshotDir and listed by
+// ListSnapshots; callers validate it exists before trusting client input.
+func SnapshotDir(profile, id string) string {
+	return filepath.Join(BackupsDir(profile), id)
+}
+
 // latestSnapshotDir returns the path of the newest snapshot folder for profile,
 // or an empty string when none exist.
 func latestSnapshotDir(profile string) (string, error) {

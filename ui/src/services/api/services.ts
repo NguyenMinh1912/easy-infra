@@ -111,3 +111,45 @@ export function cancelBackup(id: string): Promise<BackupSession> {
     `/backups/${encodeURIComponent(id)}/cancel`,
   );
 }
+
+// --- Apply / restore ---------------------------------------------------------
+//
+// Apply restores a service from a backup snapshot. Like a backup it runs as a
+// persisted server-side session: the UI starts one (choosing which version to
+// restore) and polls it through the same /api/backups/{id} surface.
+
+/**
+ * Response of GET /api/services/{name}/snapshots: the backup versions available
+ * to the active profile, newest first.
+ */
+export interface SnapshotsResponse {
+  snapshots: string[];
+}
+
+/** List the backup versions a service can be restored from, newest first. */
+export function listSnapshots(
+  name: string,
+  signal?: AbortSignal,
+): Promise<SnapshotsResponse> {
+  return apiGet<SnapshotsResponse>(
+    `/services/${encodeURIComponent(name)}/snapshots`,
+    signal,
+  );
+}
+
+/**
+ * Start (or re-attach to) a background apply of a service for the active
+ * profile, restoring from `snapshot` (an empty string means the latest). If one
+ * is already running for the service, the server returns that session instead
+ * of starting a second.
+ */
+export function startServiceApply(
+  name: string,
+  snapshot: string,
+): Promise<BackupSession> {
+  return apiSend<BackupSession>(
+    "POST",
+    `/services/${encodeURIComponent(name)}/apply`,
+    { snapshot },
+  );
+}

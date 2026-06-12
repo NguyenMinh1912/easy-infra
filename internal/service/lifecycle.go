@@ -23,6 +23,10 @@ type Spec struct {
 	// layer sets it so every service in one snapshot shares a single folder. When
 	// empty, Backup falls back to its own fresh snapshot.
 	BackupDir string
+	// Snapshot selects which backup version an Apply restores, by snapshot id
+	// (the timestamp folder name). When empty, Apply restores the latest
+	// snapshot, preserving the default `easy-infra apply` behaviour.
+	Snapshot string
 	// Log receives human-readable progress messages emitted during a lifecycle
 	// operation. The command layer wires it up (e.g. for `backup snapshot
 	// --verbose`) so users can follow what a service is doing; when nil, the

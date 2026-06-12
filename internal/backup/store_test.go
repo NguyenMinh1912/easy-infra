@@ -18,7 +18,7 @@ func openTemp(t *testing.T) *Store {
 func TestSessionLifecycle(t *testing.T) {
 	store := openTemp(t)
 
-	sess, err := store.CreateSession("postgres", "default")
+	sess, err := store.CreateSession("postgres", "default", KindBackup)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -27,7 +27,7 @@ func TestSessionLifecycle(t *testing.T) {
 	}
 
 	// A running session is re-attachable; a second start should find it.
-	if got, ok, err := store.RunningForService("postgres", "default"); err != nil || !ok {
+	if got, ok, err := store.RunningForService("postgres", "default", KindBackup); err != nil || !ok {
 		t.Fatalf("RunningForService = (%v, %v, %v), want a running session", got, ok, err)
 	} else if got.ID != sess.ID {
 		t.Errorf("RunningForService id = %q, want %q", got.ID, sess.ID)
@@ -66,7 +66,7 @@ func TestSessionLifecycle(t *testing.T) {
 		t.Errorf("finished session = %+v, want success with snapshot", got)
 	}
 	// No longer running, so nothing to re-attach to.
-	if _, ok, _ := store.RunningForService("postgres", "default"); ok {
+	if _, ok, _ := store.RunningForService("postgres", "default", KindBackup); ok {
 		t.Error("RunningForService still reports a running session after Finish")
 	}
 }
@@ -86,7 +86,7 @@ func TestReconcileRunningOnOpen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	sess, err := store.CreateSession("postgres", "default")
+	sess, err := store.CreateSession("postgres", "default", KindBackup)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
