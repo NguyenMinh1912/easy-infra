@@ -1,12 +1,5 @@
 import { useState } from "react";
-import {
-  Activity,
-  Eraser,
-  Play,
-  Save,
-  Settings2,
-  type LucideIcon,
-} from "lucide-react";
+import { Activity, Eraser, Play, Save, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -20,14 +13,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import type { ServiceDefinition } from "@/types/service";
 
 import { BackupLogDialog } from "./BackupLogDialog";
@@ -53,8 +38,8 @@ const ACTIONS: ServiceAction[] = [
 ];
 
 /**
- * The navbar action menu for a single service: status, backup, apply, and
- * clean, grouped behind one icon trigger. Backup is wired to the API — it
+ * The navbar action bar for a single service: status, backup, apply, and clean,
+ * laid out as a horizontal row of buttons. Backup is wired to the API — it
  * confirms, then streams the snapshot's verbose log into a modal. The remaining
  * operations run server-side but are not exposed yet, so they announce that they
  * are coming rather than calling a missing endpoint.
@@ -75,30 +60,26 @@ export function ServiceActions({ service }: ServiceActionsProps) {
 
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="icon" aria-label="Service actions">
-            <Settings2 />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuLabel>Actions</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          {ACTIONS.map((action) => {
-            const Icon = action.icon;
-            return (
-              <DropdownMenuItem
-                key={action.id}
-                variant={action.destructive ? "destructive" : "default"}
-                onSelect={() => run(action)}
-              >
-                <Icon aria-hidden />
-                {action.label}
-              </DropdownMenuItem>
-            );
-          })}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <div
+        className="flex flex-wrap items-center gap-2"
+        role="toolbar"
+        aria-label="Service actions"
+      >
+        {ACTIONS.map((action) => {
+          const Icon = action.icon;
+          return (
+            <Button
+              key={action.id}
+              variant={action.destructive ? "destructive" : "outline"}
+              size="sm"
+              onClick={() => run(action)}
+            >
+              <Icon aria-hidden />
+              {action.label}
+            </Button>
+          );
+        })}
+      </div>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
