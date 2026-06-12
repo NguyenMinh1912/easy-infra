@@ -98,7 +98,7 @@ function ObjectsTable({ prefixes, objects, onOpen }: ObjectsTableProps) {
   }
   return (
     <div className="overflow-x-auto rounded-md border border-border">
-      <Table>
+      <Table className="table-fixed">
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
@@ -116,11 +116,13 @@ function ObjectsTable({ prefixes, objects, onOpen }: ObjectsTableProps) {
               <TableCell>
                 <button
                   type="button"
-                  className="flex items-center gap-2 font-medium hover:underline"
+                  className="flex w-full min-w-0 items-center gap-2 font-medium hover:underline"
                   onClick={() => onOpen(p)}
                 >
                   <EntryIcon folder />
-                  {baseName(p)}/
+                  <span className="truncate" title={`${baseName(p)}/`}>
+                    {baseName(p)}/
+                  </span>
                 </button>
               </TableCell>
               <TableCell className="text-right text-muted-foreground">—</TableCell>
@@ -130,7 +132,7 @@ function ObjectsTable({ prefixes, objects, onOpen }: ObjectsTableProps) {
           {objects.map((obj) => (
             <TableRow key={obj.key}>
               <TableCell>
-                <span className="flex items-center gap-2">
+                <span className="flex min-w-0 items-center gap-2">
                   <EntryIcon folder={false} />
                   <span className="truncate font-mono text-sm" title={obj.key}>
                     {baseName(obj.key)}
