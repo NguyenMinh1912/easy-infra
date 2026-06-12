@@ -10,13 +10,15 @@ func (MinIO) Name() string { return "minio" }
 
 // DefaultDefinition implements Service.
 func (MinIO) DefaultDefinition() Config {
-	return Config{"version": "latest"}
+	return Config{"version": "latest", cleanableKey: true}
 }
 
 // ValidateDefinition implements Service.
 func (MinIO) ValidateDefinition(cfg Config) error {
-	_, err := optionalString(cfg, "version", "latest")
-	return err
+	if _, err := optionalString(cfg, "version", "latest"); err != nil {
+		return err
+	}
+	return validateCleanable(cfg)
 }
 
 // DefaultEnv implements Service.
@@ -63,4 +65,9 @@ func (MinIO) Health(context.Context, Spec) error { return notImplemented("minio"
 func (MinIO) Backup(context.Context, Spec) error { return notImplemented("minio", "backup") }
 
 // Clean implements Service.
-func (MinIO) Clean(context.Context, Spec) error { return notImplemented("minio", "clean") }
+func (MinIO) Clean(_ context.Context, spec Spec) error {
+	if err := spec.ensureCleanable(); err != nil {
+		return err
+	}
+	return notImplemented("minio", "clean")
+}
