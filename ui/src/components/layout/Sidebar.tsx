@@ -30,12 +30,16 @@ const navItems: NavItem[] = [
   { label: "Backup", icon: Database },
 ];
 
-/** Whether a nav item's route matches the current route. */
+/**
+ * Whether a nav item's route matches the current route. Matches exactly so a
+ * service detail page (`/services/{name}`), which belongs to a profile rather
+ * than the top-level Services list, does not highlight the Services item.
+ */
 function isActive(itemRoute: string, route: string): boolean {
   if (itemRoute === "/") {
     return route === "/" || route === "";
   }
-  return route.startsWith(itemRoute);
+  return route === itemRoute;
 }
 
 /** A single top-level sidebar link, highlighted when its route is active. */
