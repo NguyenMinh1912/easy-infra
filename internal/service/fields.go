@@ -1,6 +1,10 @@
 package service
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
 
 // The helpers below give every service a consistent, DRY way to read and
 // validate fields out of the raw Config map. YAML decodes numbers as int (or
@@ -58,7 +62,9 @@ func requireString(cfg Config, key string) (string, error) {
 	return s, nil
 }
 
-// asInt coerces the numeric shapes yaml.v3 may produce into an int.
+// asInt coerces the numeric shapes config sources may produce into an int.
+// YAML decodes numbers as int/float64, while the JSON API (the web UI) submits
+// every field as a string, so a numeric string like "5432" is accepted too.
 func asInt(raw any) (int, error) {
 	switch v := raw.(type) {
 	case int:
@@ -70,6 +76,12 @@ func asInt(raw any) (int, error) {
 			return 0, fmt.Errorf("not a whole number")
 		}
 		return int(v), nil
+	case string:
+		n, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil {
+			return 0, fmt.Errorf("not a number")
+		}
+		return n, nil
 	default:
 		return 0, fmt.Errorf("not a number")
 	}

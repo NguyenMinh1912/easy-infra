@@ -71,6 +71,10 @@ func (Postgres) ValidateEnv(cfg Config) error {
 	if _, err := requireString(cfg, "database"); err != nil {
 		return err
 	}
+	// schema is optional; when set it selects the connection's search_path.
+	if _, err := optionalString(cfg, "schema", ""); err != nil {
+		return err
+	}
 	return nil
 }
 

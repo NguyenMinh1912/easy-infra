@@ -54,3 +54,26 @@ export function activateProfile(name: string): Promise<ProfilesResult> {
 export function deleteProfile(name: string): Promise<void> {
   return apiSend<void>("DELETE", `/profiles/${encodeURIComponent(name)}`);
 }
+
+/** Result of probing a service with a candidate env config. */
+export interface ConnectionCheck {
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * Probe a service with the given (possibly unsaved) env config, so the user can
+ * verify connectivity before saving. The probe failing is reported as
+ * `ok: false` with a reason, not a thrown error.
+ */
+export function checkServiceConnection(
+  profile: string,
+  service: string,
+  config: Record<string, unknown>,
+): Promise<ConnectionCheck> {
+  return apiSend<ConnectionCheck>(
+    "POST",
+    `/profiles/${encodeURIComponent(profile)}/services/${encodeURIComponent(service)}/check`,
+    { config },
+  );
+}

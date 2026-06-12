@@ -113,6 +113,10 @@ func connString(env Config, database string) (string, error) {
 			return "", err
 		}
 	}
+	schema, err := optionalString(env, "schema", "")
+	if err != nil {
+		return "", err
+	}
 
 	parts := []string{
 		"host=" + quoteDSN(host),
@@ -122,6 +126,12 @@ func connString(env Config, database string) (string, error) {
 	}
 	if password != "" {
 		parts = append(parts, "password="+quoteDSN(password))
+	}
+	// search_path is not a libpq connection keyword, so pgx applies it as a
+	// runtime parameter on connect — mirroring how the "url" form maps JDBC's
+	// currentSchema / search_path query parameter.
+	if schema != "" {
+		parts = append(parts, "search_path="+quoteDSN(schema))
 	}
 	return strings.Join(parts, " "), nil
 }

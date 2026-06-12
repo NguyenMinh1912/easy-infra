@@ -6,10 +6,8 @@ import { Button } from "@/components/ui/button";
 import type { ProfileConfig, ProfileServiceConfig } from "@/types/profiles";
 
 import type { ProfileConfigActions } from "../hooks/useProfileConfig";
-import {
-  ProfileServiceConfigCard,
-  type ConfigRow,
-} from "./ProfileServiceConfigCard";
+import { profileConfigCardFor } from "./profile-config-registry";
+import { type ConfigRow } from "./ProfileServiceConfigCard";
 
 interface ProfileSettingsProps {
   data: ProfileConfig;
@@ -63,15 +61,19 @@ export function ProfileSettings({ data, actions }: ProfileSettingsProps) {
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2">
-        {draft.map((service) => (
-          <ProfileServiceConfigCard
-            key={service.name}
-            name={service.name}
-            rows={service.rows}
-            disabled={saving}
-            onChange={(rows) => setRows(service.name, rows)}
-          />
-        ))}
+        {draft.map((service) => {
+          const ConfigCard = profileConfigCardFor(service.name);
+          return (
+            <ConfigCard
+              key={service.name}
+              name={service.name}
+              profileName={data.name}
+              rows={service.rows}
+              disabled={saving}
+              onChange={(rows) => setRows(service.name, rows)}
+            />
+          );
+        })}
       </div>
       <div className="flex gap-2">
         <Button disabled={saving} onClick={save}>

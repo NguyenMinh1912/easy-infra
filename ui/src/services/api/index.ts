@@ -19,9 +19,11 @@ export type {
 } from "./services";
 export {
   activateProfile,
+  checkServiceConnection,
   createProfile,
   deleteProfile,
   getProfileConfig,
   listProfiles,
   updateProfileConfig,
 } from "./profiles";
+export type { ConnectionCheck } from "./profiles";

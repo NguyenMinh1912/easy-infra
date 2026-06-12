@@ -1,14 +1,21 @@
 package server
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"regexp"
 	"sort"
+	"time"
 
 	"github.com/minhnc/easy-infra/internal/project"
 	"github.com/minhnc/easy-infra/internal/service"
 )
+
+// checkConnectionTimeout bounds a connection check so an unreachable host
+// fails fast rather than hanging the request.
+const checkConnectionTimeout = 10 * time.Second
 
 // profilesResponse is the JSON shape returned by the /api/profiles endpoints:
 // the project's profiles plus which one is active.
@@ -39,6 +46,20 @@ type profileServiceConfig struct {
 // profileConfigRequest is the request body for updating a profile's config.
 type profileConfigRequest struct {
 	Services []profileServiceConfig `json:"services"`
+}
+
+// checkConnectionRequest carries the (possibly unsaved) service env config the
+// UI wants to test, so the user can verify a connection before saving it.
+type checkConnectionRequest struct {
+	Config service.Config `json:"config"`
+}
+
+// checkConnectionResponse reports whether the service was reachable. The probe
+// failing is an expected outcome, not an HTTP error, so OK is false with the
+// reason in Error rather than a non-2xx status.
+type checkConnectionResponse struct {
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
 }
 
 // validProfileName guards the profile name taken from the request path/body.
@@ -159,6 +180,35 @@ func (s *Server) handleActivateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeProfiles(w, http.StatusOK, proj)
+}
+
+// handleCheckConnection probes a service with the env config posted in the
+// request body, letting the UI verify connectivity for the config currently in
+// the form without first saving it. The profile name scopes the check (it is
+// recorded on the Spec) but the config comes from the body, not disk.
+func (s *Server) handleCheckConnection(w http.ResponseWriter, r *http.Request) {
+	profileName := r.PathValue("name")
+	svcName := r.PathValue("service")
+	var req checkConnectionRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	svc, ok := s.reg.Get(svcName)
+	if !ok {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("unknown service %q", svcName))
+		return
+	}
+	if err := svc.ValidateEnv(req.Config); err != nil {
+		writeJSON(w, http.StatusOK, checkConnectionResponse{Error: err.Error()})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), checkConnectionTimeout)
+	defer cancel()
+	if err := svc.Health(ctx, service.Spec{Profile: profileName, Env: req.Config}); err != nil {
+		writeJSON(w, http.StatusOK, checkConnectionResponse{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, checkConnectionResponse{OK: true})
 }
 
 // writeProfiles writes the project's current profile list at the given status.

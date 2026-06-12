@@ -16,6 +16,7 @@ postgres:
   user: app
   password: change-me
   database: app
+  schema: app_dynamic         # optional; sets the connection's search_path
   # Alternatively, give the whole connection as a single URL instead of the
   # discrete fields above (extra query params like sslmode are preserved):
   #   url: postgres://app:change-me@db.staging.internal:5432/app?sslmode=require
