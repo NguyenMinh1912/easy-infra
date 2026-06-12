@@ -1,9 +1,4 @@
-import {
-  Database,
-  LayoutDashboard,
-  Server,
-  type LucideIcon,
-} from "lucide-react";
+import { Database, Server, type LucideIcon } from "lucide-react";
 
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { ProfileNav } from "@/features/profiles";
@@ -25,15 +20,11 @@ interface NavItem {
  * routing; the rest are placeholders for future screens.
  */
 const navItems: NavItem[] = [
-  { label: "Dashboard", icon: LayoutDashboard, route: "/" },
   { label: "Backups", icon: Database, route: "/backups" },
 ];
 
 /** Whether a nav item's route matches the current route. */
 function isActive(itemRoute: string, route: string): boolean {
-  if (itemRoute === "/") {
-    return route === "/" || route === "";
-  }
   return route === itemRoute;
 }
 
@@ -75,9 +66,8 @@ export function Sidebar() {
         <span className="text-lg font-bold tracking-tight">easy-infra</span>
       </div>
       <nav className="flex-1 space-y-1 p-4">
-        <NavLink item={navItems[0]} route={route} />
         <ProfileNav />
-        {navItems.slice(1).map((item) => (
+        {navItems.map((item) => (
           <NavLink key={item.label} item={item} route={route} />
         ))}
       </nav>
