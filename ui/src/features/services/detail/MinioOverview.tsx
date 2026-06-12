@@ -17,7 +17,22 @@ export function MinioOverview({ service, profile }: OverviewProps) {
   if (!profile) {
     return <MinioSummary service={service} />;
   }
-  return <MinioBrowser profile={profile} service={service.name} />;
+  return (
+    <MinioBrowser
+      profile={profile}
+      service={service.name}
+      defaultBucket={configuredBucket(service.config)}
+    />
+  );
+}
+
+/** The first bucket declared in the profile's service config, if any. */
+function configuredBucket(config: OverviewProps["service"]["config"]): string | undefined {
+  const buckets = config.buckets;
+  if (Array.isArray(buckets) && typeof buckets[0] === "string") {
+    return buckets[0];
+  }
+  return undefined;
 }
 
 /** The minio summary for the profile (version badge plus raw config). */
