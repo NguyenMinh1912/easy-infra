@@ -46,7 +46,10 @@ type queryResponse struct {
 // so the UI can degrade to keyword-only completion.
 type schemaResponse struct {
 	Tables []service.TableInfo `json:"tables"`
-	Error  string              `json:"error,omitempty"`
+	// CurrentSchema is the connection's search_path-resolved schema, so the
+	// editor can default its suggestions to where statements execute.
+	CurrentSchema string `json:"currentSchema"`
+	Error         string `json:"error,omitempty"`
 }
 
 // handleConsoleQuery executes one statement against the named profile's
@@ -103,7 +106,7 @@ func (s *Server) handleConsoleSchema(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, schemaResponse{Tables: []service.TableInfo{}, Error: err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, schemaResponse{Tables: info.Tables})
+	writeJSON(w, http.StatusOK, schemaResponse{Tables: info.Tables, CurrentSchema: info.CurrentSchema})
 }
 
 // resolveQuerier maps the {name}/{service} path onto a console-capable service

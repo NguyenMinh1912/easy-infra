@@ -45,10 +45,14 @@ export function PostgresConsole({ profile, service }: PostgresConsoleProps) {
     if (schemaState.status !== "success" || schemaState.data.error) {
       return undefined;
     }
+    // Tables in the connection's current schema (its search_path) complete
+    // unqualified, matching how unqualified names resolve when the statement
+    // runs; tables in other schemas keep their schema prefix.
+    const current = schemaState.data.currentSchema || "public";
     const schema: Record<string, string[]> = {};
     for (const table of schemaState.data.tables) {
       const key =
-        table.schema === "public"
+        table.schema === current
           ? table.name
           : `${table.schema}.${table.name}`;
       schema[key] = table.columns;

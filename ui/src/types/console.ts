@@ -34,5 +34,11 @@ export interface TableInfo {
  */
 export interface SchemaInfo {
   tables: TableInfo[];
+  /**
+   * The schema the profile's connection resolves unqualified names against
+   * (its search_path). The editor defaults completion to it, so suggestions
+   * match the schema statements execute in.
+   */
+  currentSchema: string;
   error?: string;
 }
