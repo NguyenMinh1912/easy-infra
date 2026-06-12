@@ -182,3 +182,26 @@ export function startServiceApply(
     { snapshot },
   );
 }
+
+// --- Fork to local -----------------------------------------------------------
+//
+// Fork stands the active profile's service up as a local Docker container with
+// the same configuration and seeds it from a backup. Like backup/apply it runs
+// as a persisted server-side session polled through /api/backups/{id}; an empty
+// snapshot tells the server to take a fresh backup of the source first.
+
+/**
+ * Start (or re-attach to) a background fork of a service from the active
+ * profile to a local container, seeded from `snapshot`. An empty `snapshot`
+ * means "create a new backup of the source first, then fork from it".
+ */
+export function startServiceFork(
+  name: string,
+  snapshot: string,
+): Promise<BackupSession> {
+  return apiSend<BackupSession>(
+    "POST",
+    `/services/${encodeURIComponent(name)}/fork`,
+    { snapshot },
+  );
+}

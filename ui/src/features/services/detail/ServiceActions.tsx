@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { Activity, Eraser, Play, Save, type LucideIcon } from "lucide-react";
+import {
+  Activity,
+  Eraser,
+  GitFork,
+  Play,
+  Save,
+  type LucideIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -17,6 +24,8 @@ import type { ServiceDefinition } from "@/types/service";
 
 import { ApplyLogDialog } from "./ApplyLogDialog";
 import { BackupLogDialog } from "./BackupLogDialog";
+import { ForkDialog } from "./ForkDialog";
+import { ForkLogDialog } from "./ForkLogDialog";
 import { SnapshotSelectDialog } from "./SnapshotSelectDialog";
 
 interface ServiceActionsProps {
@@ -36,14 +45,17 @@ const ACTIONS: ServiceAction[] = [
   { id: "status", label: "Service status", icon: Activity },
   { id: "backup", label: "Backup", icon: Save },
   { id: "apply", label: "Apply", icon: Play },
+  { id: "fork", label: "Fork to local", icon: GitFork },
   { id: "clean", label: "Clean", icon: Eraser, destructive: true },
 ];
 
 /**
- * The navbar action bar for a single service: status, backup, apply, and clean,
- * laid out as a horizontal row of buttons. Backup and apply are wired to the
- * API — backup confirms then streams the snapshot's verbose log into a modal;
- * apply picks a backup version then streams the restore's log. The remaining
+ * The navbar action bar for a single service: status, backup, apply, fork, and
+ * clean, laid out as a horizontal row of buttons. Backup, apply, and fork are
+ * wired to the API — backup confirms then streams the snapshot's verbose log
+ * into a modal; apply picks a backup version then streams the restore's log;
+ * fork picks a seed (an existing version or a fresh backup), launches a local
+ * container with the same config, and streams the fork's log. The remaining
  * operations run server-side but are not exposed yet, so they announce that they
  * are coming rather than calling a missing endpoint.
  */
@@ -53,6 +65,9 @@ export function ServiceActions({ service }: ServiceActionsProps) {
   const [snapshotOpen, setSnapshotOpen] = useState(false);
   const [applyOpen, setApplyOpen] = useState(false);
   const [applySnapshot, setApplySnapshot] = useState("");
+  const [forkOpen, setForkOpen] = useState(false);
+  const [forkLogOpen, setForkLogOpen] = useState(false);
+  const [forkSnapshot, setForkSnapshot] = useState("");
 
   const run = (action: ServiceAction) => {
     if (action.id === "backup") {
@@ -61,6 +76,10 @@ export function ServiceActions({ service }: ServiceActionsProps) {
     }
     if (action.id === "apply") {
       setSnapshotOpen(true);
+      return;
+    }
+    if (action.id === "fork") {
+      setForkOpen(true);
       return;
     }
     toast.info(`"${action.label}" is not available yet`, {
@@ -136,6 +155,23 @@ export function ServiceActions({ service }: ServiceActionsProps) {
         snapshot={applySnapshot}
         open={applyOpen}
         onOpenChange={setApplyOpen}
+      />
+
+      <ForkDialog
+        serviceName={service.name}
+        open={forkOpen}
+        onOpenChange={setForkOpen}
+        onFork={(snapshot) => {
+          setForkSnapshot(snapshot);
+          setForkLogOpen(true);
+        }}
+      />
+
+      <ForkLogDialog
+        serviceName={service.name}
+        snapshot={forkSnapshot}
+        open={forkLogOpen}
+        onOpenChange={setForkLogOpen}
       />
     </>
   );

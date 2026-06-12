@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useAsync, type AsyncState } from "@/hooks/useAsync";
 import {
@@ -8,6 +8,8 @@ import {
   listProfiles,
 } from "@/services/api";
 import type { ProfilesResult } from "@/types/profiles";
+
+import { onProfilesChanged } from "../profiles-events";
 
 /** The mutations the profiles screen can perform. Each reloads on success. */
 export interface ProfileActions {
@@ -30,6 +32,9 @@ export function useProfiles(): {
   const state = useAsync<ProfilesResult>((signal) => listProfiles(signal), [
     nonce,
   ]);
+
+  // Reload when a profile changes elsewhere (e.g. a fork creates "local").
+  useEffect(() => onProfilesChanged(reload), [reload]);
 
   const actions = useMemo<ProfileActions>(
     () => ({
