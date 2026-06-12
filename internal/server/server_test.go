@@ -125,6 +125,174 @@ func TestStatusMethodNotAllowed(t *testing.T) {
 	}
 }
 
+// doRequest issues a request against the server's handler and returns the
+// recorder.
+func doRequest(t *testing.T, srv *Server, method, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	var reader io.Reader
+	if body != "" {
+		reader = strings.NewReader(body)
+	}
+	req := httptest.NewRequest(method, path, reader)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	return rec
+}
+
+func decodeProfiles(t *testing.T, rec *httptest.ResponseRecorder) profilesResponse {
+	t.Helper()
+	var got profilesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode profiles: %v (body %q)", err, rec.Body.String())
+	}
+	return got
+}
+
+func TestListProfiles(t *testing.T) {
+	paths, reg := initProject(t, "postgres")
+	srv := New(reg, paths, emptyUI)
+
+	rec := doRequest(t, srv, http.MethodGet, "/api/profiles", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200", rec.Code)
+	}
+	got := decodeProfiles(t, rec)
+	if got.ActiveProfile != "default" {
+		t.Errorf("ActiveProfile = %q, want \"default\"", got.ActiveProfile)
+	}
+	if len(got.Profiles) != 1 || got.Profiles[0].Name != "default" || !got.Profiles[0].Active {
+		t.Errorf("Profiles = %+v, want one active \"default\"", got.Profiles)
+	}
+}
+
+func TestListProfilesNotInitialized(t *testing.T) {
+	srv := New(service.DefaultRegistry(), newPaths(t), emptyUI)
+	rec := doRequest(t, srv, http.MethodGet, "/api/profiles", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200", rec.Code)
+	}
+	if got := decodeProfiles(t, rec); len(got.Profiles) != 0 {
+		t.Errorf("Profiles = %+v, want empty", got.Profiles)
+	}
+}
+
+func TestCreateProfile(t *testing.T) {
+	paths, reg := initProject(t, "postgres")
+	srv := New(reg, paths, emptyUI)
+
+	rec := doRequest(t, srv, http.MethodPost, "/api/profiles", `{"name":"staging"}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("code = %d, want 201 (body %q)", rec.Code, rec.Body.String())
+	}
+	got := decodeProfiles(t, rec)
+	names := map[string]bool{}
+	for _, p := range got.Profiles {
+		names[p.Name] = true
+	}
+	if !names["default"] || !names["staging"] {
+		t.Errorf("Profiles = %+v, want default and staging", got.Profiles)
+	}
+}
+
+func TestCreateProfileDuplicate(t *testing.T) {
+	paths, reg := initProject(t, "postgres")
+	srv := New(reg, paths, emptyUI)
+
+	rec := doRequest(t, srv, http.MethodPost, "/api/profiles", `{"name":"default"}`)
+	if rec.Code != http.StatusConflict {
+		t.Errorf("code = %d, want 409", rec.Code)
+	}
+}
+
+func TestCreateProfileInvalidName(t *testing.T) {
+	paths, reg := initProject(t, "postgres")
+	srv := New(reg, paths, emptyUI)
+
+	for _, name := range []string{"", "../escape", "has space", "with/slash"} {
+		rec := doRequest(t, srv, http.MethodPost, "/api/profiles", `{"name":"`+name+`"}`)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("name %q: code = %d, want 400", name, rec.Code)
+		}
+	}
+}
+
+func TestCreateProfileNotInitialized(t *testing.T) {
+	srv := New(service.DefaultRegistry(), newPaths(t), emptyUI)
+	rec := doRequest(t, srv, http.MethodPost, "/api/profiles", `{"name":"staging"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("code = %d, want 400", rec.Code)
+	}
+}
+
+func TestActivateProfile(t *testing.T) {
+	paths, reg := initProject(t, "postgres")
+	srv := New(reg, paths, emptyUI)
+
+	if rec := doRequest(t, srv, http.MethodPost, "/api/profiles", `{"name":"staging"}`); rec.Code != http.StatusCreated {
+		t.Fatalf("create staging: code = %d", rec.Code)
+	}
+
+	rec := doRequest(t, srv, http.MethodPost, "/api/profiles/staging/activate", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+	}
+	got := decodeProfiles(t, rec)
+	if got.ActiveProfile != "staging" {
+		t.Errorf("ActiveProfile = %q, want \"staging\"", got.ActiveProfile)
+	}
+}
+
+func TestActivateProfileMissing(t *testing.T) {
+	paths, reg := initProject(t, "postgres")
+	srv := New(reg, paths, emptyUI)
+
+	rec := doRequest(t, srv, http.MethodPost, "/api/profiles/ghost/activate", "")
+	if rec.Code != http.StatusConflict {
+		t.Errorf("code = %d, want 409", rec.Code)
+	}
+}
+
+func TestDeleteProfile(t *testing.T) {
+	paths, reg := initProject(t, "postgres")
+	srv := New(reg, paths, emptyUI)
+
+	if rec := doRequest(t, srv, http.MethodPost, "/api/profiles", `{"name":"staging"}`); rec.Code != http.StatusCreated {
+		t.Fatalf("create staging: code = %d", rec.Code)
+	}
+
+	rec := doRequest(t, srv, http.MethodDelete, "/api/profiles/staging", "")
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("code = %d, want 204 (body %q)", rec.Code, rec.Body.String())
+	}
+
+	list := decodeProfiles(t, doRequest(t, srv, http.MethodGet, "/api/profiles", ""))
+	for _, p := range list.Profiles {
+		if p.Name == "staging" {
+			t.Errorf("staging still present after delete: %+v", list.Profiles)
+		}
+	}
+}
+
+func TestDeleteActiveProfileRefused(t *testing.T) {
+	paths, reg := initProject(t, "postgres")
+	srv := New(reg, paths, emptyUI)
+
+	rec := doRequest(t, srv, http.MethodDelete, "/api/profiles/default", "")
+	if rec.Code != http.StatusConflict {
+		t.Errorf("code = %d, want 409 (refuse active delete)", rec.Code)
+	}
+}
+
+func TestDeleteProfileMissing(t *testing.T) {
+	paths, reg := initProject(t, "postgres")
+	srv := New(reg, paths, emptyUI)
+
+	rec := doRequest(t, srv, http.MethodDelete, "/api/profiles/ghost", "")
+	if rec.Code != http.StatusConflict {
+		t.Errorf("code = %d, want 409", rec.Code)
+	}
+}
+
 func TestSPAUnbuilt(t *testing.T) {
 	srv := New(service.DefaultRegistry(), newPaths(t), emptyUI)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
