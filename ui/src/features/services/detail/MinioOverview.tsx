@@ -26,11 +26,24 @@ export function MinioOverview({ service, profile }: OverviewProps) {
   );
 }
 
-/** The first bucket declared in the profile's service config, if any. */
+/**
+ * The first bucket declared in the profile's service config, if any. The
+ * `buckets` field may arrive either as a list (authored in YAML) or as a
+ * comma-separated string (how the profile config card saves it), so normalise
+ * both forms — trimming whitespace and dropping blanks — the way the backend's
+ * `optionalStringSlice` does before taking the first entry.
+ */
 function configuredBucket(config: OverviewProps["service"]["config"]): string | undefined {
-  const buckets = config.buckets;
-  if (Array.isArray(buckets) && typeof buckets[0] === "string") {
-    return buckets[0];
+  const raw = config.buckets;
+  const names =
+    typeof raw === "string"
+      ? raw.split(",")
+      : Array.isArray(raw)
+        ? raw.filter((b): b is string => typeof b === "string")
+        : [];
+  for (const name of names) {
+    const trimmed = name.trim();
+    if (trimmed !== "") return trimmed;
   }
   return undefined;
 }
