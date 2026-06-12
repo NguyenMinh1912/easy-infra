@@ -58,7 +58,7 @@ export function ServiceDetailPage({ name, profile }: ServiceDetailPageProps) {
       return (
         <ServiceDetailLayout
           key={service.name}
-          actions={<ServiceActions service={service} />}
+          actions={<ServiceActions service={service} profile={profile} />}
         >
           <Overview service={service} profile={profile} />
         </ServiceDetailLayout>

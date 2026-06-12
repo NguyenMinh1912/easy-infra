@@ -27,6 +27,8 @@ import { useBackupSession, type SessionState } from "./useBackupSession";
 interface ForkLogDialogProps {
   /** Service to fork; also drives the stream once the dialog opens. */
   serviceName: string;
+  /** Source profile the service is viewed under; scopes the fork to it. */
+  profile?: string;
   /** Snapshot version to seed from; an empty string takes a fresh backup. */
   snapshot: string;
   /** Local port to publish the fork on; undefined keeps the source's port. */
@@ -73,14 +75,15 @@ const STATUS_META: Record<
  */
 export function ForkLogDialog({
   serviceName,
+  profile,
   snapshot,
   port,
   open,
   onOpenChange,
 }: ForkLogDialogProps) {
   const starter = useCallback(
-    () => startServiceFork(serviceName, snapshot, port),
-    [serviceName, snapshot, port],
+    () => startServiceFork(serviceName, snapshot, port, profile),
+    [serviceName, snapshot, port, profile],
   );
   const { state, start, cancel, reset } = useBackupSession(starter);
   const logRef = useRef<HTMLDivElement>(null);

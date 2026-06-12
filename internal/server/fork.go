@@ -50,9 +50,8 @@ func (s *Server) handleStartFork(w http.ResponseWriter, r *http.Request) {
 		s.writeProjectError(w, err)
 		return
 	}
-	sourceProfile, prof, err := proj.ActiveProfile()
-	if err != nil {
-		writeError(w, http.StatusConflict, err.Error())
+	sourceProfile, prof, ok := s.targetProfile(w, r, proj)
+	if !ok {
 		return
 	}
 	env, ok := prof.Services[name]

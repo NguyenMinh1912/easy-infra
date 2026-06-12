@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	profilepkg "github.com/minhnc/easy-infra/internal/profile"
+	"github.com/minhnc/easy-infra/internal/project"
 	"github.com/minhnc/easy-infra/internal/service"
 )
 
@@ -199,6 +201,56 @@ func TestBackupOptionsNoBuckets(t *testing.T) {
 	opts := decodeBackupOptions(t, rec)
 	if len(opts.Buckets) != 0 || len(opts.Selected) != 0 {
 		t.Errorf("options = %+v, want empty buckets/selected", opts)
+	}
+}
+
+// addProfile scaffolds a non-active profile with the given services, so a test
+// can have a profile the UI views that differs from the active one.
+func addProfile(t *testing.T, paths project.Paths, reg *service.Registry, name string, services ...string) {
+	t.Helper()
+	prof, err := profilepkg.Scaffold(reg, services...)
+	if err != nil {
+		t.Fatalf("Scaffold profile %q: %v", name, err)
+	}
+	if err := prof.Save(paths.ProfilePath(name)); err != nil {
+		t.Fatalf("Save profile %q: %v", name, err)
+	}
+}
+
+// TestBackupOptionsTargetsRequestedProfile reproduces EFA-61: the active profile
+// has no minio, but a separate "dev" profile does. Without a profile the lookup
+// fails against the active profile; passing ?profile=dev scopes it to the viewed
+// profile so the dialog can load the buckets the user actually wants to back up.
+func TestBackupOptionsTargetsRequestedProfile(t *testing.T) {
+	// Active profile "default" has only postgres (no minio).
+	paths, reg := initProject(t, "postgres")
+	// The profile the user is viewing ("dev") defines minio.
+	addProfile(t, paths, reg, "dev", "minio")
+	srv := New(reg, paths, emptyUI)
+
+	// Against the active profile, minio is not defined — the original failure.
+	rec := doRequest(t, srv, http.MethodGet, "/api/services/minio/backup-options", "")
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("active-profile code = %d, want 404 (body %q)", rec.Code, rec.Body.String())
+	}
+
+	// Scoping to the viewed profile finds minio and resolves options (the store
+	// is unreachable in tests, so the failure is reported inline with 200).
+	rec = doRequest(t, srv, http.MethodGet, "/api/services/minio/backup-options?profile=dev", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("scoped code = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+	}
+}
+
+// TestBackupOptionsUnknownProfile confirms an explicit but nonexistent profile is
+// reported as a 404 rather than silently falling back to the active profile.
+func TestBackupOptionsUnknownProfile(t *testing.T) {
+	paths, reg := initProject(t, "minio")
+	srv := New(reg, paths, emptyUI)
+
+	rec := doRequest(t, srv, http.MethodGet, "/api/services/minio/backup-options?profile=ghost", "")
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("code = %d, want 404 (body %q)", rec.Code, rec.Body.String())
 	}
 }
 

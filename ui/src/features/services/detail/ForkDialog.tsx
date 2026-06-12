@@ -20,6 +20,8 @@ import { cn } from "@/lib/utils";
 interface ForkDialogProps {
   /** Service whose backup versions are offered as fork seeds. */
   serviceName: string;
+  /** Source profile the service is viewed under; scopes the fork to it. */
+  profile?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /**
@@ -42,6 +44,7 @@ const NEW_BACKUP = "";
  */
 export function ForkDialog({
   serviceName,
+  profile,
   open,
   onOpenChange,
   onFork,
@@ -50,8 +53,8 @@ export function ForkDialog({
   // the request only fires when the picker is actually shown.
   const state = useAsync(
     async (signal) =>
-      open ? (await listSnapshots(serviceName, signal)).snapshots : [],
-    [serviceName, open],
+      open ? (await listSnapshots(serviceName, profile, signal)).snapshots : [],
+    [serviceName, profile, open],
   );
 
   // Default to a fresh backup; the user can switch to an existing version.
@@ -65,12 +68,14 @@ export function ForkDialog({
   const sourcePort = useAsync(
     async (signal) => {
       if (!open) return "";
-      const { activeProfile } = await listProfiles(signal);
-      const cfg = await getProfileConfig(activeProfile, signal);
+      // Scope to the viewed profile; fall back to the active one when unset.
+      const sourceProfile =
+        profile ?? (await listProfiles(signal)).activeProfile;
+      const cfg = await getProfileConfig(sourceProfile, signal);
       const raw = cfg.services.find((s) => s.name === serviceName)?.config.port;
       return raw == null ? "" : String(raw);
     },
-    [serviceName, open],
+    [serviceName, profile, open],
   );
 
   const [port, setPort] = useState("");

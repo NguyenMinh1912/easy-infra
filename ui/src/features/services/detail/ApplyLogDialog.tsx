@@ -25,6 +25,8 @@ import { useBackupSession, type SessionState } from "./useBackupSession";
 interface ApplyLogDialogProps {
   /** Service to apply; also drives the stream once the dialog opens. */
   serviceName: string;
+  /** Profile the service is viewed under; scopes the apply to it. */
+  profile?: string;
   /** Snapshot version to restore; an empty string applies the latest. */
   snapshot: string;
   open: boolean;
@@ -69,13 +71,14 @@ const STATUS_META: Record<
  */
 export function ApplyLogDialog({
   serviceName,
+  profile,
   snapshot,
   open,
   onOpenChange,
 }: ApplyLogDialogProps) {
   const starter = useCallback(
-    () => startServiceApply(serviceName, snapshot),
-    [serviceName, snapshot],
+    () => startServiceApply(serviceName, snapshot, profile),
+    [serviceName, snapshot, profile],
   );
   const { state, start, cancel, reset } = useBackupSession(starter);
   const logRef = useRef<HTMLDivElement>(null);

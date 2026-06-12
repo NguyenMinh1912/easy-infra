@@ -19,6 +19,8 @@ import { cn } from "@/lib/utils";
 interface BackupSelectDialogProps {
   /** Service to back up; its buckets (if any) are offered for selection. */
   serviceName: string;
+  /** Profile the service is viewed under; scopes the bucket lookup to it. */
+  profile?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /**
@@ -38,6 +40,7 @@ interface BackupSelectDialogProps {
  */
 export function BackupSelectDialog({
   serviceName,
+  profile,
   open,
   onOpenChange,
   onBackup,
@@ -45,8 +48,9 @@ export function BackupSelectDialog({
   // Fetch fresh each time the dialog opens; resolve to nothing while closed so
   // the request only fires when the dialog is actually shown.
   const state = useAsync<BackupOptions | null>(
-    async (signal) => (open ? await getBackupOptions(serviceName, signal) : null),
-    [serviceName, open],
+    async (signal) =>
+      open ? await getBackupOptions(serviceName, profile, signal) : null,
+    [serviceName, profile, open],
   );
 
   const [selected, setSelected] = useState<string[]>([]);

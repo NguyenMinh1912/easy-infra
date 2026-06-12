@@ -21,6 +21,12 @@ import { SnapshotSelectDialog } from "./SnapshotSelectDialog";
 
 interface ServiceActionsProps {
   service: ServiceInstance;
+  /**
+   * Profile the service is viewed under, so each action targets that profile
+   * rather than whatever profile is active server-side. Omitted falls back to
+   * the active profile.
+   */
+  profile?: string;
 }
 
 /** One operation offered in the service action menu. */
@@ -50,7 +56,7 @@ const ACTIONS: ServiceAction[] = [
  * operations run server-side but are not exposed yet, so they announce that they
  * are coming rather than calling a missing endpoint.
  */
-export function ServiceActions({ service }: ServiceActionsProps) {
+export function ServiceActions({ service, profile }: ServiceActionsProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
   const [backupBuckets, setBackupBuckets] = useState<string[] | undefined>(
@@ -107,6 +113,7 @@ export function ServiceActions({ service }: ServiceActionsProps) {
 
       <BackupSelectDialog
         serviceName={service.name}
+        profile={profile}
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         onBackup={(buckets) => {
@@ -117,6 +124,7 @@ export function ServiceActions({ service }: ServiceActionsProps) {
 
       <BackupLogDialog
         serviceName={service.name}
+        profile={profile}
         buckets={backupBuckets}
         open={logOpen}
         onOpenChange={setLogOpen}
@@ -124,6 +132,7 @@ export function ServiceActions({ service }: ServiceActionsProps) {
 
       <SnapshotSelectDialog
         serviceName={service.name}
+        profile={profile}
         open={snapshotOpen}
         onOpenChange={setSnapshotOpen}
         onApply={(snapshot) => {
@@ -134,6 +143,7 @@ export function ServiceActions({ service }: ServiceActionsProps) {
 
       <ApplyLogDialog
         serviceName={service.name}
+        profile={profile}
         snapshot={applySnapshot}
         open={applyOpen}
         onOpenChange={setApplyOpen}
@@ -141,6 +151,7 @@ export function ServiceActions({ service }: ServiceActionsProps) {
 
       <ForkDialog
         serviceName={service.name}
+        profile={profile}
         open={forkOpen}
         onOpenChange={setForkOpen}
         onFork={(snapshot, port) => {
@@ -152,6 +163,7 @@ export function ServiceActions({ service }: ServiceActionsProps) {
 
       <ForkLogDialog
         serviceName={service.name}
+        profile={profile}
         snapshot={forkSnapshot}
         port={forkPort}
         open={forkLogOpen}
