@@ -13,18 +13,28 @@
 BINARY := easy-infra
 BIN    := ./$(BINARY)
 
-# Install location: prefer GOBIN, then GOPATH/bin, then ~/go/bin.
-GOBIN ?= $(shell go env GOBIN)
-ifeq ($(GOBIN),)
-GOBIN := $(shell go env GOPATH)/bin
-endif
+# Local bootstrap location for a Go toolchain auto-installed when the user has
+# no system `go` (see scripts/ensure-go.sh, invoked by the `install` target).
+LOCAL_GO_BIN := $(CURDIR)/.go/go/bin
+
+# Resolve a usable `go`: the system one if it is on PATH, otherwise the
+# bootstrapped copy under ./.go that `make install` downloads on demand.
+GO := $(shell command -v go 2>/dev/null || echo $(LOCAL_GO_BIN)/go)
+
+# Install location: prefer GOBIN, then GOPATH/bin. Computed in the recipes
+# (via $(GO) env) so it still resolves after a toolchain is bootstrapped.
 
 .DEFAULT_GOAL := build
 
-.PHONY: build install uninstall test vet fmt clean ui ui-install ui-dev
+.PHONY: build install uninstall test vet fmt clean ui ui-install ui-dev ensure-go
 
 build:
-	go build -o $(BIN) .
+	$(GO) build -o $(BIN) .
+
+# Ensure a Go toolchain is available: if `go` is not on PATH, download and
+# unpack a pinned version into ./.go via scripts/ensure-go.sh.
+ensure-go:
+	@scripts/ensure-go.sh
 
 # Frontend (ui/, Vite + React + TypeScript).
 #   make ui-install  install npm dependencies
@@ -40,35 +50,40 @@ ui: ui-install
 ui-dev:
 	cd ui && npm run dev
 
-# Install easy-infra as a global command. Builds the UI bundle first so the
-# installed binary embeds the production frontend, then go install drops the
-# binary in $(GOBIN); if that directory is not on the user's PATH, print the
-# exact line to add it so '$(BINARY)' is runnable from anywhere.
-install: ui
-	go install .
-	@echo "Installed $(BINARY) to $(GOBIN)"
-	@case ":$$PATH:" in \
-		*":$(GOBIN):"*) \
-			echo "$(GOBIN) is on your PATH — run '$(BINARY)' from anywhere." ;; \
+# Install easy-infra as a global command. Bootstraps a Go toolchain if the
+# user has none, builds the UI bundle so the installed binary embeds the
+# production frontend, then go install drops the binary in GOBIN; if that
+# directory is not on the user's PATH, print the exact line to add it so
+# '$(BINARY)' is runnable from anywhere.
+install: ensure-go ui
+	$(GO) install .
+	@GOBIN="$$($(GO) env GOBIN)"; [ -n "$$GOBIN" ] || GOBIN="$$($(GO) env GOPATH)/bin"; \
+	echo "Installed $(BINARY) to $$GOBIN"; \
+	case ":$$PATH:" in \
+		*":$$GOBIN:"*) \
+			echo "$$GOBIN is on your PATH — run '$(BINARY)' from anywhere." ;; \
 		*) \
-			echo "WARNING: $(GOBIN) is not on your PATH."; \
+			echo "WARNING: $$GOBIN is not on your PATH."; \
 			echo "Add it (e.g. to ~/.bashrc), then reload your shell:"; \
-			echo "    echo 'export PATH=\"$(GOBIN):\$$PATH\"' >> ~/.bashrc && source ~/.bashrc" ;; \
+			echo "    echo 'export PATH=\"$$GOBIN:\$$PATH\"' >> ~/.bashrc && source ~/.bashrc" ;; \
 	esac
 
 uninstall:
-	rm -f $(GOBIN)/$(BINARY)
-	@echo "Removed $(GOBIN)/$(BINARY)"
+	@GOBIN="$$($(GO) env GOBIN)"; [ -n "$$GOBIN" ] || GOBIN="$$($(GO) env GOPATH)/bin"; \
+	rm -f "$$GOBIN/$(BINARY)"; \
+	echo "Removed $$GOBIN/$(BINARY)"
 
 test:
-	go test ./...
+	$(GO) test ./...
 
 vet:
-	go vet ./...
+	$(GO) vet ./...
 
+# Format all Go sources, skipping the bootstrapped toolchain under ./.go (which
+# ships intentionally-malformed testdata that gofmt would choke on).
 fmt:
-	gofmt -w .
+	@find . -type f -name '*.go' -not -path './.go/*' -print0 | xargs -0 $(dir $(GO))gofmt -w
 
 clean:
 	rm -f $(BIN)
-	go clean
+	$(GO) clean
