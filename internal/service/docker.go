@@ -28,6 +28,11 @@ type containerSpec struct {
 	// Ports maps host ports to container ports, published on 127.0.0.1 so the
 	// local instance is reachable only from this machine.
 	Ports []portMapping
+	// Cmd is the command (and args) to run in the container, appended after the
+	// image. It is optional: images with a suitable entrypoint/CMD (e.g. postgres)
+	// leave it nil, while others (e.g. minio, which needs `server /data ...`)
+	// supply it.
+	Cmd []string
 }
 
 // portMapping publishes a container port on a host port.
@@ -87,6 +92,7 @@ func (realDocker) EnsureContainer(ctx context.Context, c containerSpec) error {
 		args = append(args, "-p", fmt.Sprintf("127.0.0.1:%d:%d", p.Host, p.Container))
 	}
 	args = append(args, c.Image)
+	args = append(args, c.Cmd...)
 	if out, err := runDocker(ctx, args...); err != nil {
 		return fmt.Errorf("creating container %s: %w: %s", c.Name, err, out)
 	}
