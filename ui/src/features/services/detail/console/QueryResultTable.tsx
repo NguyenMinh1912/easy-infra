@@ -8,6 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useRemainingHeight } from "@/hooks/useRemainingHeight";
 import type { QueryResult } from "@/types/console";
 
 interface QueryResultTableProps {
@@ -20,10 +21,17 @@ interface QueryResultTableProps {
  * with the command tag, row count, duration, and a truncation notice.
  */
 export function QueryResultTable({ result }: QueryResultTableProps) {
+  // Cap the table to the height still visible below it so a large result set
+  // scrolls in place instead of pushing the page past the viewport.
+  const { ref, maxHeight } = useRemainingHeight<HTMLDivElement>();
   return (
     <div className="space-y-2">
       {result.columns.length > 0 ? (
-        <div className="overflow-x-auto rounded-md border border-border">
+        <div
+          ref={ref}
+          style={{ maxHeight: maxHeight ?? undefined }}
+          className="overflow-auto rounded-md border border-border"
+        >
           <Table>
             <TableHeader>
               <TableRow>

@@ -7,6 +7,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useRemainingHeight } from "@/hooks/useRemainingHeight";
 import { cn } from "@/lib/utils";
 import type { TableInfo } from "@/types/console";
 
@@ -37,6 +38,9 @@ export function SchemaSidebar({
   onSelect,
   tables,
 }: SchemaSidebarProps) {
+  // Cap the table list to the height still visible below it so a long list
+  // scrolls within the sidebar instead of growing the page past the viewport.
+  const { ref, maxHeight } = useRemainingHeight<HTMLUListElement>();
   return (
     <aside className="w-56 shrink-0 space-y-3 border-r border-border pr-4">
       <div className="space-y-1.5">
@@ -95,7 +99,11 @@ export function SchemaSidebar({
         ) : tables.length === 0 ? (
           <p className="text-xs text-muted-foreground">No tables.</p>
         ) : (
-          <ul className="space-y-0.5">
+          <ul
+            ref={ref}
+            style={{ maxHeight: maxHeight ?? undefined }}
+            className="space-y-0.5 overflow-y-auto"
+          >
             {tables.map((table) => (
               <li
                 key={table.name}
