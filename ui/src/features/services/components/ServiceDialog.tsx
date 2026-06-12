@@ -77,7 +77,9 @@ export function ServiceDialog({
 
   const submit = () => {
     if (!selected) return;
-    onSubmit(selected, configFromRows(rows));
+    // In add mode the service is created with its defaults; its settings are
+    // tuned in the settings modal that opens next. Edit mode persists the rows.
+    onSubmit(selected, isAdd ? defaultFor(selected) : configFromRows(rows));
   };
 
   const meta = metaFor(selected);
@@ -95,7 +97,7 @@ export function ServiceDialog({
           </DialogTitle>
           <DialogDescription>
             {isAdd
-              ? "Choose a service, adjust its settings, then add it to this profile."
+              ? "Choose a service to add to this profile. You can adjust its settings next."
               : "Edit this service's settings for this profile."}
           </DialogDescription>
         </DialogHeader>
@@ -142,24 +144,26 @@ export function ServiceDialog({
           </fieldset>
         )}
 
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Settings</span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={busy || !selected}
-              onClick={reset}
-            >
-              <RotateCcw aria-hidden />
-              Reset to defaults
-            </Button>
+        {!isAdd && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Settings</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={busy || !selected}
+                onClick={reset}
+              >
+                <RotateCcw aria-hidden />
+                Reset to defaults
+              </Button>
+            </div>
+            <div className="max-h-[40vh] overflow-y-auto pr-1">
+              <DefinitionEditor rows={rows} onChange={setRows} disabled={busy} />
+            </div>
           </div>
-          <div className="max-h-[40vh] overflow-y-auto pr-1">
-            <DefinitionEditor rows={rows} onChange={setRows} disabled={busy} />
-          </div>
-        </div>
+        )}
 
         <DialogFooter>
           <Button

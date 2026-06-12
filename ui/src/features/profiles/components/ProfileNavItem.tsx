@@ -12,7 +12,12 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { metaFor, ServiceDialog, type DialogState } from "@/features/services";
+import {
+  metaFor,
+  ServiceDialog,
+  ServiceSettingsDialog,
+  type DialogState,
+} from "@/features/services";
 import { useAsync } from "@/hooks/useAsync";
 import {
   createService,
@@ -58,6 +63,9 @@ export function ProfileNavItem({
   const [busy, setBusy] = useState(false);
   const [mutating, setMutating] = useState(false);
   const [dialog, setDialog] = useState<DialogState | null>(null);
+  // After a service is added, its settings modal opens for the new service so
+  // the user can tune its config (the second step of the add flow).
+  const [settingsFor, setSettingsFor] = useState<ServiceInstance | null>(null);
   const [nonce, setNonce] = useState(0);
 
   // Refresh this profile's services when one changes elsewhere (e.g. via the
@@ -132,25 +140,24 @@ export function ProfileNavItem({
     }
   };
 
-  // Create with defaults, then persist any edits the user made in the dialog.
-  const add = (name: string, config: ServiceConfig) => {
+  // Add the service with its defaults, then open its settings modal so the user
+  // can tune the config — the second step of the add flow.
+  const add = async (name: string): Promise<boolean> => {
     const defaults =
       catalog.find((entry) => entry.name === name)?.defaultConfig ?? {};
-    const edited = !sameConfig(config, defaults);
-    return run(
-      async () => {
-        await createService(profile.name, name);
-        if (edited) await updateService(profile.name, name, config);
-      },
-      { success: `Service "${name}" added`, error: `Could not add "${name}"` },
-    );
+    const ok = await run(() => createService(profile.name, name), {
+      success: `Service "${name}" added`,
+      error: `Could not add "${name}"`,
+    });
+    if (ok) setSettingsFor({ name, config: defaults });
+    return ok;
   };
 
   const submit = async (name: string, config: ServiceConfig) => {
     if (!dialog) return;
     const ok =
       dialog.mode === "add"
-        ? await add(name, config)
+        ? await add(name)
         : await run(() => updateService(profile.name, name, config), {
             success: `Service "${name}" updated`,
             error: `Could not update "${name}"`,
@@ -337,13 +344,14 @@ export function ProfileNavItem({
           onSubmit={submit}
         />
       )}
+
+      {settingsFor && (
+        <ServiceSettingsDialog
+          service={settingsFor}
+          profile={profile.name}
+          onClose={() => setSettingsFor(null)}
+        />
+      )}
     </li>
   );
-}
-
-/** Whether two definitions are equal once values are compared as strings. */
-function sameConfig(a: ServiceConfig, b: ServiceConfig): boolean {
-  const keys = Object.keys(a);
-  if (keys.length !== Object.keys(b).length) return false;
-  return keys.every((key) => key in b && String(a[key]) === String(b[key]));
 }
