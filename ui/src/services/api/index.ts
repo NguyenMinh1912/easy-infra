@@ -7,6 +7,7 @@ export {
   updateService,
   deleteService,
   startServiceBackup,
+  getBackupOptions,
   getBackup,
   cancelBackup,
   listBackups,
@@ -21,6 +22,7 @@ export type {
   BackupLog,
   BackupPoll,
   BackupList,
+  BackupOptions,
   SnapshotsResponse,
 } from "./services";
 export { executeQuery, getSchema } from "./console";

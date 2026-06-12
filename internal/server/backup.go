@@ -119,6 +119,18 @@ func (m *backupManager) Cancel(id string) {
 func (s *Server) handleStartBackup(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 
+	// An optional body selects which buckets to back up (minio); an empty or
+	// absent list backs up everything, preserving the default behaviour.
+	var body struct {
+		Buckets []string `json:"buckets"`
+	}
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
+			return
+		}
+	}
+
 	proj, err := project.Load(s.paths, s.reg)
 	if err != nil {
 		s.writeProjectError(w, err)
@@ -152,6 +164,7 @@ func (s *Server) handleStartBackup(w http.ResponseWriter, r *http.Request) {
 		Definition: env,
 		Env:        env,
 		BackupDir:  dir,
+		Buckets:    body.Buckets,
 	}
 	run := func(ctx context.Context, lw io.Writer) error {
 		fmt.Fprintf(lw, "Backing up %q (profile %q) into %s\n", name, profileName, dir)
@@ -208,6 +221,105 @@ func (s *Server) handleListSnapshots(w http.ResponseWriter, r *http.Request) {
 		snapshots = append(snapshots, ids[i])
 	}
 	writeJSON(w, http.StatusOK, snapshotsResponse{Snapshots: snapshots})
+}
+
+// backupOptionsTimeout bounds the live bucket listing so an unreachable store
+// fails fast with a clear reason instead of hanging the dialog.
+const backupOptionsTimeout = 15 * time.Second
+
+// handleBackupOptions reports, for the active profile's service, which buckets a
+// backup can capture and which to select by default. Only object-store services
+// (those implementing service.Browser, i.e. minio) have buckets: the candidate
+// list is the store's live buckets, and the default selection is the buckets
+// declared in the profile config (or all of them when none are configured).
+// Services without a bucket concept return empty lists, so the UI falls back to
+// a plain "back up everything" confirmation. A store-unreachable error is
+// reported inline (HTTP 200) like the browse endpoints, falling back to the
+// configured buckets so the user is not blocked.
+func (s *Server) handleBackupOptions(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+
+	proj, err := project.Load(s.paths, s.reg)
+	if err != nil {
+		s.writeProjectError(w, err)
+		return
+	}
+	profileName, prof, err := proj.ActiveProfile()
+	if err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	env, ok := prof.Services[name]
+	if !ok {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("service %q is not defined in profile %q", name, profileName))
+		return
+	}
+	svc, ok := s.reg.Get(name)
+	if !ok {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("unknown service %q", name))
+		return
+	}
+
+	browser, ok := svc.(service.Browser)
+	if !ok {
+		// No bucket concept: the UI offers a plain confirmation.
+		writeJSON(w, http.StatusOK, backupOptionsResponse{Buckets: []string{}, Selected: []string{}})
+		return
+	}
+
+	configured, err := service.ConfiguredBuckets(env)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), backupOptionsTimeout)
+	defer cancel()
+	live, err := browser.Buckets(ctx, service.Spec{Profile: profileName, Env: env})
+	if err != nil {
+		// Can't list the store: offer the configured buckets so the user can
+		// still choose, and surface why the live list is missing.
+		writeJSON(w, http.StatusOK, backupOptionsResponse{
+			Buckets:  configured,
+			Selected: configured,
+			Error:    err.Error(),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, backupOptionsResponse{
+		Buckets:  nonNil(live),
+		Selected: defaultBucketSelection(live, configured),
+	})
+}
+
+// defaultBucketSelection picks which of the store's live buckets to select by
+// default: the configured ones that actually exist, or — when none are
+// configured — every live bucket (matching the back-up-everything default).
+func defaultBucketSelection(live, configured []string) []string {
+	if len(configured) == 0 {
+		return nonNil(live)
+	}
+	liveSet := make(map[string]bool, len(live))
+	for _, b := range live {
+		liveSet[b] = true
+	}
+	selected := make([]string, 0, len(configured))
+	for _, b := range configured {
+		if liveSet[b] {
+			selected = append(selected, b)
+		}
+	}
+	return selected
+}
+
+// nonNil returns xs, or an empty slice when xs is nil, so it serialises as a
+// JSON array rather than null.
+func nonNil(xs []string) []string {
+	if xs == nil {
+		return []string{}
+	}
+	return xs
 }
 
 // handleStartApply restores a single service for the active profile from a
@@ -490,6 +602,16 @@ type sessionJSON struct {
 // backup versions available to the active profile, newest first.
 type snapshotsResponse struct {
 	Snapshots []string `json:"snapshots"`
+}
+
+// backupOptionsResponse is returned by GET /api/services/{name}/backup-options:
+// the buckets a backup can capture and the subset selected by default. Both are
+// empty for services without a bucket concept. Error carries a store-unreachable
+// reason without failing the request.
+type backupOptionsResponse struct {
+	Buckets  []string `json:"buckets"`
+	Selected []string `json:"selected"`
+	Error    string   `json:"error,omitempty"`
 }
 
 // backupPollResponse is returned by GET /api/backups/{id}: the session plus the

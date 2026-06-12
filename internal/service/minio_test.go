@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -193,6 +194,61 @@ func TestMinIOBackupRestoreRoundTrip(t *testing.T) {
 	if ct := f.types["assets"]["logo.png"]; ct != "image/png" {
 		t.Errorf("logo.png content type = %q, want image/png", ct)
 	}
+}
+
+// TestMinIOBackupSelectedBuckets confirms a backup honours spec.Buckets: only
+// the selected buckets land in the manifest, a requested bucket the store does
+// not have is skipped rather than failing, and an empty selection still backs
+// up everything (the default).
+func TestMinIOBackupSelectedBuckets(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	f := newFakeS3()
+	f.put("assets", "logo.png", []byte("PNGDATA"), "image/png")
+	f.put("uploads", "a.txt", []byte("a"), "text/plain")
+	f.put("logs", "b.txt", []byte("b"), "text/plain")
+
+	m := withS3(f)
+	const profile = "staging"
+
+	// Select a subset (plus a non-existent bucket, which must be skipped).
+	spec := Spec{Profile: profile, Env: minioEnv(), Buckets: []string{"assets", "uploads", "ghost"}}
+	if err := m.Backup(context.Background(), spec); err != nil {
+		t.Fatalf("Backup (selected): %v", err)
+	}
+	man := readManifestFor(t, profile)
+	if got := man.Buckets; len(got) != 2 || got[0] != "assets" || got[1] != "uploads" {
+		t.Errorf("manifest buckets = %v, want [assets uploads]", got)
+	}
+	for _, obj := range man.Objects {
+		if obj.Bucket == "logs" {
+			t.Errorf("unselected bucket %q was backed up", obj.Bucket)
+		}
+	}
+
+	// An empty selection backs up every bucket, preserving the default.
+	all := Spec{Profile: profile, Env: minioEnv()}
+	if err := m.Backup(context.Background(), all); err != nil {
+		t.Fatalf("Backup (all): %v", err)
+	}
+	if got := readManifestFor(t, profile).Buckets; len(got) != 3 {
+		t.Errorf("manifest buckets = %v, want all 3", got)
+	}
+}
+
+// readManifestFor loads the minio manifest from the latest snapshot of profile,
+// failing the test if none is found.
+func readManifestFor(t *testing.T, profile string) *minioManifest {
+	t.Helper()
+	dir, err := latestSnapshotDir(profile)
+	if err != nil || dir == "" {
+		t.Fatalf("latestSnapshotDir(%q) = %q, %v", profile, dir, err)
+	}
+	man, err := readMinioManifest(filepath.Join(dir, minioDir))
+	if err != nil || man == nil {
+		t.Fatalf("readMinioManifest: %v (nil=%v)", err, man == nil)
+	}
+	return man
 }
 
 // TestMinIOApplyNoSnapshot confirms Apply is a no-op (not an error) when the

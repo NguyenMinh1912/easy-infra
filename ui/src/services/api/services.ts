@@ -90,14 +90,47 @@ export interface BackupList {
 }
 
 /**
- * Start (or re-attach to) a background backup of a service for the active
- * profile. If one is already running for the service, the server returns that
- * session instead of starting a second.
+ * Response of GET /api/services/{name}/backup-options: the buckets a backup can
+ * capture (`buckets`) and the subset selected by default (`selected`). Both are
+ * empty for services without a bucket concept — the UI then offers a plain
+ * confirmation. `error` carries a store-unreachable reason without failing.
  */
-export function startServiceBackup(name: string): Promise<BackupSession> {
+export interface BackupOptions {
+  buckets: string[];
+  selected: string[];
+  error?: string;
+}
+
+/**
+ * Fetch the buckets a service's backup can capture and the default selection,
+ * for the active profile. Returns empty lists for services that have no
+ * buckets, so callers can fall back to a plain "back up everything" flow.
+ */
+export function getBackupOptions(
+  name: string,
+  signal?: AbortSignal,
+): Promise<BackupOptions> {
+  return apiGet<BackupOptions>(
+    `/services/${encodeURIComponent(name)}/backup-options`,
+    signal,
+  );
+}
+
+/**
+ * Start (or re-attach to) a background backup of a service for the active
+ * profile. `buckets` optionally narrows the backup to those buckets (minio);
+ * omitting it (or passing an empty list) backs up everything. If one is already
+ * running for the service, the server returns that session instead of starting
+ * a second.
+ */
+export function startServiceBackup(
+  name: string,
+  buckets?: string[],
+): Promise<BackupSession> {
   return apiSend<BackupSession>(
     "POST",
     `/services/${encodeURIComponent(name)}/backup`,
+    buckets && buckets.length > 0 ? { buckets } : undefined,
   );
 }
 

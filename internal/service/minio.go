@@ -222,6 +222,11 @@ func (m MinIO) Backup(ctx context.Context, spec Spec) error {
 	if err != nil {
 		return fmt.Errorf("listing buckets: %w", err)
 	}
+	// An explicit selection narrows the backup to those buckets; an empty
+	// selection backs up every bucket (the default).
+	if len(spec.Buckets) > 0 {
+		buckets = filterBuckets(buckets, spec.Buckets, spec.logf)
+	}
 	manifest := &minioManifest{Buckets: buckets}
 	for _, bucket := range buckets {
 		keys, err := client.ListObjects(ctx, bucket)
@@ -247,6 +252,39 @@ func (m MinIO) Backup(ctx context.Context, spec Spec) error {
 	}
 	spec.logf("wrote manifest with %d bucket(s), %d object(s)\n", len(manifest.Buckets), len(manifest.Objects))
 	return nil
+}
+
+// ConfiguredBuckets returns the bucket names declared in a minio service's
+// config (the `buckets` field), normalised. It is exported so the server can
+// offer them as the default selection when backing up; a config without the
+// field yields an empty list.
+func ConfiguredBuckets(cfg Config) ([]string, error) {
+	return optionalStringSlice(cfg, "buckets")
+}
+
+// filterBuckets narrows available to the names in want, preserving available's
+// order. Names in want that are not present on the store are logged and
+// skipped, so selecting a bucket the server no longer has does not fail the
+// backup — it simply backs up the rest.
+func filterBuckets(available, want []string, logf func(string, ...any)) []string {
+	wanted := make(map[string]bool, len(want))
+	for _, w := range want {
+		wanted[w] = true
+	}
+	present := make(map[string]bool, len(available))
+	out := make([]string, 0, len(want))
+	for _, b := range available {
+		present[b] = true
+		if wanted[b] {
+			out = append(out, b)
+		}
+	}
+	for _, w := range want {
+		if !present[w] {
+			logf("requested bucket %q not found; skipping\n", w)
+		}
+	}
+	return out
 }
 
 // Clean implements Service: empty and remove every bucket, returning the store
