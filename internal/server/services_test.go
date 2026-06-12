@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	profilepkg "github.com/minhnc/easy-infra/internal/profile"
-	"github.com/minhnc/easy-infra/internal/project"
 	"github.com/minhnc/easy-infra/internal/service"
 )
 
@@ -47,96 +46,56 @@ func TestServiceCatalog(t *testing.T) {
 			t.Errorf("catalog missing %q (got %v)", want, names)
 		}
 	}
-	// Default definitions ride along so the UI can preview/seed them.
+	// Default merged config rides along so the UI can preview/seed it: postgres
+	// carries both its definition (version) and environment (host) defaults.
 	for _, e := range got.Services {
-		if e.Name == "postgres" && e.DefaultDefinition["version"] == nil {
-			t.Errorf("postgres catalog entry missing default version: %+v", e)
+		if e.Name == "postgres" {
+			if e.DefaultConfig["version"] == nil {
+				t.Errorf("postgres catalog entry missing default version: %+v", e)
+			}
+			if e.DefaultConfig["host"] == nil {
+				t.Errorf("postgres catalog entry missing default host: %+v", e)
+			}
 		}
 	}
 }
 
-func TestListServicesNotInitialized(t *testing.T) {
-	srv := New(service.DefaultRegistry(), newPaths(t), emptyUI)
-	rec := doJSON(t, srv, http.MethodGet, "/api/services", nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("code = %d, want 200", rec.Code)
-	}
-	var got servicesResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if got.Initialized || len(got.Services) != 0 {
-		t.Errorf("got %+v, want uninitialized and empty", got)
-	}
-}
-
-func TestListServices(t *testing.T) {
-	paths, reg := initProject(t, "postgres", "redis")
-	srv := New(reg, paths, emptyUI)
-	rec := doJSON(t, srv, http.MethodGet, "/api/services", nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("code = %d, want 200", rec.Code)
-	}
-	var got servicesResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if !got.Initialized || len(got.Services) != 2 {
-		t.Fatalf("got %+v, want 2 services", got)
-	}
-	if got.Services[0].Name != "postgres" || got.Services[1].Name != "redis" {
-		t.Errorf("services not sorted: %+v", got.Services)
-	}
-	if got.Services[0].Definition["version"] != "16" {
-		t.Errorf("postgres definition = %+v, want version 16", got.Services[0].Definition)
-	}
-}
-
-func TestCreateService(t *testing.T) {
+func TestCreateProfileService(t *testing.T) {
 	paths, reg := initProject(t, "postgres")
 	srv := New(reg, paths, emptyUI)
 
-	rec := doJSON(t, srv, http.MethodPost, "/api/services", serviceRequest{Name: "redis"})
+	rec := doJSON(t, srv, http.MethodPost, "/api/profiles/default/services", serviceNameRequest{Name: "redis"})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("code = %d, want 201 (body %s)", rec.Code, rec.Body)
 	}
 
-	// Config now defines redis...
-	proj, err := project.Load(paths, reg)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if !proj.Config.HasService("redis") {
-		t.Error("config does not define redis after create")
-	}
-	// ...and the active profile was scaffolded with redis env, so it stays valid.
 	prof, err := profilepkg.Load(paths.ProfilePath("default"))
 	if err != nil {
 		t.Fatalf("load profile: %v", err)
 	}
 	if _, ok := prof.Services["redis"]; !ok {
-		t.Error("profile not scaffolded with redis env")
+		t.Error("profile not scaffolded with redis config")
 	}
-	if _, err := proj.LoadProfile("default"); err != nil {
-		t.Errorf("profile invalid after create: %v", err)
+	if _, ok := prof.Services["postgres"]; !ok {
+		t.Error("existing postgres dropped after adding redis")
 	}
 }
 
-func TestCreateServiceErrors(t *testing.T) {
+func TestCreateProfileServiceErrors(t *testing.T) {
 	paths, reg := initProject(t, "postgres")
 	srv := New(reg, paths, emptyUI)
 
 	tests := []struct {
 		name     string
-		body     serviceRequest
+		body     serviceNameRequest
 		wantCode int
 	}{
-		{"already defined", serviceRequest{Name: "postgres"}, http.StatusConflict},
-		{"unknown service", serviceRequest{Name: "nope"}, http.StatusBadRequest},
+		{"already defined", serviceNameRequest{Name: "postgres"}, http.StatusConflict},
+		{"unknown service", serviceNameRequest{Name: "nope"}, http.StatusBadRequest},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			rec := doJSON(t, srv, http.MethodPost, "/api/services", tc.body)
+			rec := doJSON(t, srv, http.MethodPost, "/api/profiles/default/services", tc.body)
 			if rec.Code != tc.wantCode {
 				t.Errorf("code = %d, want %d (body %s)", rec.Code, tc.wantCode, rec.Body)
 			}
@@ -144,76 +103,71 @@ func TestCreateServiceErrors(t *testing.T) {
 	}
 }
 
-func TestCreateServiceNotInitialized(t *testing.T) {
+func TestCreateProfileServiceNotInitialized(t *testing.T) {
 	srv := New(service.DefaultRegistry(), newPaths(t), emptyUI)
-	rec := doJSON(t, srv, http.MethodPost, "/api/services", serviceRequest{Name: "redis"})
+	rec := doJSON(t, srv, http.MethodPost, "/api/profiles/default/services", serviceNameRequest{Name: "redis"})
 	if rec.Code != http.StatusConflict {
 		t.Errorf("code = %d, want 409", rec.Code)
 	}
 }
 
-func TestUpdateService(t *testing.T) {
+func TestUpdateProfileService(t *testing.T) {
 	paths, reg := initProject(t, "postgres")
 	srv := New(reg, paths, emptyUI)
 
-	rec := doJSON(t, srv, http.MethodPut, "/api/services/postgres",
-		serviceRequest{Definition: service.Config{"version": "17"}})
+	cfg := service.Config{
+		"version": "17", "host": "db.example", "port": 5433, "user": "u", "database": "d",
+	}
+	rec := doJSON(t, srv, http.MethodPut, "/api/profiles/default/services/postgres",
+		serviceConfigRequest{Config: cfg})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("code = %d, want 200 (body %s)", rec.Code, rec.Body)
 	}
 
-	proj, err := project.Load(paths, reg)
+	prof, err := profilepkg.Load(paths.ProfilePath("default"))
 	if err != nil {
-		t.Fatalf("Load: %v", err)
+		t.Fatalf("load profile: %v", err)
 	}
-	if proj.Config.Services["postgres"]["version"] != "17" {
-		t.Errorf("version = %v, want 17", proj.Config.Services["postgres"]["version"])
+	if prof.Services["postgres"]["version"] != "17" {
+		t.Errorf("version = %v, want 17", prof.Services["postgres"]["version"])
+	}
+	if prof.Services["postgres"]["host"] != "db.example" {
+		t.Errorf("host = %v, want db.example", prof.Services["postgres"]["host"])
 	}
 }
 
-func TestUpdateServiceNotDefined(t *testing.T) {
+func TestUpdateProfileServiceNotDefined(t *testing.T) {
 	paths, reg := initProject(t, "postgres")
 	srv := New(reg, paths, emptyUI)
-	rec := doJSON(t, srv, http.MethodPut, "/api/services/redis",
-		serviceRequest{Definition: service.Config{"version": "7"}})
+	rec := doJSON(t, srv, http.MethodPut, "/api/profiles/default/services/redis",
+		serviceConfigRequest{Config: service.Config{"host": "x"}})
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("code = %d, want 404", rec.Code)
 	}
 }
 
-func TestDeleteService(t *testing.T) {
+func TestDeleteProfileService(t *testing.T) {
 	paths, reg := initProject(t, "postgres", "redis")
 	srv := New(reg, paths, emptyUI)
 
-	rec := doJSON(t, srv, http.MethodDelete, "/api/services/redis", nil)
+	rec := doJSON(t, srv, http.MethodDelete, "/api/profiles/default/services/redis", nil)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("code = %d, want 204 (body %s)", rec.Code, rec.Body)
 	}
 
-	proj, err := project.Load(paths, reg)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if proj.Config.HasService("redis") {
-		t.Error("config still defines redis after delete")
-	}
-	// The profile's redis env was removed too, so it stays valid.
 	prof, err := profilepkg.Load(paths.ProfilePath("default"))
 	if err != nil {
 		t.Fatalf("load profile: %v", err)
 	}
 	if _, ok := prof.Services["redis"]; ok {
-		t.Error("profile still has redis env after delete")
-	}
-	if _, err := proj.LoadProfile("default"); err != nil {
-		t.Errorf("profile invalid after delete: %v", err)
+		t.Error("profile still has redis after delete")
 	}
 }
 
-func TestDeleteLastService(t *testing.T) {
+func TestDeleteLastProfileService(t *testing.T) {
 	paths, reg := initProject(t, "postgres")
 	srv := New(reg, paths, emptyUI)
-	rec := doJSON(t, srv, http.MethodDelete, "/api/services/postgres", nil)
+	rec := doJSON(t, srv, http.MethodDelete, "/api/profiles/default/services/postgres", nil)
 	if rec.Code != http.StatusConflict {
 		t.Errorf("code = %d, want 409 (cannot remove last service)", rec.Code)
 	}

@@ -3,130 +3,131 @@ package project
 import (
 	"errors"
 	"fmt"
+	"io/fs"
+	"sort"
 
 	"github.com/minhnc/easy-infra/internal/profile"
 	"github.com/minhnc/easy-infra/internal/service"
 )
 
-// Errors returned by the service-definition CRUD operations. They are sentinels
-// so callers (e.g. the HTTP server) can map each condition onto an appropriate
-// response without string matching.
+// Errors returned by the per-profile service CRUD operations. They are
+// sentinels so callers (e.g. the HTTP server) can map each condition onto an
+// appropriate response without string matching.
 var (
 	// ErrUnknownService means the name is not a service easy-infra supports.
 	ErrUnknownService = errors.New("unknown service")
-	// ErrServiceExists means the project already defines the service.
+	// ErrServiceExists means the profile already defines the service.
 	ErrServiceExists = errors.New("service already defined")
-	// ErrServiceNotDefined means the project does not define the service.
+	// ErrServiceNotDefined means the profile does not define the service.
 	ErrServiceNotDefined = errors.New("service not defined")
-	// ErrLastService means removing the service would leave the project with
-	// none, which the config does not allow.
+	// ErrLastService means removing the service would leave the profile with
+	// none, which a profile does not allow.
 	ErrLastService = errors.New("cannot remove the last service")
-	// ErrInvalidDefinition means a supplied definition failed the service's own
+	// ErrInvalidDefinition means a supplied config failed the service's own
 	// validation.
-	ErrInvalidDefinition = errors.New("invalid service definition")
+	ErrInvalidDefinition = errors.New("invalid service config")
 )
 
-// ServiceDefinition pairs a service name with its project-level definition
-// config (easy-infra.yml). It is the shape the command and HTTP layers read.
-type ServiceDefinition struct {
-	Name       string
-	Definition service.Config
+// ServiceConfig pairs a service name with its config within a profile (the
+// merged definition + environment block). It is the shape the command and HTTP
+// layers read.
+type ServiceConfig struct {
+	Name   string
+	Config service.Config
 }
 
-// Services returns the project's service definitions, sorted by name.
-func (p *Project) Services() []ServiceDefinition {
-	names := p.Config.ServiceNames()
-	defs := make([]ServiceDefinition, 0, len(names))
-	for _, name := range names {
-		defs = append(defs, ServiceDefinition{Name: name, Definition: p.Config.Services[name]})
+// ProfileServices returns the named profile's service configs, sorted by name.
+// It reports a missing profile as an actionable error.
+func (p *Project) ProfileServices(profileName string) ([]ServiceConfig, error) {
+	services, err := p.ProfileConfig(profileName)
+	if err != nil {
+		return nil, err
 	}
-	return defs
+	defs := make([]ServiceConfig, 0, len(services))
+	for _, name := range sortedServiceNames(services) {
+		defs = append(defs, ServiceConfig{Name: name, Config: services[name]})
+	}
+	return defs, nil
 }
 
-// AddService adds the named service to the project config using its default
-// definition, then scaffolds default environment config for it into every
-// existing profile so they remain valid. It errors if the service is unknown or
-// already defined.
-func (p *Project) AddService(name string) error {
+// AddProfileService adds the named service to a profile using its default
+// config, then saves the profile. It errors if the service is unknown or the
+// profile already defines it.
+func (p *Project) AddProfileService(profileName, name string) error {
 	svc, ok := p.Registry.Get(name)
 	if !ok {
 		return fmt.Errorf("%q: %w", name, ErrUnknownService)
 	}
-	if p.Config.HasService(name) {
-		return fmt.Errorf("%q: %w", name, ErrServiceExists)
-	}
-
-	// Scaffold env into existing profiles first; if a profile write fails the
-	// config is still untouched, so the project stays consistent.
-	if err := p.eachProfile(func(prof *profile.Profile) {
-		prof.Services[name] = svc.DefaultEnv()
-	}); err != nil {
-		return err
-	}
-
-	if p.Config.Services == nil {
-		p.Config.Services = map[string]service.Config{}
-	}
-	p.Config.Services[name] = svc.DefaultDefinition()
-	return p.Config.Save(p.Paths.Config)
-}
-
-// UpdateService replaces the named service's project-level definition with def,
-// after validating it against the service. The change is environment-independent
-// so profiles are left untouched.
-func (p *Project) UpdateService(name string, def service.Config) error {
-	svc, ok := p.Registry.Get(name)
-	if !ok {
-		return fmt.Errorf("%q: %w", name, ErrUnknownService)
-	}
-	if !p.Config.HasService(name) {
-		return fmt.Errorf("%q: %w", name, ErrServiceNotDefined)
-	}
-	if err := svc.ValidateDefinition(def); err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidDefinition, err)
-	}
-	p.Config.Services[name] = def
-	return p.Config.Save(p.Paths.Config)
-}
-
-// RemoveService removes the named service from the project config and from every
-// profile's environment config. It refuses to remove the last remaining service,
-// since a project must define at least one.
-func (p *Project) RemoveService(name string) error {
-	if !p.Config.HasService(name) {
-		return fmt.Errorf("%q: %w", name, ErrServiceNotDefined)
-	}
-	if len(p.Config.Services) == 1 {
-		return fmt.Errorf("%q: %w", name, ErrLastService)
-	}
-
-	if err := p.eachProfile(func(prof *profile.Profile) {
-		delete(prof.Services, name)
-	}); err != nil {
-		return err
-	}
-
-	delete(p.Config.Services, name)
-	return p.Config.Save(p.Paths.Config)
-}
-
-// eachProfile loads every profile, applies mutate, and saves it back. Profiles
-// are loaded without validation (via profile.Load) so a partially-consistent
-// state mid edit does not block the very edit that would fix it.
-func (p *Project) eachProfile(mutate func(*profile.Profile)) error {
-	names, err := p.Profiles()
+	prof, err := p.loadProfileForEdit(profileName)
 	if err != nil {
 		return err
 	}
-	for _, name := range names {
-		prof, err := profile.Load(p.Paths.ProfilePath(name))
-		if err != nil {
-			return err
-		}
-		mutate(prof)
-		if err := p.SaveProfile(name, prof); err != nil {
-			return err
-		}
+	if _, exists := prof.Services[name]; exists {
+		return fmt.Errorf("%q: %w", name, ErrServiceExists)
 	}
-	return nil
+	prof.Services[name] = service.DefaultConfig(svc)
+	return p.SaveProfile(profileName, prof)
+}
+
+// UpdateProfileService replaces the named service's config in a profile with
+// cfg, after validating it against the service, then saves the profile.
+func (p *Project) UpdateProfileService(profileName, name string, cfg service.Config) error {
+	svc, ok := p.Registry.Get(name)
+	if !ok {
+		return fmt.Errorf("%q: %w", name, ErrUnknownService)
+	}
+	prof, err := p.loadProfileForEdit(profileName)
+	if err != nil {
+		return err
+	}
+	if _, exists := prof.Services[name]; !exists {
+		return fmt.Errorf("%q: %w", name, ErrServiceNotDefined)
+	}
+	if err := service.ValidateConfig(svc, cfg); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidDefinition, err)
+	}
+	prof.Services[name] = cfg
+	return p.SaveProfile(profileName, prof)
+}
+
+// RemoveProfileService removes the named service from a profile. It refuses to
+// remove the profile's last remaining service, since a profile must define at
+// least one.
+func (p *Project) RemoveProfileService(profileName, name string) error {
+	prof, err := p.loadProfileForEdit(profileName)
+	if err != nil {
+		return err
+	}
+	if _, exists := prof.Services[name]; !exists {
+		return fmt.Errorf("%q: %w", name, ErrServiceNotDefined)
+	}
+	if len(prof.Services) == 1 {
+		return fmt.Errorf("%q: %w", name, ErrLastService)
+	}
+	delete(prof.Services, name)
+	return p.SaveProfile(profileName, prof)
+}
+
+// loadProfileForEdit loads a profile without validation (via profile.Load) so a
+// block momentarily out of sync can still be edited, reporting a missing
+// profile as an actionable error.
+func (p *Project) loadProfileForEdit(name string) (*profile.Profile, error) {
+	prof, err := profile.Load(p.Paths.ProfilePath(name))
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("profile %q does not exist", name)
+		}
+		return nil, err
+	}
+	return prof, nil
+}
+
+// sortedServiceNames returns the keys of services in sorted order.
+func sortedServiceNames(services map[string]service.Config) []string {
+	names := make([]string, 0, len(services))
+	for name := range services {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }

@@ -24,6 +24,11 @@ var ErrNotInitialized = errors.New("project not initialized")
 // localised env here so it appears in the sidebar as a managed profile.
 const LocalProfile = "local"
 
+// DefaultServices is the service set a freshly scaffolded profile starts with,
+// so a new profile is immediately valid (a profile must define at least one
+// service). Used by `init` and when adding a profile.
+var DefaultServices = []string{"postgres", "redis"}
+
 // Paths locates a project's config, state, and profile files.
 type Paths struct {
 	Config      string
@@ -65,7 +70,7 @@ func Load(paths Paths, reg *service.Registry) (*Project, error) {
 		}
 		return nil, err
 	}
-	if err := cfg.Validate(reg); err != nil {
+	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 
@@ -86,8 +91,8 @@ func (p *Project) Profiles() ([]string, error) {
 	return profile.List(p.Paths.ProfilesDir)
 }
 
-// LoadProfile loads and validates the named profile against the project's
-// service definitions.
+// LoadProfile loads and validates the named profile, checking each service it
+// owns against the registry.
 func (p *Project) LoadProfile(name string) (*profile.Profile, error) {
 	prof, err := profile.Load(p.Paths.ProfilePath(name))
 	if err != nil {
@@ -96,7 +101,7 @@ func (p *Project) LoadProfile(name string) (*profile.Profile, error) {
 		}
 		return nil, err
 	}
-	if err := prof.Validate(p.Registry, p.Config.ServiceNames()); err != nil {
+	if err := prof.Validate(p.Registry); err != nil {
 		return nil, fmt.Errorf("profile %q: %w", name, err)
 	}
 	return prof, nil
@@ -146,23 +151,24 @@ func (p *Project) ProfileConfig(name string) (map[string]service.Config, error) 
 	return prof.Services, nil
 }
 
-// UpdateProfile replaces the named profile's per-service environment config,
-// after validating it against the project's defined services, then saves it. It
-// reports a missing profile as an actionable error.
+// UpdateProfile replaces the named profile's per-service config, after
+// validating each service against the registry, then saves it. It reports a
+// missing profile as an actionable error.
 func (p *Project) UpdateProfile(name string, services map[string]service.Config) error {
 	if _, err := p.ProfileConfig(name); err != nil {
 		return err
 	}
 	prof := &profile.Profile{Services: services}
-	if err := prof.Validate(p.Registry, p.Config.ServiceNames()); err != nil {
+	if err := prof.Validate(p.Registry); err != nil {
 		return fmt.Errorf("profile %q: %w", name, err)
 	}
 	return p.SaveProfile(name, prof)
 }
 
-// AddProfile scaffolds a new profile with default environment config for every
-// service the project defines, then saves it. It errors if a profile with that
-// name already exists.
+// AddProfile scaffolds a new profile with default config for the conventional
+// starter services, then saves it. A new profile owns its own services and can
+// add or remove them afterwards. It errors if a profile with that name already
+// exists.
 func (p *Project) AddProfile(name string) (*profile.Profile, error) {
 	path := p.Paths.ProfilePath(name)
 	if _, err := profile.Load(path); err == nil {
@@ -170,7 +176,7 @@ func (p *Project) AddProfile(name string) (*profile.Profile, error) {
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
-	prof, err := profile.Scaffold(p.Registry, p.Config.ServiceNames()...)
+	prof, err := profile.Scaffold(p.Registry, DefaultServices...)
 	if err != nil {
 		return nil, err
 	}
@@ -208,10 +214,20 @@ func (p *Project) ForkLocalProfile(source, svcName string, localEnv service.Conf
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return "", err
 	}
-	services[svcName] = localEnv
+	// Overlay the localised connection onto the source's block so the forked
+	// service keeps its definition fields (e.g. version) while pointing at the
+	// local container.
+	forked := service.Config{}
+	for k, v := range src.Services[svcName] {
+		forked[k] = v
+	}
+	for k, v := range localEnv {
+		forked[k] = v
+	}
+	services[svcName] = forked
 
 	prof := &profile.Profile{Services: services}
-	if err := prof.Validate(p.Registry, p.Config.ServiceNames()); err != nil {
+	if err := prof.Validate(p.Registry); err != nil {
 		return "", fmt.Errorf("profile %q: %w", LocalProfile, err)
 	}
 	if err := p.SaveProfile(LocalProfile, prof); err != nil {

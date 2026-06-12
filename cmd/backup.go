@@ -52,7 +52,7 @@ func newBackupSnapshotCmd(reg *service.Registry, paths project.Paths) *cobra.Com
 				}
 				spec := service.Spec{
 					Profile:    name,
-					Definition: proj.Config.Services[svcName],
+					Definition: prof.Services[svcName],
 					Env:        prof.Services[svcName],
 					BackupDir:  dir,
 				}

@@ -18,13 +18,41 @@ import (
 // decodes and validates it into its own typed shape, so the rest of the
 // codebase can stay service-agnostic.
 //
-// A service has two kinds of config, owned by two different files:
+// A service's config has two logical halves, both authored in one profile block
+// (.easy-infra/profiles/<name>.yml):
 //
-//   - a definition (project config, easy-infra.yml) — what the service is:
-//     image/version and other environment-independent settings;
-//   - an environment (profile config, .easy-infra/profiles/<name>.yml) — how to
-//     reach it in a given environment: host, port, credentials, database URL.
+//   - definition — what the service is: image/version and other settings that do
+//     not vary by where it runs (e.g. `version`, `cleanable`);
+//   - environment — how to reach it: host, port, credentials, database URL.
+//
+// Each Service still owns the schema for each half (DefaultDefinition/ValidateDefinition
+// and DefaultEnv/ValidateEnv); DefaultConfig and ValidateConfig fold the two
+// halves together so callers can treat a profile block as a single unit.
 type Config map[string]any
+
+// DefaultConfig returns a service's starter config: its default definition and
+// default environment merged into one block, the shape a profile stores.
+func DefaultConfig(svc Service) Config {
+	cfg := Config{}
+	for k, v := range svc.DefaultDefinition() {
+		cfg[k] = v
+	}
+	for k, v := range svc.DefaultEnv() {
+		cfg[k] = v
+	}
+	return cfg
+}
+
+// ValidateConfig validates a profile's merged service block against both halves
+// of the service's schema. The field helpers read keys by name and ignore
+// unknown ones, so the definition rules see only the definition keys and the
+// environment rules only the environment keys, even though they share one map.
+func ValidateConfig(svc Service, cfg Config) error {
+	if err := svc.ValidateDefinition(cfg); err != nil {
+		return err
+	}
+	return svc.ValidateEnv(cfg)
+}
 
 // cleanableKey is the definition flag controlling whether a service may be
 // cleaned. It is a common, service-agnostic field: any service's definition may

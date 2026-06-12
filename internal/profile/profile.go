@@ -99,31 +99,19 @@ func List(dir string) ([]string, error) {
 	return names, nil
 }
 
-// Validate checks the profile against the services the project defines: every
-// defined service must have an environment block here, every block must
-// validate, and no block may reference an undefined service.
-func (p *Profile) Validate(reg *service.Registry, definedServices []string) error {
-	defined := make(map[string]bool, len(definedServices))
-	for _, name := range definedServices {
-		defined[name] = true
+// Validate checks the profile owns a coherent set of services: it must define
+// at least one, every service must be one the registry knows, and every block
+// must pass the service's config validation (definition and environment).
+func (p *Profile) Validate(reg *service.Registry) error {
+	if len(p.Services) == 0 {
+		return fmt.Errorf("profile must define at least one service")
 	}
-
-	for name := range p.Services {
-		if !defined[name] {
-			return fmt.Errorf("configures service %q which the project does not define", name)
-		}
-	}
-
-	for _, name := range definedServices {
-		envCfg, ok := p.Services[name]
-		if !ok {
-			return fmt.Errorf("missing environment config for service %q", name)
-		}
+	for name, cfg := range p.Services {
 		svc, ok := reg.Get(name)
 		if !ok {
 			return fmt.Errorf("unknown service %q", name)
 		}
-		if err := svc.ValidateEnv(envCfg); err != nil {
+		if err := service.ValidateConfig(svc, cfg); err != nil {
 			return fmt.Errorf("service %q: %w", name, err)
 		}
 	}

@@ -167,6 +167,88 @@ func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// serviceNameRequest is the request body for adding a service to a profile.
+type serviceNameRequest struct {
+	Name string `json:"name"`
+}
+
+// serviceConfigRequest is the request body for updating a single service's
+// config within a profile.
+type serviceConfigRequest struct {
+	Config service.Config `json:"config"`
+}
+
+// handleCreateProfileService adds a service to a profile using its default
+// config, then returns the profile's updated service config.
+func (s *Server) handleCreateProfileService(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	var req serviceNameRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	proj, err := project.Load(s.paths, s.reg)
+	if err != nil {
+		s.writeProjectError(w, err)
+		return
+	}
+	if err := proj.AddProfileService(name, req.Name); err != nil {
+		s.writeProjectError(w, err)
+		return
+	}
+	s.writeProfileConfig(w, http.StatusCreated, proj, name)
+}
+
+// handleUpdateProfileService replaces a single service's config within a
+// profile.
+func (s *Server) handleUpdateProfileService(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	svcName := r.PathValue("service")
+	var req serviceConfigRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	proj, err := project.Load(s.paths, s.reg)
+	if err != nil {
+		s.writeProjectError(w, err)
+		return
+	}
+	if err := proj.UpdateProfileService(name, svcName, req.Config); err != nil {
+		s.writeProjectError(w, err)
+		return
+	}
+	s.writeProfileConfig(w, http.StatusOK, proj, name)
+}
+
+// handleDeleteProfileService removes a service from a profile.
+func (s *Server) handleDeleteProfileService(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	svcName := r.PathValue("service")
+	proj, err := project.Load(s.paths, s.reg)
+	if err != nil {
+		s.writeProjectError(w, err)
+		return
+	}
+	if err := proj.RemoveProfileService(name, svcName); err != nil {
+		s.writeProjectError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// writeProfileConfig re-reads a profile and writes its per-service config at the
+// given status, so a mutation can echo the resulting state back to the UI.
+func (s *Server) writeProfileConfig(w http.ResponseWriter, status int, proj *project.Project, name string) {
+	services, err := proj.ProfileConfig(name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, status, profileConfigResponse{
+		Name:     name,
+		Services: profileServiceConfigs(services),
+	})
+}
+
 // handleActivateProfile sets the named profile as the active one.
 func (s *Server) handleActivateProfile(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")

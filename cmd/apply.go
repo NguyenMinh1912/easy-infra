@@ -37,7 +37,7 @@ func newApplyCmd(reg *service.Registry, paths project.Paths) *cobra.Command {
 				}
 				spec := service.Spec{
 					Profile:    name,
-					Definition: proj.Config.Services[svcName],
+					Definition: prof.Services[svcName],
 					Env:        prof.Services[svcName],
 				}
 				switch err := svc.Apply(ctx, spec); {

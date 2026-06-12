@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/minhnc/easy-infra/internal/config"
+	profilepkg "github.com/minhnc/easy-infra/internal/profile"
 	"github.com/minhnc/easy-infra/internal/project"
 	"github.com/minhnc/easy-infra/internal/service"
 )
@@ -44,19 +45,18 @@ func newConsoleServer(t *testing.T, svc service.Service) *Server {
 		t.Fatalf("Register: %v", err)
 	}
 	paths := newPaths(t)
-	cfg, err := config.Scaffold(reg, svc.Name())
-	if err != nil {
-		t.Fatalf("Scaffold: %v", err)
-	}
-	if err := cfg.Save(paths.Config); err != nil {
+	if err := config.Scaffold().Save(paths.Config); err != nil {
 		t.Fatalf("Save config: %v", err)
 	}
-	proj, err := project.Load(paths, reg)
+	prof, err := profilepkg.Scaffold(reg, svc.Name())
 	if err != nil {
-		t.Fatalf("Load: %v", err)
+		t.Fatalf("Scaffold profile: %v", err)
 	}
-	if _, err := proj.AddProfile("default"); err != nil {
-		t.Fatalf("AddProfile: %v", err)
+	if err := prof.Save(paths.ProfilePath("default")); err != nil {
+		t.Fatalf("Save profile: %v", err)
+	}
+	if _, err := project.Load(paths, reg); err != nil {
+		t.Fatalf("Load: %v", err)
 	}
 	return New(reg, paths, emptyUI)
 }

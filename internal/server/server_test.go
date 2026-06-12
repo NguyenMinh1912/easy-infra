@@ -11,6 +11,7 @@ import (
 	"testing/fstest"
 
 	"github.com/minhnc/easy-infra/internal/config"
+	profilepkg "github.com/minhnc/easy-infra/internal/profile"
 	"github.com/minhnc/easy-infra/internal/project"
 	"github.com/minhnc/easy-infra/internal/service"
 )
@@ -29,27 +30,28 @@ func newPaths(t *testing.T) project.Paths {
 	}
 }
 
-// initProject scaffolds a config on disk plus an active profile, returning the
-// paths the server should read from.
+// initProject scaffolds a config marker on disk plus an active "default"
+// profile owning the given services, returning the paths the server reads from.
 func initProject(t *testing.T, services ...string) (project.Paths, *service.Registry) {
 	t.Helper()
 	reg := service.DefaultRegistry()
 	paths := newPaths(t)
 
-	cfg, err := config.Scaffold(reg, services...)
-	if err != nil {
-		t.Fatalf("Scaffold: %v", err)
-	}
-	if err := cfg.Save(paths.Config); err != nil {
+	if err := config.Scaffold().Save(paths.Config); err != nil {
 		t.Fatalf("Save config: %v", err)
+	}
+
+	prof, err := profilepkg.Scaffold(reg, services...)
+	if err != nil {
+		t.Fatalf("Scaffold profile: %v", err)
+	}
+	if err := prof.Save(paths.ProfilePath("default")); err != nil {
+		t.Fatalf("Save profile: %v", err)
 	}
 
 	proj, err := project.Load(paths, reg)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
-	}
-	if _, err := proj.AddProfile("default"); err != nil {
-		t.Fatalf("AddProfile: %v", err)
 	}
 	if err := proj.SetActiveProfile("default"); err != nil {
 		t.Fatalf("SetActiveProfile: %v", err)

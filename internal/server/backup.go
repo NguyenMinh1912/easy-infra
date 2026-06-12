@@ -149,7 +149,7 @@ func (s *Server) handleStartBackup(w http.ResponseWriter, r *http.Request) {
 	dir := service.NewSnapshotDir(profileName)
 	spec := service.Spec{
 		Profile:    profileName,
-		Definition: proj.Config.Services[name],
+		Definition: env,
 		Env:        env,
 		BackupDir:  dir,
 	}
@@ -272,7 +272,7 @@ func (s *Server) handleStartApply(w http.ResponseWriter, r *http.Request) {
 
 	spec := service.Spec{
 		Profile:    profileName,
-		Definition: proj.Config.Services[name],
+		Definition: env,
 		Env:        env,
 		Snapshot:   body.Snapshot,
 	}
