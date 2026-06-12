@@ -11,10 +11,6 @@ import (
 	"time"
 )
 
-// minioDir is the sub-folder, within a shared snapshot, that holds minio's
-// artifact: a manifest plus the object bytes laid out as <bucket>/<key>.
-const minioDir = "minio"
-
 // minioManifestFile records the buckets and per-object metadata of a snapshot,
 // so empty buckets and content types survive a backup/restore round-trip.
 const minioManifestFile = "manifest.json"
@@ -134,9 +130,9 @@ func (m MinIO) Apply(ctx context.Context, spec Spec) error {
 
 	var dir string
 	if spec.Snapshot != "" {
-		dir = SnapshotDir(spec.Profile, spec.Snapshot)
+		dir = SnapshotDir(spec.Profile, m.Name(), spec.Snapshot)
 	} else {
-		latest, err := latestSnapshotDir(spec.Profile)
+		latest, err := latestSnapshotDir(spec.Profile, m.Name())
 		if err != nil {
 			return err
 		}
@@ -146,7 +142,7 @@ func (m MinIO) Apply(ctx context.Context, spec Spec) error {
 	var base string
 	var manifest *minioManifest
 	if dir != "" {
-		base = filepath.Join(dir, minioDir)
+		base = dir
 		manifest, err = readMinioManifest(base)
 		if err != nil {
 			return err
@@ -200,9 +196,9 @@ func (m MinIO) Apply(ctx context.Context, spec Spec) error {
 
 // Backup implements Service: download every bucket's objects into the snapshot
 // folder, laid out as <bucket>/<key>, alongside a manifest describing the
-// buckets and object metadata. The command layer sets spec.BackupDir so every
-// service in a snapshot shares one folder; when it is empty Backup creates its
-// own fresh snapshot.
+// buckets and object metadata. The command layer sets spec.BackupDir so the
+// service writes into a snapshot folder it chose; when it is empty Backup
+// creates its own fresh snapshot.
 func (m MinIO) Backup(ctx context.Context, spec Spec) error {
 	client, err := m.connect(ctx, spec.Env)
 	if err != nil {
@@ -211,9 +207,9 @@ func (m MinIO) Backup(ctx context.Context, spec Spec) error {
 
 	dir := spec.BackupDir
 	if dir == "" {
-		dir = NewSnapshotDir(spec.Profile)
+		dir = NewSnapshotDir(spec.Profile, m.Name())
 	}
-	base := filepath.Join(dir, minioDir)
+	base := dir
 	if err := os.MkdirAll(base, 0o755); err != nil {
 		return fmt.Errorf("creating backup dir %s: %w", base, err)
 	}

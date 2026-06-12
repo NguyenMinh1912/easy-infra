@@ -262,20 +262,23 @@ func TestPostgresApplySkipsCreateWhenExists(t *testing.T) {
 
 func TestLatestSnapshotDir(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if dir, err := latestSnapshotDir("default"); err != nil || dir != "" {
+	if dir, err := latestSnapshotDir("default", "postgres"); err != nil || dir != "" {
 		t.Fatalf("latestSnapshotDir (none) = %q, %v; want empty", dir, err)
 	}
 	for _, id := range []string{"20240101T000000Z", "20250101T000000Z"} {
-		if err := os.MkdirAll(filepath.Join(BackupsDir("default"), id), 0o755); err != nil {
+		if err := os.MkdirAll(ServiceBackupsDir("default", "postgres"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(SnapshotDir("default", "postgres", id), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
 	// A stray file in the backups dir must be ignored — only snapshot folders count.
-	if err := os.WriteFile(filepath.Join(BackupsDir("default"), "notes.txt"), nil, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(ServiceBackupsDir("default", "postgres"), "notes.txt"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	ids, err := ListSnapshots("default")
+	ids, err := ListSnapshots("default", "postgres")
 	if err != nil {
 		t.Fatalf("ListSnapshots: %v", err)
 	}
@@ -283,7 +286,7 @@ func TestLatestSnapshotDir(t *testing.T) {
 		t.Errorf("ListSnapshots = %v, want the two snapshot ids sorted", ids)
 	}
 
-	dir, err := latestSnapshotDir("default")
+	dir, err := latestSnapshotDir("default", "postgres")
 	if err != nil {
 		t.Fatalf("latestSnapshotDir: %v", err)
 	}

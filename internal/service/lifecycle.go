@@ -21,8 +21,9 @@ type Spec struct {
 	// Env is the active profile's environment config for the service.
 	Env Config
 	// BackupDir is the snapshot folder a Backup should write into. The command
-	// layer sets it so every service in one snapshot shares a single folder. When
-	// empty, Backup falls back to its own fresh snapshot.
+	// layer sets it (per service, under .easy-infra/backups/<profile>/<service>)
+	// so it controls the snapshot id. When empty, Backup falls back to its own
+	// fresh snapshot.
 	BackupDir string
 	// Snapshot selects which backup version an Apply restores, by snapshot id
 	// (the timestamp folder name). When empty, Apply restores the latest

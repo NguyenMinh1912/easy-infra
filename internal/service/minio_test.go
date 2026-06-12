@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -240,11 +239,11 @@ func TestMinIOBackupSelectedBuckets(t *testing.T) {
 // failing the test if none is found.
 func readManifestFor(t *testing.T, profile string) *minioManifest {
 	t.Helper()
-	dir, err := latestSnapshotDir(profile)
+	dir, err := latestSnapshotDir(profile, "minio")
 	if err != nil || dir == "" {
 		t.Fatalf("latestSnapshotDir(%q) = %q, %v", profile, dir, err)
 	}
-	man, err := readMinioManifest(filepath.Join(dir, minioDir))
+	man, err := readMinioManifest(dir)
 	if err != nil || man == nil {
 		t.Fatalf("readMinioManifest: %v (nil=%v)", err, man == nil)
 	}
