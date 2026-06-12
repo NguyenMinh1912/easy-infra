@@ -16,6 +16,8 @@ import { ServiceCard } from "./ServiceCard";
 interface ServicesManagerProps {
   data: ServicesData;
   reload: () => void;
+  /** Service to scroll to and highlight, deep-linked from the sidebar. */
+  focusService?: string;
 }
 
 /**
@@ -23,7 +25,11 @@ interface ServicesManagerProps {
  * form and the per-service cards, runs each create/update/delete through a
  * single helper that toasts the outcome and refreshes the list on success.
  */
-export function ServicesManager({ data, reload }: ServicesManagerProps) {
+export function ServicesManager({
+  data,
+  reload,
+  focusService,
+}: ServicesManagerProps) {
   const [busy, setBusy] = useState(false);
 
   const run = useCallback(
@@ -80,6 +86,7 @@ export function ServicesManager({ data, reload }: ServicesManagerProps) {
               key={service.name}
               service={service}
               busy={busy}
+              highlighted={service.name === focusService}
               onSave={(name, definition: ServiceConfig) =>
                 run(() => updateService(name, definition), {
                   success: `Service "${name}" updated`,
