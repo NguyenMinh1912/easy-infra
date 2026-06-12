@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Toaster } from "@/components/ui/sonner";
 import { BackupsPage } from "@/features/backups";
 import { DashboardPage } from "@/features/dashboard";
-import { ProfilesPage, ProfileSettingsPage } from "@/features/profiles";
+import { ProfilesPage } from "@/features/profiles";
 import { metaFor, ServiceDetailPage } from "@/features/services";
 import { useHashRoute } from "@/hooks/useHashRoute";
 
@@ -39,15 +39,6 @@ function screenForRoute(route: string): Screen {
       content: <ServiceDetailPage name={name} profile={profile} />,
       fullWidth: true,
       hideHeader: true,
-    };
-  }
-  const settings = route.match(/^\/profiles\/(.+)\/settings$/);
-  if (settings) {
-    const name = decodeURIComponent(settings[1]);
-    return {
-      title: "Profile settings",
-      subtitle: `Configure the "${name}" profile`,
-      content: <ProfileSettingsPage name={name} />,
     };
   }
   if (route.startsWith("/profiles")) {
