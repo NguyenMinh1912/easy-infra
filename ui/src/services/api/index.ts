@@ -10,12 +10,15 @@ export {
   startServiceBackup,
   getBackup,
   cancelBackup,
+  listBackups,
+  deleteBackup,
 } from "./services";
 export type {
   BackupStatus,
   BackupSession,
   BackupLog,
   BackupPoll,
+  BackupList,
 } from "./services";
 export {
   activateProfile,

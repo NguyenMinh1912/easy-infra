@@ -187,6 +187,56 @@ func (s *Store) Get(id string) (Session, error) {
 	return sess, err
 }
 
+// ListSessions returns sessions ordered newest-first, at most limit rows
+// starting at offset, for paginated listing in the UI.
+func (s *Store) ListSessions(limit, offset int) ([]Session, error) {
+	rows, err := s.db.Query(
+		`SELECT id, service, profile, status, snapshot, error, created_at, updated_at
+		   FROM backup_sessions
+		  ORDER BY created_at DESC, id DESC
+		  LIMIT ? OFFSET ?`,
+		limit, offset,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("listing backup sessions: %w", err)
+	}
+	defer rows.Close()
+	var out []Session
+	for rows.Next() {
+		sess, err := scanSession(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, sess)
+	}
+	return out, rows.Err()
+}
+
+// CountSessions returns the total number of sessions, so the UI can paginate.
+func (s *Store) CountSessions() (int, error) {
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM backup_sessions`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("counting backup sessions: %w", err)
+	}
+	return n, nil
+}
+
+// Delete removes a session and its log lines. It returns ErrNotFound when no
+// session has the given id.
+func (s *Store) Delete(id string) error {
+	res, err := s.db.Exec(`DELETE FROM backup_sessions WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("deleting backup session: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	if _, err := s.db.Exec(`DELETE FROM backup_logs WHERE session_id = ?`, id); err != nil {
+		return fmt.Errorf("deleting backup logs: %w", err)
+	}
+	return nil
+}
+
 // AppendLog stores one log line, assigning it the next per-session sequence
 // number in a single atomic statement.
 func (s *Store) AppendLog(id, line string) error {
