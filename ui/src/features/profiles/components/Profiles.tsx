@@ -16,7 +16,10 @@ interface ProfilesProps {
 export function Profiles({ data, actions }: ProfilesProps) {
   return (
     <div className="space-y-6">
-      <CreateProfileForm onCreate={actions.create} />
+      <CreateProfileForm
+        existingNames={data.profiles.map((profile) => profile.name)}
+        onCreate={actions.create}
+      />
       <ProfileList
         profiles={data.profiles}
         onActivate={actions.activate}

@@ -1,7 +1,6 @@
 import { useCallback, useState } from "react";
-import { AlertCircle } from "lucide-react";
+import { toast } from "sonner";
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Card,
   CardContent,
@@ -22,21 +21,22 @@ interface ServicesManagerProps {
 /**
  * Presentation + mutation wiring for the services screen. It composes the add
  * form and the per-service cards, runs each create/update/delete through a
- * single helper that surfaces errors and refreshes the list on success.
+ * single helper that toasts the outcome and refreshes the list on success.
  */
 export function ServicesManager({ data, reload }: ServicesManagerProps) {
-  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const run = useCallback(
-    async (action: () => Promise<unknown>) => {
+    async (action: () => Promise<unknown>, messages: { success: string; error: string }) => {
       setBusy(true);
-      setError(null);
       try {
         await action();
+        toast.success(messages.success);
         reload();
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
+        toast.error(messages.error, {
+          description: cause instanceof Error ? cause.message : String(cause),
+        });
       } finally {
         setBusy(false);
       }
@@ -59,20 +59,15 @@ export function ServicesManager({ data, reload }: ServicesManagerProps) {
           <AddServiceForm
             available={available}
             busy={busy}
-            onAdd={(name) => run(() => createService(name))}
+            onAdd={(name) =>
+              run(() => createService(name), {
+                success: `Service "${name}" added`,
+                error: `Could not add "${name}"`,
+              })
+            }
           />
         </CardContent>
       </Card>
-
-      {error && (
-        <Alert variant="destructive">
-          <AlertCircle />
-          <div>
-            <AlertTitle>Action failed</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </div>
-        </Alert>
-      )}
 
       {data.services.length === 0 ? (
         <p className="text-sm text-muted-foreground">
@@ -86,9 +81,17 @@ export function ServicesManager({ data, reload }: ServicesManagerProps) {
               service={service}
               busy={busy}
               onSave={(name, definition: ServiceConfig) =>
-                run(() => updateService(name, definition))
+                run(() => updateService(name, definition), {
+                  success: `Service "${name}" updated`,
+                  error: `Could not update "${name}"`,
+                })
               }
-              onRemove={(name) => run(() => deleteService(name))}
+              onRemove={(name) =>
+                run(() => deleteService(name), {
+                  success: `Service "${name}" removed`,
+                  error: `Could not remove "${name}"`,
+                })
+              }
             />
           ))}
         </div>

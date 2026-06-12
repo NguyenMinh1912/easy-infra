@@ -3,6 +3,7 @@ import { Pencil, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { ServiceConfig, ServiceDefinition } from "@/types/service";
 import { DefinitionEditor, type DefinitionRow } from "./DefinitionEditor";
 
@@ -52,23 +53,23 @@ export function ServiceCard({
             >
               <Pencil />
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={`Remove ${service.name}`}
-              disabled={busy}
-              onClick={() => {
-                if (
-                  window.confirm(
-                    `Remove "${service.name}" from the project? Its config will be dropped from every profile.`,
-                  )
-                ) {
-                  onRemove(service.name);
-                }
-              }}
-            >
-              <Trash2 />
-            </Button>
+            <ConfirmDialog
+              trigger={
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Remove ${service.name}`}
+                  disabled={busy}
+                >
+                  <Trash2 />
+                </Button>
+              }
+              title={`Remove "${service.name}"?`}
+              description="This drops the service and its config from every profile. This action cannot be undone."
+              confirmLabel="Remove"
+              variant="destructive"
+              onConfirm={() => onRemove(service.name)}
+            />
           </div>
         )}
       </CardHeader>

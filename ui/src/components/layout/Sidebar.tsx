@@ -3,9 +3,11 @@ import {
   Database,
   LayoutDashboard,
   Layers,
+  Server,
   type LucideIcon,
 } from "lucide-react";
 
+import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { useHashRoute } from "@/hooks/useHashRoute";
 import { cn } from "@/lib/utils";
 
@@ -46,7 +48,10 @@ export function Sidebar() {
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r bg-card">
-      <div className="flex h-16 items-center border-b px-6">
+      <div className="flex h-16 items-center gap-2.5 border-b px-6">
+        <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+          <Server className="size-4" aria-hidden />
+        </span>
         <span className="text-lg font-bold tracking-tight">easy-infra</span>
       </div>
       <nav className="flex-1 space-y-1 p-4">
@@ -70,6 +75,9 @@ export function Sidebar() {
           );
         })}
       </nav>
+      <div className="border-t p-4">
+        <ThemeToggle />
+      </div>
     </aside>
   );
 }
