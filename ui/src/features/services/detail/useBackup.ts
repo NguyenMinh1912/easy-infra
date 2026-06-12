@@ -1,19 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { streamServiceBackup, type BackupResult } from "@/services/api";
+import {
+  cancelBackup,
+  getBackup,
+  startServiceBackup,
+  type BackupStatus,
+} from "@/services/api";
 
-/** Where a backup run is in its lifecycle. */
-export type BackupStatus =
-  | "idle"
-  | "running"
-  | "success"
-  | "unsupported"
-  | "error";
+/** How often to poll a running backup for new log lines, in milliseconds. */
+const POLL_INTERVAL = 800;
 
 /** Reactive state of a single service's backup run. */
 export interface BackupState {
-  status: BackupStatus;
-  /** Verbose log lines accumulated from the stream. */
+  status: BackupStatus | "idle";
+  /** Verbose log lines accumulated from polling. */
   lines: string[];
   /** Error message when status is "error". */
   error?: string;
@@ -24,50 +24,99 @@ export interface BackupState {
 const initial: BackupState = { status: "idle", lines: [] };
 
 /**
- * Drive a streaming backup of one service. `start` kicks off the SSE stream and
- * accumulates log lines as they arrive; `cancel` aborts an in-flight run; and
- * `reset` returns to idle (e.g. when the modal closes). Any in-flight stream is
- * aborted on unmount so a closed dialog never updates state.
+ * Drive a backup of one service by polling. `start` kicks off (or re-attaches
+ * to) the server-side session and polls it for new log lines until it settles;
+ * `cancel` asks the server to stop it; `reset` stops polling and returns to idle
+ * without cancelling — so closing the dialog leaves the backup running. Polling
+ * is also torn down on unmount.
  */
 export function useBackup(serviceName: string) {
   const [state, setState] = useState<BackupState>(initial);
-  const controllerRef = useRef<AbortController | null>(null);
 
-  const start = useCallback(() => {
-    controllerRef.current?.abort();
-    const controller = new AbortController();
-    controllerRef.current = controller;
+  const sessionId = useRef<string | null>(null);
+  const lastSeq = useRef(0);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stopped = useRef(false);
+
+  const stop = useCallback(() => {
+    stopped.current = true;
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+  }, []);
+
+  const poll = useCallback(async () => {
+    const id = sessionId.current;
+    if (stopped.current || !id) return;
+
+    let res;
+    try {
+      res = await getBackup(id, lastSeq.current);
+    } catch (cause) {
+      if (!stopped.current) {
+        setState((s) => ({ ...s, status: "error", error: String(cause) }));
+      }
+      return;
+    }
+    if (stopped.current) return;
+
+    if (res.logs.length > 0) {
+      lastSeq.current = res.logs[res.logs.length - 1].seq;
+    }
+    setState((s) => ({
+      ...s,
+      status: res.session.status,
+      lines:
+        res.logs.length > 0
+          ? [...s.lines, ...res.logs.map((l) => l.line)]
+          : s.lines,
+      error: res.session.error ?? s.error,
+      snapshot: res.session.snapshot ?? s.snapshot,
+    }));
+
+    if (res.session.status === "running") {
+      timer.current = setTimeout(() => void poll(), POLL_INTERVAL);
+    }
+  }, []);
+
+  const start = useCallback(async () => {
+    stop();
+    stopped.current = false;
+    sessionId.current = null;
+    lastSeq.current = 0;
     setState({ status: "running", lines: [] });
 
-    void streamServiceBackup(
-      serviceName,
-      {
-        onLog: (line) =>
-          setState((s) => ({ ...s, lines: [...s.lines, line] })),
-        onDone: (result: BackupResult) =>
-          setState((s) => ({
-            ...s,
-            status: result.status === "unsupported" ? "unsupported" : "success",
-            snapshot: result.snapshot,
-          })),
-        onError: (message) =>
-          setState((s) => ({ ...s, status: "error", error: message })),
-      },
-      controller.signal,
-    );
-  }, [serviceName]);
+    try {
+      const session = await startServiceBackup(serviceName);
+      if (stopped.current) return;
+      sessionId.current = session.id;
+      void poll();
+    } catch (cause) {
+      if (!stopped.current) {
+        setState((s) => ({ ...s, status: "error", error: String(cause) }));
+      }
+    }
+  }, [serviceName, stop, poll]);
 
-  const cancel = useCallback(() => {
-    controllerRef.current?.abort();
+  const cancel = useCallback(async () => {
+    const id = sessionId.current;
+    if (!id) return;
+    try {
+      await cancelBackup(id);
+    } catch {
+      // The next poll surfaces the outcome; ignore a failed cancel request.
+    }
   }, []);
 
   const reset = useCallback(() => {
-    controllerRef.current?.abort();
-    controllerRef.current = null;
+    stop();
+    sessionId.current = null;
+    lastSeq.current = 0;
     setState(initial);
-  }, []);
+  }, [stop]);
 
-  useEffect(() => () => controllerRef.current?.abort(), []);
+  useEffect(() => () => stop(), [stop]);
 
   return { state, start, cancel, reset };
 }

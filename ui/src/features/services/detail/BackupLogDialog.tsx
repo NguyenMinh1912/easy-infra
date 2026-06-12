@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import {
+  Ban,
   CheckCircle2,
   Info,
   Loader2,
@@ -18,7 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
-import { useBackup, type BackupStatus } from "./useBackup";
+import { useBackup, type BackupState } from "./useBackup";
 
 interface BackupLogDialogProps {
   /** Service to back up; also drives the stream once the dialog opens. */
@@ -27,12 +28,12 @@ interface BackupLogDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-/** Per-status header copy and icon for the running backup. */
+/** Per-status header copy and icon. */
 const STATUS_META: Record<
-  BackupStatus,
+  BackupState["status"],
   { icon: LucideIcon; label: string; spin?: boolean; className?: string }
 > = {
-  idle: { icon: Loader2, label: "" },
+  idle: { icon: Loader2, label: "Backup" },
   running: { icon: Loader2, label: "Backing up…", spin: true },
   success: {
     icon: CheckCircle2,
@@ -44,6 +45,11 @@ const STATUS_META: Record<
     label: "Backup not supported yet",
     className: "text-muted-foreground",
   },
+  cancelled: {
+    icon: Ban,
+    label: "Backup cancelled",
+    className: "text-muted-foreground",
+  },
   error: {
     icon: XCircle,
     label: "Backup failed",
@@ -52,23 +58,24 @@ const STATUS_META: Record<
 };
 
 /**
- * Modal showing a live, terminal-style verbose log while a service is backed
- * up. It starts the stream when opened and accumulates log lines via
- * {@link useBackup}; the footer offers Cancel while running and Close once the
- * run settles. Closing the dialog aborts any in-flight backup.
+ * Modal showing a backup's verbose log, polled from the server. It starts (or
+ * re-attaches to) the run when opened and accumulates log lines via
+ * {@link useBackup}. While running it offers "Cancel backup" (stops it
+ * server-side) and "Close" — closing only stops polling, so the backup keeps
+ * running and can be re-attached by reopening.
  */
 export function BackupLogDialog({
   serviceName,
   open,
   onOpenChange,
 }: BackupLogDialogProps) {
-  const { state, start, reset } = useBackup(serviceName);
+  const { state, start, cancel, reset } = useBackup(serviceName);
   const logRef = useRef<HTMLDivElement>(null);
 
-  // Start the stream on open and reset back to idle on close.
+  // Start (or re-attach) on open; stop polling — but keep the backup — on close.
   useEffect(() => {
     if (open) {
-      start();
+      void start();
     } else {
       reset();
     }
@@ -95,11 +102,11 @@ export function BackupLogDialog({
               className={cn("size-4", meta.spin && "animate-spin", meta.className)}
               aria-hidden
             />
-            {meta.label || "Backup"}
+            {meta.label}
           </DialogTitle>
           <DialogDescription>
             Snapshotting <span className="font-mono">{serviceName}</span> for the
-            active profile.
+            active profile. This runs in the background — closing keeps it going.
           </DialogDescription>
         </DialogHeader>
 
@@ -131,11 +138,16 @@ export function BackupLogDialog({
         </div>
 
         <DialogFooter>
+          {running && (
+            <Button variant="destructive" onClick={() => void cancel()}>
+              Cancel backup
+            </Button>
+          )}
           <Button
             variant={running ? "outline" : "default"}
             onClick={() => onOpenChange(false)}
           >
-            {running ? "Cancel" : "Close"}
+            Close
           </Button>
         </DialogFooter>
       </DialogContent>
