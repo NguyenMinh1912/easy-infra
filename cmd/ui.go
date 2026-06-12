@@ -10,13 +10,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newServeCmd(reg *service.Registry, paths project.Paths) *cobra.Command {
+func newUICmd(reg *service.Registry, paths project.Paths) *cobra.Command {
 	var port int
 	cmd := &cobra.Command{
-		Use:   "serve",
-		Short: "Serve the web UI and JSON API for the project",
-		Long:  "Start a local HTTP server that serves the easy-infra web UI and a JSON API for inspecting the project's profiles and services.",
-		Args:  cobra.NoArgs,
+		Use:     "ui",
+		Aliases: []string{"serve"},
+		Short:   "Run the web UI and JSON API for the project",
+		Long:    "Start a local HTTP server that serves the easy-infra web UI and a JSON API for inspecting the project's profiles and services.",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			uiFS, err := ui.Dist()
 			if err != nil {

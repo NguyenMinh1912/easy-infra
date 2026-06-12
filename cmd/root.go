@@ -35,7 +35,7 @@ func newRootCmd(reg *service.Registry, paths project.Paths) *cobra.Command {
 		newUseCmd(reg, paths),
 		newApplyCmd(reg, paths),
 		newBackupCmd(reg, paths),
-		newServeCmd(reg, paths),
+		newUICmd(reg, paths),
 	)
 
 	return root

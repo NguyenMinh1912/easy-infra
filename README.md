@@ -35,7 +35,7 @@ for worked examples.
 | `easy-infra use <profile>` | Set `<profile>` as the active profile. |
 | `easy-infra apply` | Reconcile the active profile: provision/start its services. |
 | `easy-infra backup` | Back up data for the services in the active profile. |
-| `easy-infra serve` | Serve the web UI and a JSON API for inspecting the project (`--port`, default 8080). |
+| `easy-infra ui` | Run the web UI and a JSON API for inspecting the project (`--port`, default 8080). |
 
 > `apply` and `backup` currently report the per-service actions they would take;
 > Docker-based provisioning is the next step (see `CLAUDE.md`).
@@ -71,16 +71,16 @@ go run . init         # run locally without installing
 
 ## Web UI
 
-`easy-infra serve` starts a local server with a React dashboard (Vite +
-TypeScript, under `ui/`) and a JSON API. Build the bundle once, then serve:
+`easy-infra ui` starts a local server with a React dashboard (Vite +
+TypeScript, under `ui/`) and a JSON API. Build the bundle once, then run it:
 
 ```sh
 make ui               # build the frontend into ui/dist (embedded in the binary)
-go run . serve        # open http://localhost:8080
+go run . ui           # open http://localhost:8080
 ```
 
 For frontend development run the Vite dev server alongside the backend
-(`make ui-dev` + `go run . serve`); see [`ui/README.md`](./ui/README.md).
+(`make ui-dev` + `go run . ui`); see [`ui/README.md`](./ui/README.md).
 
 ## Contributing
 
