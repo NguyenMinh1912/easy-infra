@@ -21,10 +21,24 @@ endif
 
 .DEFAULT_GOAL := build
 
-.PHONY: build install uninstall test vet fmt clean
+.PHONY: build install uninstall test vet fmt clean ui ui-install ui-dev
 
 build:
 	go build -o $(BIN) .
+
+# Frontend (ui/, Vite + React + TypeScript).
+#   make ui-install  install npm dependencies
+#   make ui          build the production bundle into ui/dist (embedded by `serve`)
+#   make ui-dev      run the Vite dev server (proxies /api to `easy-infra serve`)
+ui-install:
+	cd ui && npm install
+
+ui: ui-install
+	cd ui && npm run build
+	@touch ui/dist/.gitkeep   # vite empties dist/; keep the embed placeholder tracked
+
+ui-dev:
+	cd ui && npm run dev
 
 # Install easy-infra as a global command. go install drops the binary in
 # $(GOBIN); if that directory is not on the user's PATH, print the exact
