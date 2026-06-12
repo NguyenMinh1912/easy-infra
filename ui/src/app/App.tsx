@@ -6,7 +6,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { BackupsPage } from "@/features/backups";
 import { DashboardPage } from "@/features/dashboard";
 import { ProfilesPage, ProfileSettingsPage } from "@/features/profiles";
-import { metaFor, ServiceDetailPage, ServicesPage } from "@/features/services";
+import { metaFor, ServiceDetailPage } from "@/features/services";
 import { useHashRoute } from "@/hooks/useHashRoute";
 
 interface Screen {
@@ -19,24 +19,6 @@ interface Screen {
 
 /** Map the current hash route onto the screen to render. */
 function screenForRoute(route: string): Screen {
-  const serviceDetail = route.match(/^\/services\/(.+)$/);
-  if (serviceDetail) {
-    const name = decodeURIComponent(serviceDetail[1]);
-    const meta = metaFor(name);
-    return {
-      title: meta.label,
-      subtitle: meta.blurb,
-      content: <ServiceDetailPage name={name} />,
-      fullWidth: true,
-    };
-  }
-  if (route.startsWith("/services")) {
-    return {
-      title: "Services",
-      subtitle: "Manage the services your project defines",
-      content: <ServicesPage />,
-    };
-  }
   if (route.startsWith("/backups")) {
     return {
       title: "Backups",

@@ -12,9 +12,9 @@ import { ServiceActions } from "./ServiceActions";
 import { ServiceDetailLayout } from "./ServiceDetailLayout";
 
 interface ServiceDetailPageProps {
-  /** Service to show, taken from the `#/services/{name}` route. */
+  /** Service to show, taken from the `#/profiles/{p}/services/{name}` route. */
   name: string;
-  /** Profile scoping the page, when reached via `#/profiles/{p}/services/{name}`. */
+  /** Profile scoping the page, taken from the same route. */
   profile?: string;
 }
 
@@ -50,7 +50,7 @@ export function ServiceDetailPage({ name, profile }: ServiceDetailPageProps) {
       }
       const service = state.data.services.find((s) => s.name === name);
       if (!service) {
-        return <ServiceNotFound name={name} />;
+        return <ServiceNotFound name={name} profile={profile} />;
       }
 
       const Overview = overviewFor(service.name);
@@ -67,8 +67,17 @@ export function ServiceDetailPage({ name, profile }: ServiceDetailPageProps) {
   }
 }
 
-/** Shown when the route names a service the project does not define. */
-function ServiceNotFound({ name }: { name: string }) {
+/** Shown when the route names a service the profile does not define. */
+function ServiceNotFound({
+  name,
+  profile,
+}: {
+  name: string;
+  profile?: string;
+}) {
+  const backHref = profile
+    ? `#/profiles/${encodeURIComponent(profile)}/settings`
+    : "#/profiles";
   return (
     <Card className="flex flex-col items-center gap-3 p-10 text-center">
       <span className="flex size-10 items-center justify-center rounded-lg bg-muted">
@@ -83,7 +92,7 @@ function ServiceNotFound({ name }: { name: string }) {
         </p>
       </div>
       <Button asChild size="sm" variant="outline">
-        <a href="#/services">Back to services</a>
+        <a href={backHref}>Back to profile</a>
       </Button>
     </Card>
   );

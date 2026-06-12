@@ -1,5 +1,4 @@
 import {
-  Boxes,
   Database,
   LayoutDashboard,
   Server,
@@ -21,20 +20,16 @@ interface NavItem {
 /**
  * Top-level navigation entries for the admin sidebar. Profiles is rendered
  * separately by {@link ProfileNav} as an expandable section, so it is not
- * listed here. Items with a `route` are wired to a screen via hash routing;
- * the rest are placeholders for future screens.
+ * listed here. Services are managed per-profile inside that section rather than
+ * at the top level. Items with a `route` are wired to a screen via hash
+ * routing; the rest are placeholders for future screens.
  */
 const navItems: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, route: "/" },
-  { label: "Services", icon: Boxes, route: "/services" },
   { label: "Backups", icon: Database, route: "/backups" },
 ];
 
-/**
- * Whether a nav item's route matches the current route. Matches exactly so a
- * service detail page (`/services/{name}`), which belongs to a profile rather
- * than the top-level Services list, does not highlight the Services item.
- */
+/** Whether a nav item's route matches the current route. */
 function isActive(itemRoute: string, route: string): boolean {
   if (itemRoute === "/") {
     return route === "/" || route === "";
