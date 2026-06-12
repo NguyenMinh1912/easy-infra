@@ -69,14 +69,14 @@ func TestValidateEnvPortRange(t *testing.T) {
 
 // TestLifecycleSeam asserts the services whose providers are not yet
 // implemented expose the four lifecycle operations and report
-// ErrNotImplemented so callers can degrade gracefully. Postgres is implemented
-// (see postgres_test.go) and is excluded.
+// ErrNotImplemented so callers can degrade gracefully. Postgres and minio are
+// implemented (see postgres_test.go and minio_test.go) and are excluded.
 func TestLifecycleSeam(t *testing.T) {
 	reg := DefaultRegistry()
 	ctx := context.Background()
 	spec := Spec{}
 	for _, name := range reg.Names() {
-		if name == "postgres" {
+		if name == "postgres" || name == "minio" {
 			continue
 		}
 		svc, _ := reg.Get(name)
