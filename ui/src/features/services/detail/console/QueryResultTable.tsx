@@ -27,10 +27,14 @@ export function QueryResultTable({ result }: QueryResultTableProps) {
   return (
     <div className="space-y-2">
       {result.columns.length > 0 ? (
+        // The outer container owns both scroll axes so the horizontal
+        // scrollbar stays pinned to its (height-capped) bottom edge. Neutralize
+        // the inner overflow-x the shadcn Table adds, which would otherwise park
+        // the x-scrollbar below the last row — only reachable after scrolling y.
         <div
           ref={ref}
           style={{ maxHeight: maxHeight ?? undefined }}
-          className="overflow-auto rounded-md border border-border"
+          className="overflow-auto rounded-md border border-border [&>div]:overflow-x-visible"
         >
           <Table>
             <TableHeader>
