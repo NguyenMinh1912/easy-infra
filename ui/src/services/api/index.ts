@@ -14,6 +14,7 @@ export {
   deleteBackup,
   listSnapshots,
   startServiceApply,
+  startServiceFork,
 } from "./services";
 export type {
   BackupStatus,

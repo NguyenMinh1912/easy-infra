@@ -13,9 +13,13 @@ const postgresBackupFile = "postgres.sql"
 
 // Postgres provisions a PostgreSQL database service.
 //
-// open is a seam for testing: when nil the lifecycle dials a real server via
-// pgx (realOpener); tests set it to inject a fake connection.
-type Postgres struct{ open opener }
+// open and docker are seams for testing: when nil the lifecycle dials a real
+// server via pgx (realOpener) and drives the real `docker` CLI (realDocker);
+// tests set them to inject a fake connection and a fake container runner.
+type Postgres struct {
+	open   opener
+	docker dockerRunner
+}
 
 // opener returns the connection opener to use, defaulting to a real pgx dial.
 func (p Postgres) opener() opener {
@@ -23,6 +27,15 @@ func (p Postgres) opener() opener {
 		return p.open
 	}
 	return realOpener
+}
+
+// dockerClient returns the container runner to use, defaulting to the real
+// docker CLI.
+func (p Postgres) dockerClient() dockerRunner {
+	if p.docker != nil {
+		return p.docker
+	}
+	return realDocker{}
 }
 
 // Name implements Service.

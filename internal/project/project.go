@@ -19,6 +19,11 @@ import (
 // Commands surface it as a hint to run `easy-infra init`.
 var ErrNotInitialized = errors.New("project not initialized")
 
+// LocalProfile is the conventional name of the profile that holds a project's
+// locally-forked services. "fork to local" writes the forked service's
+// localised env here so it appears in the sidebar as a managed profile.
+const LocalProfile = "local"
+
 // Paths locates a project's config, state, and profile files.
 type Paths struct {
 	Config      string
@@ -173,6 +178,46 @@ func (p *Project) AddProfile(name string) (*profile.Profile, error) {
 		return nil, err
 	}
 	return prof, nil
+}
+
+// ForkLocalProfile builds (or updates) the conventional "local" profile from a
+// source profile, replacing the forked service's env with its localised form
+// (localEnv) while leaving every other service as the source defines it. An
+// existing local profile's already-localised services are preserved, so forking
+// services one at a time accumulates them. The result is validated and saved,
+// and its name (LocalProfile) is returned.
+func (p *Project) ForkLocalProfile(source, svcName string, localEnv service.Config) (string, error) {
+	// Load the source through LoadProfile so an invalid source is rejected before
+	// we derive anything from it.
+	src, err := p.LoadProfile(source)
+	if err != nil {
+		return "", err
+	}
+
+	services := make(map[string]service.Config, len(src.Services))
+	for name, cfg := range src.Services {
+		services[name] = cfg
+	}
+	// Preserve services already localised by a previous fork.
+	if existing, err := profile.Load(p.Paths.ProfilePath(LocalProfile)); err == nil {
+		for name, cfg := range existing.Services {
+			if _, defined := services[name]; defined {
+				services[name] = cfg
+			}
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return "", err
+	}
+	services[svcName] = localEnv
+
+	prof := &profile.Profile{Services: services}
+	if err := prof.Validate(p.Registry, p.Config.ServiceNames()); err != nil {
+		return "", fmt.Errorf("profile %q: %w", LocalProfile, err)
+	}
+	if err := p.SaveProfile(LocalProfile, prof); err != nil {
+		return "", err
+	}
+	return LocalProfile, nil
 }
 
 // RemoveProfile deletes the named profile. It refuses to remove the active

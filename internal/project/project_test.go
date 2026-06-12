@@ -85,6 +85,68 @@ func TestRemoveProfile(t *testing.T) {
 	}
 }
 
+func TestForkLocalProfile(t *testing.T) {
+	p := newTestProject(t, "postgres", "redis")
+	if _, err := p.AddProfile("staging"); err != nil {
+		t.Fatalf("AddProfile: %v", err)
+	}
+
+	localEnv := service.Config{
+		"host": "127.0.0.1", "port": 5432, "user": "app", "password": "app", "database": "app",
+	}
+	name, err := p.ForkLocalProfile("staging", "postgres", localEnv)
+	if err != nil {
+		t.Fatalf("ForkLocalProfile: %v", err)
+	}
+	if name != LocalProfile {
+		t.Errorf("name = %q, want %q", name, LocalProfile)
+	}
+
+	// The local profile carries the localised postgres env plus a copy of the
+	// source's other services, so it stays valid.
+	local, err := p.LoadProfile(LocalProfile)
+	if err != nil {
+		t.Fatalf("LoadProfile(local): %v", err)
+	}
+	if local.Services["postgres"]["host"] != "127.0.0.1" {
+		t.Errorf("postgres host = %v, want 127.0.0.1", local.Services["postgres"]["host"])
+	}
+	if _, ok := local.Services["redis"]; !ok {
+		t.Error("local profile missing copied service redis")
+	}
+}
+
+func TestForkLocalProfilePreservesPriorForks(t *testing.T) {
+	p := newTestProject(t, "postgres", "redis")
+	if _, err := p.AddProfile("staging"); err != nil {
+		t.Fatalf("AddProfile: %v", err)
+	}
+
+	// First fork localises postgres.
+	pgEnv := service.Config{
+		"host": "127.0.0.1", "port": 5432, "user": "app", "password": "app", "database": "app",
+	}
+	if _, err := p.ForkLocalProfile("staging", "postgres", pgEnv); err != nil {
+		t.Fatalf("ForkLocalProfile(postgres): %v", err)
+	}
+
+	// A second fork of redis must keep postgres's prior localisation intact.
+	redisEnv := service.Config{"host": "127.0.0.1", "port": 6379}
+	if _, err := p.ForkLocalProfile("staging", "redis", redisEnv); err != nil {
+		t.Fatalf("ForkLocalProfile(redis): %v", err)
+	}
+	local, err := p.LoadProfile(LocalProfile)
+	if err != nil {
+		t.Fatalf("LoadProfile(local): %v", err)
+	}
+	if local.Services["postgres"]["host"] != "127.0.0.1" {
+		t.Errorf("postgres host = %v, want preserved 127.0.0.1", local.Services["postgres"]["host"])
+	}
+	if local.Services["redis"]["port"] != 6379 {
+		t.Errorf("redis port = %v, want 6379", local.Services["redis"]["port"])
+	}
+}
+
 func TestRemoveProfileMissing(t *testing.T) {
 	p := newTestProject(t, "postgres", "redis")
 	if err := p.RemoveProfile("nope"); err == nil {

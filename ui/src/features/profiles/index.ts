@@ -3,3 +3,4 @@
 export { ProfilesPage } from "./ProfilesPage";
 export { ProfileSettingsPage } from "./ProfileSettingsPage";
 export { ProfileNav } from "./components/ProfileNav";
+export { notifyProfilesChanged } from "./profiles-events";

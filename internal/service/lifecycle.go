@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -42,6 +43,33 @@ func (s Spec) logf(format string, a ...any) {
 		return
 	}
 	fmt.Fprintf(s.Log, format, a...)
+}
+
+// Provisioner is an optional capability a Service implements when it can stand
+// itself up as a local container — the backbone of "fork to local". It is kept
+// separate from Service (rather than folded into it) so the not-yet-containerised
+// services need not implement it: the fork flow type-asserts for it and degrades
+// gracefully when a service does not provide it, mirroring how ErrNotImplemented
+// is handled elsewhere. Detecting the capability by interface keeps the codebase
+// free of service-name special-casing.
+type Provisioner interface {
+	// LocalEnv derives the per-profile environment config for a local container
+	// from a source profile's env: it points the connection at localhost while
+	// preserving the credentials/port so the fork mirrors the source's config.
+	LocalEnv(source Config) (Config, error)
+
+	// Provision brings up (idempotently) the local container described by spec —
+	// its Definition selects the image, its Env the credentials and published
+	// port — and waits until the service is ready to accept connections.
+	Provision(ctx context.Context, spec Spec) error
+}
+
+// localContainerName is the deterministic container name for a service in a
+// profile, e.g. "easy-infra-local-postgres". Reusing the same name makes
+// provisioning idempotent and keeps a fork's containers easy to find with
+// `docker ps`.
+func localContainerName(profile, service string) string {
+	return "easy-infra-" + profile + "-" + service
 }
 
 // ErrNotImplemented is returned by lifecycle operations whose Docker-backed

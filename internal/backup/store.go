@@ -31,6 +31,9 @@ const (
 	KindBackup Kind = "backup"
 	// KindApply is a session that restores a service from a snapshot.
 	KindApply Kind = "apply"
+	// KindFork is a session that forks a service to a local container: it
+	// launches the container and restores a snapshot into it.
+	KindFork Kind = "fork"
 )
 
 // Status is the lifecycle state of a backup session.
