@@ -15,6 +15,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   metaFor,
   ServiceDialog,
+  ServiceSettingsDialog,
   type DialogState,
   type ServiceDialogResult,
 } from "@/features/services";
@@ -27,7 +28,7 @@ import {
   updateService,
 } from "@/services/api";
 import { cn } from "@/lib/utils";
-import type { CatalogEntry, ServiceInstance } from "@/types/service";
+import type { CatalogEntry, ServiceConfig, ServiceInstance } from "@/types/service";
 import type { Profile } from "@/types/status";
 
 import { notifyProfilesChanged, onProfilesChanged } from "../profiles-events";
@@ -63,6 +64,9 @@ export function ProfileNavItem({
   const [busy, setBusy] = useState(false);
   const [mutating, setMutating] = useState(false);
   const [dialog, setDialog] = useState<DialogState | null>(null);
+  // After a service is added, its settings modal opens for the new service so
+  // the user can tune its config (the second step of the add flow).
+  const [settingsFor, setSettingsFor] = useState<ServiceInstance | null>(null);
   const [nonce, setNonce] = useState(0);
 
   // Refresh this profile's services when one changes elsewhere (e.g. via the
@@ -139,6 +143,34 @@ export function ProfileNavItem({
     }
   };
 
+  // Add the instance, then open its settings modal so the user can tune the
+  // config — the second step of the add flow. `createService` returns the
+  // profile, so the new instance is the one whose id wasn't present before.
+  const add = async (
+    type: string,
+    name: string,
+    config: ServiceConfig,
+  ): Promise<boolean> => {
+    const label = name || type;
+    const before = new Set(services.map((s) => s.id));
+    setMutating(true);
+    try {
+      const updated = await createService(profile.name, type, name, config);
+      toast.success(`Service "${label}" added`);
+      notifyProfilesChanged();
+      const created = updated.services.find((s) => !before.has(s.id));
+      if (created) setSettingsFor(created);
+      return true;
+    } catch (cause) {
+      toast.error(`Could not add "${label}"`, {
+        description: cause instanceof Error ? cause.message : String(cause),
+      });
+      return false;
+    } finally {
+      setMutating(false);
+    }
+  };
+
   const submit = async ({ target, name, config }: ServiceDialogResult) => {
     if (!dialog) return;
     // In add mode `target` is the chosen service type; in edit mode it is the
@@ -146,10 +178,7 @@ export function ProfileNavItem({
     const label = name || target;
     const ok =
       dialog.mode === "add"
-        ? await run(() => createService(profile.name, target, name, config), {
-            success: `Service "${label}" added`,
-            error: `Could not add "${label}"`,
-          })
+        ? await add(target, name, config)
         : await run(() => updateService(profile.name, target, config, name), {
             success: `Service "${label}" updated`,
             error: `Could not update "${label}"`,
@@ -334,6 +363,14 @@ export function ProfileNavItem({
           busy={mutating}
           onClose={() => setDialog(null)}
           onSubmit={submit}
+        />
+      )}
+
+      {settingsFor && (
+        <ServiceSettingsDialog
+          service={settingsFor}
+          profile={profile.name}
+          onClose={() => setSettingsFor(null)}
         />
       )}
     </li>

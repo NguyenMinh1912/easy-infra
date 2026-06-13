@@ -49,12 +49,11 @@ interface ServiceDialogProps {
 
 /**
  * Modal for adding or editing a service instance. In add mode the user picks a
- * service type, names it, and tweaks its default settings before it is created;
- * in edit mode the name and settings of an existing instance are edited (its
- * type is fixed). A profile may hold several instances of the same type, so the
- * name is how the user tells them apart. Both modes share the same key/value
- * editor and a reset-to-defaults action. Mounting/unmounting from the parent
- * gives the form fresh state each time it opens.
+ * service type and names it; its settings are tuned in the settings modal that
+ * opens next. In edit mode the name and settings of an existing instance are
+ * edited (its type is fixed). A profile may hold several instances of the same
+ * type, so the name is how the user tells them apart. Mounting/unmounting from
+ * the parent gives the form fresh state each time it opens.
  */
 export function ServiceDialog({
   dialog,
@@ -95,7 +94,9 @@ export function ServiceDialog({
     onSubmit({
       target: isAdd ? selectedType : dialog.service.id,
       name: name.trim(),
-      config: configFromRows(rows),
+      // Add mode creates the instance with its defaults; its settings are tuned
+      // in the settings modal that opens next. Edit mode persists the rows.
+      config: isAdd ? defaultFor(selectedType) : configFromRows(rows),
     });
   };
 
@@ -114,7 +115,7 @@ export function ServiceDialog({
           </DialogTitle>
           <DialogDescription>
             {isAdd
-              ? "Choose a service, name it, adjust its settings, then add it to this profile."
+              ? "Choose a service and name it. You can adjust its settings next."
               : "Rename this service or edit its settings for this profile."}
           </DialogDescription>
         </DialogHeader>
@@ -178,24 +179,26 @@ export function ServiceDialog({
           </p>
         </div>
 
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Settings</span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={busy || !selectedType}
-              onClick={reset}
-            >
-              <RotateCcw aria-hidden />
-              Reset to defaults
-            </Button>
+        {!isAdd && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Settings</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={busy || !selectedType}
+                onClick={reset}
+              >
+                <RotateCcw aria-hidden />
+                Reset to defaults
+              </Button>
+            </div>
+            <div className="max-h-[40vh] overflow-y-auto pr-1">
+              <DefinitionEditor rows={rows} onChange={setRows} disabled={busy} />
+            </div>
           </div>
-          <div className="max-h-[40vh] overflow-y-auto pr-1">
-            <DefinitionEditor rows={rows} onChange={setRows} disabled={busy} />
-          </div>
-        </div>
+        )}
 
         <DialogFooter>
           <Button
