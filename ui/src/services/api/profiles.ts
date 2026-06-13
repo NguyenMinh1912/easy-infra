@@ -70,10 +70,12 @@ export function checkServiceConnection(
   profile: string,
   service: string,
   config: Record<string, unknown>,
+  signal?: AbortSignal,
 ): Promise<ConnectionCheck> {
   return apiSend<ConnectionCheck>(
     "POST",
     `/profiles/${encodeURIComponent(profile)}/services/${encodeURIComponent(service)}/check`,
     { config },
+    signal,
   );
 }

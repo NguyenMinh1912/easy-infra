@@ -10,6 +10,7 @@ import { useServices } from "../hooks/useServices";
 import { overviewFor } from "./overview-registry";
 import { ServiceActions } from "./ServiceActions";
 import { ServiceDetailLayout } from "./ServiceDetailLayout";
+import { ServiceHealthBanner } from "./ServiceHealthBanner";
 
 interface ServiceDetailPageProps {
   /** Service to show, taken from the `#/profiles/{p}/services/{name}` route. */
@@ -54,6 +55,7 @@ export function ServiceDetailPage({ name, profile }: ServiceDetailPageProps) {
       }
 
       const Overview = overviewFor(service.type);
+      const scopedProfile = profile ?? state.data.activeProfile;
 
       return (
         <ServiceDetailLayout
@@ -66,7 +68,10 @@ export function ServiceDetailPage({ name, profile }: ServiceDetailPageProps) {
             />
           }
         >
-          <Overview service={service} profile={profile} />
+          <div className="space-y-6">
+            <ServiceHealthBanner service={service} profile={scopedProfile} />
+            <Overview service={service} profile={profile} />
+          </div>
         </ServiceDetailLayout>
       );
     }
