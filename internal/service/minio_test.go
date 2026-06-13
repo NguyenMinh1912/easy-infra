@@ -361,6 +361,34 @@ func TestMinIOBrowse(t *testing.T) {
 	}
 }
 
+// TestMinIOPut confirms Browser.Put streams a new object into the store under
+// its key, tagged with the given content type, so the browser's upload lands.
+func TestMinIOPut(t *testing.T) {
+	f := newFakeS3()
+	m := withS3(f)
+	spec := Spec{Env: minioEnv()}
+
+	body := "PNGDATA"
+	err := m.Put(context.Background(), spec, "assets", "docs/logo.png",
+		strings.NewReader(body), int64(len(body)), "image/png")
+	if err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	got, info, err := m.Object(context.Background(), spec, "assets", "docs/logo.png")
+	if err != nil {
+		t.Fatalf("Object after Put: %v", err)
+	}
+	defer got.Close()
+	data, _ := io.ReadAll(got)
+	if string(data) != body {
+		t.Errorf("stored body = %q, want %q", data, body)
+	}
+	if info.ContentType != "image/png" {
+		t.Errorf("stored content type = %q, want image/png", info.ContentType)
+	}
+}
+
 // TestMinIOCleanProtected confirms a protected definition blocks Clean before any
 // client work happens.
 func TestMinIOCleanProtected(t *testing.T) {

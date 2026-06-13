@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -27,9 +28,13 @@ type stubBrowser struct {
 	objects    map[string]string
 	objectInfo service.ObjectContent
 	objectErr  error
+	putErr     error
 	gotBucket  string
 	gotPrefix  string
 	gotKey     string
+	gotBody    string
+	gotSize    int64
+	gotType    string
 	gotSpec    service.Spec
 }
 
@@ -64,6 +69,23 @@ func (s *stubBrowser) Object(_ context.Context, spec service.Spec, bucket, key s
 		body = s.objects[key]
 	}
 	return io.NopCloser(strings.NewReader(body)), s.objectInfo, nil
+}
+
+func (s *stubBrowser) Put(_ context.Context, spec service.Spec, bucket, key string, r io.Reader, size int64, contentType string) error {
+	s.gotSpec = spec
+	s.gotBucket = bucket
+	s.gotKey = key
+	s.gotSize = size
+	s.gotType = contentType
+	if s.putErr != nil {
+		return s.putErr
+	}
+	body, err := io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	s.gotBody = string(body)
+	return nil
 }
 
 func TestBrowseBucketsHappyPath(t *testing.T) {
@@ -154,6 +176,57 @@ func TestBrowseObjectDownload(t *testing.T) {
 	}
 	if stub.gotBucket != "assets" || stub.gotKey != "docs/logo.png" {
 		t.Errorf("got bucket=%q key=%q, want assets/docs/logo.png", stub.gotBucket, stub.gotKey)
+	}
+}
+
+func TestBrowseUploadHappyPath(t *testing.T) {
+	stub := &stubBrowser{stubService: stubService{name: "stub"}}
+	srv := newConsoleServer(t, stub)
+
+	req := httptest.NewRequest(http.MethodPut,
+		"/api/profiles/default/services/stub/object?bucket=assets&key=docs/logo.png",
+		strings.NewReader("PNGDATA"))
+	req.Header.Set("Content-Type", "image/png")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204 (body %q)", rec.Code, rec.Body.String())
+	}
+	if stub.gotBucket != "assets" || stub.gotKey != "docs/logo.png" {
+		t.Errorf("got bucket=%q key=%q, want assets/docs/logo.png", stub.gotBucket, stub.gotKey)
+	}
+	if stub.gotBody != "PNGDATA" || stub.gotType != "image/png" {
+		t.Errorf("got body=%q type=%q, want PNGDATA/image/png", stub.gotBody, stub.gotType)
+	}
+	if stub.gotSpec.Profile != "default" || stub.gotSpec.Env == nil {
+		t.Errorf("spec = %+v, want profile default with the saved env", stub.gotSpec)
+	}
+}
+
+func TestBrowseUploadMissingKey(t *testing.T) {
+	srv := newConsoleServer(t, &stubBrowser{stubService: stubService{name: "stub"}})
+	req := httptest.NewRequest(http.MethodPut,
+		"/api/profiles/default/services/stub/object?bucket=assets", strings.NewReader("x"))
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body %q)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestBrowseUploadError(t *testing.T) {
+	stub := &stubBrowser{
+		stubService: stubService{name: "stub"},
+		putErr:      errors.New("store unreachable"),
+	}
+	srv := newConsoleServer(t, stub)
+	req := httptest.NewRequest(http.MethodPut,
+		"/api/profiles/default/services/stub/object?bucket=assets&key=x", strings.NewReader("x"))
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502 (body %q)", rec.Code, rec.Body.String())
 	}
 }
 

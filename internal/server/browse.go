@@ -21,6 +21,11 @@ import (
 // clear error instead of hanging the page.
 const browseTimeout = 15 * time.Second
 
+// uploadTimeout bounds one object upload. It is far longer than browseTimeout so
+// large files have room to stream, while still failing rather than hanging
+// forever when the store stalls.
+const uploadTimeout = 10 * time.Minute
+
 // bucketsResponse is the JSON shape of a bucket listing. Like the console, a
 // failed listing (e.g. store unreachable) is an expected outcome: OK stays 200
 // and the reason lands in Error with Buckets empty, so the UI can surface it
@@ -121,6 +126,40 @@ func (s *Server) handleBrowseObject(w http.ResponseWriter, r *http.Request) {
 	// Headers are committed on the first write; a copy error mid-stream can no
 	// longer change the status, so there is nothing useful to report past it.
 	_, _ = io.Copy(w, rc)
+}
+
+// handleBrowseUpload streams the request body into one object. The `bucket` and
+// `key` queries name the destination; the request's Content-Type tags the
+// object and Content-Length, when present, gives its size. The body is streamed
+// straight to the store, so a large upload is not buffered in memory. On
+// success it replies 204; a store failure surfaces as a 502.
+func (s *Server) handleBrowseUpload(w http.ResponseWriter, r *http.Request) {
+	browser, spec, ok := s.resolveBrowser(w, r)
+	if !ok {
+		return
+	}
+	bucket := r.URL.Query().Get("bucket")
+	if bucket == "" {
+		writeError(w, http.StatusBadRequest, "bucket must not be empty")
+		return
+	}
+	key := r.URL.Query().Get("key")
+	if key == "" {
+		writeError(w, http.StatusBadRequest, "key must not be empty")
+		return
+	}
+	defer r.Body.Close()
+
+	ctx, cancel := context.WithTimeout(r.Context(), uploadTimeout)
+	defer cancel()
+	// A negative ContentLength means "unknown" to the store, which then streams
+	// the body in parts rather than relying on a declared size.
+	size := r.ContentLength
+	if err := browser.Put(ctx, spec, bucket, key, r.Body, size, r.Header.Get("Content-Type")); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleBrowseArchive streams a zip of several selected objects and/or folders.

@@ -366,6 +366,19 @@ func (m MinIO) Object(ctx context.Context, spec Spec, bucket, key string) (io.Re
 	return r, ObjectContent{Size: info.Size, ContentType: info.ContentType}, nil
 }
 
+// Put implements Browser: stream one object into bucket under key. size may be
+// -1 when the length is unknown, letting the client upload it in parts.
+func (m MinIO) Put(ctx context.Context, spec Spec, bucket, key string, r io.Reader, size int64, contentType string) error {
+	client, err := m.connect(ctx, spec.Env)
+	if err != nil {
+		return err
+	}
+	if err := client.PutObject(ctx, bucket, key, r, size, contentType); err != nil {
+		return fmt.Errorf("uploading %s/%s: %w", bucket, key, err)
+	}
+	return nil
+}
+
 // connect opens a client to the MinIO endpoint described by env.
 func (m MinIO) connect(ctx context.Context, env Config) (s3Client, error) {
 	params, err := minioParamsFrom(env)
