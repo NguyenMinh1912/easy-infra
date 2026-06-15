@@ -1,7 +1,8 @@
-import { Download, File, X } from "lucide-react";
+import { Download, File, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { objectDownloadUrl } from "@/services/api";
 import type { ObjectEntry } from "@/types/browse";
@@ -15,6 +16,10 @@ interface ObjectDetailPanelProps {
   /** The object whose detail is shown, or null when the panel is collapsed. */
   object: ObjectEntry | null;
   onClose: () => void;
+  /** Whether a delete is in flight; disables the delete action while true. */
+  deleting?: boolean;
+  /** Delete the shown object after the user confirms. */
+  onDelete: () => void;
 }
 
 /**
@@ -31,6 +36,8 @@ export function ObjectDetailPanel({
   bucket,
   object,
   onClose,
+  deleting,
+  onDelete,
 }: ObjectDetailPanelProps) {
   const [shown, setShown] = useState<ObjectEntry | null>(object);
   useEffect(() => {
@@ -87,15 +94,41 @@ export function ObjectDetailPanel({
               <DetailRow label="Modified" value={formatTime(shown.lastModified)} />
             </dl>
 
-            <Button asChild className="w-full">
-              <a
-                href={objectDownloadUrl(profile, service, bucket, shown.key)}
-                download={baseName(shown.key)}
-              >
-                <Download aria-hidden />
-                Download
-              </a>
-            </Button>
+            <div className="flex flex-col gap-2">
+              <Button asChild className="w-full">
+                <a
+                  href={objectDownloadUrl(profile, service, bucket, shown.key)}
+                  download={baseName(shown.key)}
+                >
+                  <Download aria-hidden />
+                  Download
+                </a>
+              </Button>
+              <ConfirmDialog
+                trigger={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full text-destructive hover:text-destructive"
+                    disabled={deleting}
+                  >
+                    <Trash2 aria-hidden />
+                    Delete
+                  </Button>
+                }
+                title="Delete this object?"
+                description={
+                  <>
+                    This permanently removes{" "}
+                    <span className="font-mono">{baseName(shown.key)}</span> from{" "}
+                    {bucket}. This action cannot be undone.
+                  </>
+                }
+                confirmLabel="Delete"
+                variant="destructive"
+                onConfirm={onDelete}
+              />
+            </div>
           </div>
         )}
       </div>

@@ -1,5 +1,6 @@
 import { AlertCircle, Loader2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAsync } from "@/hooks/useAsync";
-import { listObjects } from "@/services/api";
+import { ApiError, deleteObjects, listObjects } from "@/services/api";
 import type { ObjectEntry } from "@/types/browse";
 
 import { baseName, formatBytes, formatTime } from "./format";
@@ -128,6 +129,28 @@ export function BucketContents({
     setChecked(new Set());
   };
 
+  // Delete the given objects/folders, then clear the selection and reload the
+  // listing so the panel collapses and the removed rows disappear. Folders are
+  // expanded recursively server-side, mirroring the zip-download selection.
+  const [deleting, setDeleting] = useState(false);
+  const deleteSelection = async (selection: {
+    keys: string[];
+    prefixes: string[];
+  }) => {
+    setDeleting(true);
+    try {
+      await deleteObjects(profile, service, bucket, selection);
+      const count = selection.keys.length + selection.prefixes.length;
+      toast.success(`Deleted ${count} ${count === 1 ? "item" : "items"}`);
+      clearSelection();
+      setReloadKey((k) => k + 1);
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "Delete failed");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -236,6 +259,11 @@ export function BucketContents({
           bucket={bucket}
           object={detailObject}
           onClose={clearSelection}
+          deleting={deleting}
+          onDelete={() =>
+            detailObject &&
+            deleteSelection({ keys: [detailObject.key], prefixes: [] })
+          }
         />
         <SelectionDetailPanel
           profile={profile}
@@ -244,6 +272,13 @@ export function BucketContents({
           objects={showSelection ? checkedObjects : []}
           prefixes={showSelection ? checkedPrefixes : []}
           onClose={clearSelection}
+          deleting={deleting}
+          onDelete={() =>
+            deleteSelection({
+              keys: checkedObjects.map((o) => o.key),
+              prefixes: checkedPrefixes,
+            })
+          }
         />
       </div>
     </div>

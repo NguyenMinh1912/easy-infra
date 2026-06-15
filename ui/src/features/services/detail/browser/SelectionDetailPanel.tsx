@@ -1,7 +1,8 @@
-import { Download, Files, X } from "lucide-react";
+import { Download, Files, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { objectsArchiveUrl } from "@/services/api";
 import type { ObjectEntry } from "@/types/browse";
@@ -17,6 +18,10 @@ interface SelectionDetailPanelProps {
   /** Selected folder prefixes (each ending in "/"), zipped recursively. */
   prefixes: string[];
   onClose: () => void;
+  /** Whether a delete is in flight; disables the delete action while true. */
+  deleting?: boolean;
+  /** Delete the whole selection after the user confirms. */
+  onDelete: () => void;
 }
 
 /** A snapshot of the selection, retained so the panel doesn't blank mid-collapse. */
@@ -39,6 +44,8 @@ export function SelectionDetailPanel({
   objects,
   prefixes,
   onClose,
+  deleting,
+  onDelete,
 }: SelectionDetailPanelProps) {
   const open = objects.length + prefixes.length > 0;
   const [shown, setShown] = useState<Selection>({ objects, prefixes });
@@ -98,18 +105,42 @@ export function SelectionDetailPanel({
             />
           </dl>
 
-          <Button asChild className="w-full">
-            <a
-              href={objectsArchiveUrl(profile, service, bucket, {
-                keys: shown.objects.map((o) => o.key),
-                prefixes: shown.prefixes,
-              })}
-              download={`${bucket}.zip`}
-            >
-              <Download aria-hidden />
-              Download zip
-            </a>
-          </Button>
+          <div className="flex flex-col gap-2">
+            <Button asChild className="w-full">
+              <a
+                href={objectsArchiveUrl(profile, service, bucket, {
+                  keys: shown.objects.map((o) => o.key),
+                  prefixes: shown.prefixes,
+                })}
+                download={`${bucket}.zip`}
+              >
+                <Download aria-hidden />
+                Download zip
+              </a>
+            </Button>
+            <ConfirmDialog
+              trigger={
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full text-destructive hover:text-destructive"
+                  disabled={deleting}
+                >
+                  <Trash2 aria-hidden />
+                  Delete
+                </Button>
+              }
+              title={`Delete ${count} ${count === 1 ? "item" : "items"}?`}
+              description={
+                shown.prefixes.length > 0
+                  ? `This permanently removes the selected files and every object inside the selected folders from ${bucket}. This action cannot be undone.`
+                  : `This permanently removes the selected files from ${bucket}. This action cannot be undone.`
+              }
+              confirmLabel="Delete"
+              variant="destructive"
+              onConfirm={onDelete}
+            />
+          </div>
         </div>
       </div>
     </div>

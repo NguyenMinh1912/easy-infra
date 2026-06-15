@@ -26,6 +26,9 @@ type Browser interface {
 	// contentType tags the object when non-empty; size may be -1 when unknown,
 	// in which case the implementation streams the body without it.
 	Put(ctx context.Context, spec Spec, bucket, key string, r io.Reader, size int64, contentType string) error
+
+	// Delete removes one object from bucket under key.
+	Delete(ctx context.Context, spec Spec, bucket, key string) error
 }
 
 // ObjectContent is the metadata of an object opened for download.

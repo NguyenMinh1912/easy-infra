@@ -189,7 +189,7 @@ func (s *Server) handleBrowseArchive(w http.ResponseWriter, r *http.Request) {
 	// archive, since the status can no longer change once the body starts.
 	listCtx, cancel := context.WithTimeout(r.Context(), browseTimeout)
 	defer cancel()
-	objectKeys, err := collectArchiveKeys(listCtx, browser, spec, bucket, keys, prefixes)
+	objectKeys, err := collectSelectionKeys(listCtx, browser, spec, bucket, keys, prefixes)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -214,10 +214,49 @@ func (s *Server) handleBrowseArchive(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// collectArchiveKeys resolves the selection into the de-duplicated set of object
-// keys to archive: the explicit `keys` as-is, plus every object found beneath
-// each folder `prefix`. Order is preserved so the archive is deterministic.
-func collectArchiveKeys(ctx context.Context, browser service.Browser, spec service.Spec, bucket string, keys, prefixes []string) ([]string, error) {
+// handleBrowseDelete removes the selected objects and/or folders from a bucket.
+// The `bucket` query names the store; repeated `key` queries name individual
+// objects and repeated `prefix` queries name folders, whose objects are removed
+// recursively — the same selection shape as the archive endpoint. On success it
+// replies 204; a store failure surfaces as a 502.
+func (s *Server) handleBrowseDelete(w http.ResponseWriter, r *http.Request) {
+	browser, spec, ok := s.resolveBrowser(w, r)
+	if !ok {
+		return
+	}
+	bucket := r.URL.Query().Get("bucket")
+	if bucket == "" {
+		writeError(w, http.StatusBadRequest, "bucket must not be empty")
+		return
+	}
+	keys := r.URL.Query()["key"]
+	prefixes := r.URL.Query()["prefix"]
+	if len(keys) == 0 && len(prefixes) == 0 {
+		writeError(w, http.StatusBadRequest, "at least one key or prefix is required")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), browseTimeout)
+	defer cancel()
+	objectKeys, err := collectSelectionKeys(ctx, browser, spec, bucket, keys, prefixes)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	for _, key := range objectKeys {
+		if err := browser.Delete(ctx, spec, bucket, key); err != nil {
+			writeError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// collectSelectionKeys resolves a selection into the de-duplicated set of object
+// keys it covers: the explicit `keys` as-is, plus every object found beneath
+// each folder `prefix`. Order is preserved so callers (archive, delete) act on a
+// deterministic set.
+func collectSelectionKeys(ctx context.Context, browser service.Browser, spec service.Spec, bucket string, keys, prefixes []string) ([]string, error) {
 	seen := make(map[string]bool)
 	var out []string
 	add := func(key string) {
