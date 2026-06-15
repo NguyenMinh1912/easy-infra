@@ -21,6 +21,11 @@ type Browser interface {
 	// Object opens one object for download: a reader the caller must close
 	// along with the object's size and content type.
 	Object(ctx context.Context, spec Spec, bucket, key string) (io.ReadCloser, ObjectContent, error)
+
+	// Put writes an object into bucket under key, streaming size bytes from r.
+	// contentType tags the object when non-empty; size may be -1 when unknown,
+	// in which case the implementation streams the body without it.
+	Put(ctx context.Context, spec Spec, bucket, key string, r io.Reader, size int64, contentType string) error
 }
 
 // ObjectContent is the metadata of an object opened for download.

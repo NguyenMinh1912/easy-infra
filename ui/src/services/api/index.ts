@@ -32,6 +32,7 @@ export {
   listObjects,
   objectDownloadUrl,
   objectsArchiveUrl,
+  uploadObject,
 } from "./browse";
 export {
   activateProfile,

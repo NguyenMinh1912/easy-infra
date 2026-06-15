@@ -3,7 +3,7 @@
 
 import type { BucketsResponse, ObjectListing } from "@/types/browse";
 
-import { apiGet } from "./client";
+import { ApiError, apiGet } from "./client";
 
 /**
  * List the buckets of the named profile's service. Listing failures (e.g.
@@ -52,6 +52,47 @@ export function objectDownloadUrl(
 ): string {
   const query = new URLSearchParams({ bucket, key });
   return `/api/profiles/${encodeURIComponent(profile)}/services/${encodeURIComponent(service)}/object?${query.toString()}`;
+}
+
+/**
+ * Upload one file into `bucket` under `key`, streaming the file's bytes as the
+ * request body so the browser never buffers the whole file in memory. The
+ * file's MIME type tags the stored object. Resolves on success (204) and
+ * rejects with an {@link ApiError} otherwise; pass `signal` to cancel an
+ * in-flight upload. Callers upload several files by invoking this once per
+ * file, bounding how many run at once to keep the page responsive.
+ */
+export async function uploadObject(
+  profile: string,
+  service: string,
+  bucket: string,
+  key: string,
+  file: File,
+  signal?: AbortSignal,
+): Promise<void> {
+  const query = new URLSearchParams({ bucket, key });
+  const path = `/api/profiles/${encodeURIComponent(profile)}/services/${encodeURIComponent(service)}/object?${query.toString()}`;
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      method: "PUT",
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+      body: file,
+      signal,
+    });
+  } catch (cause) {
+    throw new ApiError(0, `network error: ${String(cause)}`);
+  }
+  if (!res.ok) {
+    let message = `upload of ${file.name} failed (${res.status})`;
+    try {
+      const data = (await res.json()) as { error?: unknown };
+      if (typeof data.error === "string" && data.error) message = data.error;
+    } catch {
+      // Non-JSON body; keep the generic message.
+    }
+    throw new ApiError(res.status, message);
+  }
 }
 
 /**

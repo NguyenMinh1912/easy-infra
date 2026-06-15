@@ -1,7 +1,8 @@
-import { AlertCircle } from "lucide-react";
-import { useEffect, useState } from "react";
+import { AlertCircle, Loader2, Upload } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -20,6 +21,7 @@ import { baseName, formatBytes, formatTime } from "./format";
 import { EntryIcon, PathBreadcrumb } from "./MinioBrowser";
 import { ObjectDetailPanel } from "./ObjectDetailPanel";
 import { SelectionDetailPanel } from "./SelectionDetailPanel";
+import { useObjectUpload } from "./useObjectUpload";
 
 interface BucketContentsProps {
   profile: string;
@@ -46,10 +48,36 @@ export function BucketContents({
   const [prefix, setPrefix] = useState("");
   const [selected, setSelected] = useState<ObjectEntry | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  // Bumped after an upload so the listing reloads and shows the new objects.
+  const [reloadKey, setReloadKey] = useState(0);
   const state = useAsync(
     (signal) => listObjects(profile, service, bucket, prefix, signal),
-    [profile, service, bucket, prefix],
+    [profile, service, bucket, prefix, reloadKey],
   );
+
+  const upload = useObjectUpload({
+    profile,
+    service,
+    bucket,
+    prefix,
+    onComplete: () => setReloadKey((k) => k + 1),
+  });
+
+  // Drag-and-drop onto the listing. A depth counter keeps the highlight stable
+  // as the pointer moves across child rows (each fires its own enter/leave).
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  const onFiles = (files: FileList | null) => {
+    if (files && files.length > 0) void upload.start([...files]);
+  };
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragDepth.current = 0;
+    setDragging(false);
+    onFiles(e.dataTransfer.files);
+  };
 
   // Selection is scoped to one folder level; reset it on navigation.
   useEffect(() => {
@@ -102,9 +130,65 @@ export function BucketContents({
 
   return (
     <div className="space-y-3">
-      <PathBreadcrumb bucket={bucket} prefix={prefix} onNavigate={setPrefix} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <PathBreadcrumb bucket={bucket} prefix={prefix} onNavigate={setPrefix} />
+        <div className="flex items-center gap-3">
+          {upload.progress && (
+            <span
+              className="flex items-center gap-1.5 text-sm text-muted-foreground"
+              aria-live="polite"
+            >
+              <Loader2 className="size-3.5 animate-spin" aria-hidden />
+              Uploading {upload.progress.done + upload.progress.failed}/
+              {upload.progress.total}…
+            </span>
+          )}
+          <input
+            ref={fileInput}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              onFiles(e.target.files);
+              // Reset so selecting the same file(s) again re-triggers change.
+              e.target.value = "";
+            }}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            disabled={upload.uploading}
+            onClick={() => fileInput.current?.click()}
+          >
+            <Upload className="size-4" aria-hidden />
+            Upload
+          </Button>
+        </div>
+      </div>
       <div className="flex items-start">
-        <div className="min-w-0 flex-1">
+        <div
+          className="relative min-w-0 flex-1"
+          onDragEnter={(e) => {
+            e.preventDefault();
+            dragDepth.current += 1;
+            setDragging(true);
+          }}
+          onDragOver={(e) => e.preventDefault()}
+          onDragLeave={(e) => {
+            e.preventDefault();
+            dragDepth.current -= 1;
+            if (dragDepth.current <= 0) setDragging(false);
+          }}
+          onDrop={onDrop}
+        >
+          {dragging && (
+            <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-primary bg-primary/5 text-sm font-medium text-primary">
+              <Upload className="size-5" aria-hidden />
+              Drop files to upload to {prefix ? baseName(prefix) + "/" : bucket}
+            </div>
+          )}
           {state.status === "loading" && (
             <div className="space-y-2" aria-label="Loading objects">
               <Skeleton className="h-8 w-full" />
