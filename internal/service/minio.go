@@ -379,6 +379,18 @@ func (m MinIO) Put(ctx context.Context, spec Spec, bucket, key string, r io.Read
 	return nil
 }
 
+// Delete implements Browser: remove one object from bucket under key.
+func (m MinIO) Delete(ctx context.Context, spec Spec, bucket, key string) error {
+	client, err := m.connect(ctx, spec.Env)
+	if err != nil {
+		return err
+	}
+	if err := client.RemoveObject(ctx, bucket, key); err != nil {
+		return fmt.Errorf("deleting %s/%s: %w", bucket, key, err)
+	}
+	return nil
+}
+
 // connect opens a client to the MinIO endpoint described by env.
 func (m MinIO) connect(ctx context.Context, env Config) (s3Client, error) {
 	params, err := minioParamsFrom(env)

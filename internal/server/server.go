@@ -57,6 +57,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/profiles/{name}/services/{service}/buckets", s.handleBrowseBuckets)
 	mux.HandleFunc("GET /api/profiles/{name}/services/{service}/objects", s.handleBrowseObjects)
 	mux.HandleFunc("GET /api/profiles/{name}/services/{service}/objects/archive", s.handleBrowseArchive)
+	mux.HandleFunc("DELETE /api/profiles/{name}/services/{service}/objects", s.handleBrowseDelete)
 	mux.HandleFunc("GET /api/profiles/{name}/services/{service}/object", s.handleBrowseObject)
 	mux.HandleFunc("PUT /api/profiles/{name}/services/{service}/object", s.handleBrowseUpload)
 	mux.HandleFunc("GET /api/services/catalog", s.handleServiceCatalog)

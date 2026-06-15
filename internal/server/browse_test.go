@@ -29,6 +29,8 @@ type stubBrowser struct {
 	objectInfo service.ObjectContent
 	objectErr  error
 	putErr     error
+	deleteErr  error
+	deleted    []string
 	gotBucket  string
 	gotPrefix  string
 	gotKey     string
@@ -85,6 +87,16 @@ func (s *stubBrowser) Put(_ context.Context, spec service.Spec, bucket, key stri
 		return err
 	}
 	s.gotBody = string(body)
+	return nil
+}
+
+func (s *stubBrowser) Delete(_ context.Context, spec service.Spec, bucket, key string) error {
+	s.gotSpec = spec
+	s.gotBucket = bucket
+	if s.deleteErr != nil {
+		return s.deleteErr
+	}
+	s.deleted = append(s.deleted, key)
 	return nil
 }
 
@@ -308,6 +320,59 @@ func TestBrowseArchiveListError(t *testing.T) {
 	srv := newConsoleServer(t, stub)
 	rec := doJSON(t, srv, http.MethodGet,
 		"/api/profiles/default/services/stub/objects/archive?bucket=assets&prefix=docs/", nil)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502 (body %q)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestBrowseDeleteKeysAndPrefix(t *testing.T) {
+	stub := &stubBrowser{
+		stubService: stubService{name: "stub"},
+		// "docs/" expands to its two objects; "top.txt" is taken as-is.
+		listings: map[string]*service.ObjectListing{
+			"docs/": {
+				Prefixes: []string{"docs/img/"},
+				Objects:  []service.ObjectEntry{{Key: "docs/readme.md"}},
+			},
+			"docs/img/": {
+				Objects: []service.ObjectEntry{{Key: "docs/img/logo.png"}},
+			},
+		},
+	}
+	srv := newConsoleServer(t, stub)
+	rec := doJSON(t, srv, http.MethodDelete,
+		"/api/profiles/default/services/stub/objects?bucket=assets&key=top.txt&prefix=docs/", nil)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204 (body %q)", rec.Code, rec.Body.String())
+	}
+	want := []string{"top.txt", "docs/readme.md", "docs/img/logo.png"}
+	if len(stub.deleted) != len(want) {
+		t.Fatalf("deleted = %v, want %v", stub.deleted, want)
+	}
+	for i, key := range want {
+		if stub.deleted[i] != key {
+			t.Errorf("deleted[%d] = %q, want %q", i, stub.deleted[i], key)
+		}
+	}
+}
+
+func TestBrowseDeleteNoSelection(t *testing.T) {
+	srv := newConsoleServer(t, &stubBrowser{stubService: stubService{name: "stub"}})
+	rec := doJSON(t, srv, http.MethodDelete,
+		"/api/profiles/default/services/stub/objects?bucket=assets", nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body %q)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestBrowseDeleteError(t *testing.T) {
+	stub := &stubBrowser{
+		stubService: stubService{name: "stub"},
+		deleteErr:   errors.New("store unreachable"),
+	}
+	srv := newConsoleServer(t, stub)
+	rec := doJSON(t, srv, http.MethodDelete,
+		"/api/profiles/default/services/stub/objects?bucket=assets&key=top.txt", nil)
 	if rec.Code != http.StatusBadGateway {
 		t.Fatalf("status = %d, want 502 (body %q)", rec.Code, rec.Body.String())
 	}

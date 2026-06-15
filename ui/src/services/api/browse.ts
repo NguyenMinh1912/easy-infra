@@ -3,7 +3,7 @@
 
 import type { BucketsResponse, ObjectListing } from "@/types/browse";
 
-import { ApiError, apiGet } from "./client";
+import { ApiError, apiGet, apiSend } from "./client";
 
 /**
  * List the buckets of the named profile's service. Listing failures (e.g.
@@ -111,4 +111,28 @@ export function objectsArchiveUrl(
   for (const key of selection.keys) query.append("key", key);
   for (const prefix of selection.prefixes) query.append("prefix", prefix);
   return `/api/profiles/${encodeURIComponent(profile)}/services/${encodeURIComponent(service)}/objects/archive?${query.toString()}`;
+}
+
+/**
+ * Delete the selected objects (`keys`) and folders (`prefixes`, expanded
+ * recursively server-side) from `bucket` — the same selection shape as
+ * {@link objectsArchiveUrl}. Resolves on success (204) and rejects with an
+ * {@link ApiError} otherwise.
+ */
+export async function deleteObjects(
+  profile: string,
+  service: string,
+  bucket: string,
+  selection: { keys: string[]; prefixes: string[] },
+  signal?: AbortSignal,
+): Promise<void> {
+  const query = new URLSearchParams({ bucket });
+  for (const key of selection.keys) query.append("key", key);
+  for (const prefix of selection.prefixes) query.append("prefix", prefix);
+  return apiSend<void>(
+    "DELETE",
+    `/profiles/${encodeURIComponent(profile)}/services/${encodeURIComponent(service)}/objects?${query.toString()}`,
+    undefined,
+    signal,
+  );
 }
