@@ -44,6 +44,23 @@ worked profile example.
 
 ## Install
 
+### Quick install (recommended)
+
+Install the latest prebuilt binary for your OS/arch with one command — no Go
+toolchain required:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/NguyenMinh1912/easy-infra/main/install.sh | sh
+```
+
+This downloads the matching release asset, verifies its checksum, and installs
+`easy-infra` to `/usr/local/bin` (or `~/.local/bin` if that isn't writable).
+Pin a version with `EASY_INFRA_VERSION=v1.2.3` or change the target directory
+with `EASY_INFRA_BIN_DIR`. Releases are published automatically from a version
+tag by [`.github/workflows/release.yml`](./.github/workflows/release.yml).
+
+### Build from source
+
 Install `easy-infra` as a global command (drops the binary in `go env GOPATH`'s
 `bin`):
 
