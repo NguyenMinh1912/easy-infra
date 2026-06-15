@@ -9,6 +9,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// version is the build version, stamped at release time via ldflags
+// (-X github.com/minhnc/easy-infra/cmd.version=<tag>). It powers
+// `easy-infra --version`; unstamped dev builds report "dev".
+var version = "dev"
+
 // Execute builds the command tree with its dependencies and runs it. It is the
 // single entrypoint called from main.
 func Execute() error {
@@ -25,6 +30,7 @@ func newRootCmd(reg *service.Registry, paths project.Paths) *cobra.Command {
 		Use:           "easy-infra",
 		Short:         "Manage a project's local/dev infrastructure",
 		Long:          "easy-infra manages local/dev infrastructure for a project through named profiles of services.",
+		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
