@@ -1,4 +1,5 @@
 import { AlertCircle } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useAsync } from "@/hooks/useAsync";
@@ -21,15 +22,23 @@ interface ServiceHealthBannerProps {
   service: ServiceInstance;
   /** Profile scoping the probe; without it (or for an unprobeable type) no check runs. */
   profile?: string;
+  /**
+   * The service detail UI to show once the service is confirmed reachable.
+   * When the service is not active, it is withheld so the user sees only the
+   * warning — not a detail screen backed by a service that cannot answer.
+   */
+  children: ReactNode;
 }
 
 /**
- * On entering a service detail page, probe the service's health and, when it is
- * not active (unreachable / not responding), surface a destructive alert in the
- * main content. Renders nothing while checking, when healthy, or for service
- * types without a health probe — so a reachable service shows no extra chrome.
+ * On entering a service detail page, probe the service's health. While checking,
+ * when healthy, or for service types without a health probe, the detail UI
+ * ({@link children}) is shown as-is. When the service is not active (unreachable
+ * / not responding), the detail UI is withheld and a destructive alert is shown
+ * in its place — so the user is told the status without a detail screen that
+ * would only error against a service that cannot respond.
  */
-export function ServiceHealthBanner({ service, profile }: ServiceHealthBannerProps) {
+export function ServiceHealthBanner({ service, profile, children }: ServiceHealthBannerProps) {
   const probe = Boolean(profile) && HEALTH_CHECKABLE.has(service.type);
 
   const state = useAsync(
@@ -41,7 +50,7 @@ export function ServiceHealthBanner({ service, profile }: ServiceHealthBannerPro
   );
 
   if (!probe || state.status === "loading") {
-    return null;
+    return <>{children}</>;
   }
 
   // A transport failure means we could not confirm the service is up; treat it,
@@ -54,7 +63,7 @@ export function ServiceHealthBanner({ service, profile }: ServiceHealthBannerPro
         : (state.data.error ?? "The service did not respond to a health check.");
 
   if (!reason) {
-    return null;
+    return <>{children}</>;
   }
 
   const label = metaFor(service.type).label;

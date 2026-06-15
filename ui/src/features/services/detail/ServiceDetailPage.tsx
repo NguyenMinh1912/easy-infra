@@ -69,8 +69,9 @@ export function ServiceDetailPage({ name, profile }: ServiceDetailPageProps) {
           }
         >
           <div className="space-y-6">
-            <ServiceHealthBanner service={service} profile={scopedProfile} />
-            <Overview service={service} profile={profile} />
+            <ServiceHealthBanner service={service} profile={scopedProfile}>
+              <Overview service={service} profile={profile} />
+            </ServiceHealthBanner>
           </div>
         </ServiceDetailLayout>
       );
