@@ -1,19 +1,17 @@
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, Inbox, Search } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 import { useAsync } from "@/hooks/useAsync";
 import { getKeyValue } from "@/services/api";
 import type { KeyValue } from "@/types/redis";
+
+import { CopyButton } from "./CopyButton";
+import { RedisTypeBadge } from "./RedisTypeBadge";
 
 interface RedisValuePanelProps {
   profile: string;
@@ -21,6 +19,23 @@ interface RedisValuePanelProps {
   db: number;
   /** Key to display; null when nothing is selected yet. */
   selectedKey: string | null;
+}
+
+/** A copyable cell within a collection row (e.g. a hash field or value). */
+interface RowCopy {
+  label: string;
+  value: string;
+}
+
+/** One rendered row: the visible cells plus what its hover actions copy. */
+interface Row {
+  cells: string[];
+  copies: RowCopy[];
+}
+
+/** Fills the panel's height so empty/error/loading states match the data view. */
+function PanelShell({ children }: { children: ReactNode }) {
+  return <div className="flex h-full min-h-0 flex-col">{children}</div>;
 }
 
 /**
@@ -36,11 +51,16 @@ export function RedisValuePanel({
 }: RedisValuePanelProps) {
   if (selectedKey === null) {
     return (
-      <div className="flex h-full min-h-48 items-center justify-center rounded-md border border-dashed border-border p-10 text-center">
-        <p className="text-sm text-muted-foreground">
-          Select a key to view its value.
-        </p>
-      </div>
+      <PanelShell>
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 rounded-md border border-dashed border-border p-10 text-center">
+          <span className="flex size-10 items-center justify-center rounded-lg bg-muted">
+            <Inbox className="size-5 text-muted-foreground" aria-hidden />
+          </span>
+          <p className="text-sm text-muted-foreground">
+            Select a key to view its value.
+          </p>
+        </div>
+      </PanelShell>
     );
   }
   return (
@@ -66,51 +86,63 @@ function ValueBody({
   );
 
   if (state.status === "loading") {
-    return <Skeleton className="h-40 w-full" />;
+    return (
+      <PanelShell>
+        <Skeleton className="min-h-0 flex-1" />
+      </PanelShell>
+    );
   }
   if (state.status === "error") {
     return (
-      <Alert variant="destructive">
-        <AlertCircle />
-        <div>
-          <AlertTitle>Could not load value</AlertTitle>
-          <AlertDescription>{state.error.message}</AlertDescription>
-        </div>
-      </Alert>
+      <PanelShell>
+        <Alert variant="destructive">
+          <AlertCircle />
+          <div>
+            <AlertTitle>Could not load value</AlertTitle>
+            <AlertDescription>{state.error.message}</AlertDescription>
+          </div>
+        </Alert>
+      </PanelShell>
     );
   }
   if (state.data.error) {
     return (
-      <Alert variant="destructive">
-        <AlertCircle />
-        <div>
-          <AlertTitle>Redis unreachable</AlertTitle>
-          <AlertDescription className="font-mono text-xs">
-            {state.data.error}
-          </AlertDescription>
-        </div>
-      </Alert>
+      <PanelShell>
+        <Alert variant="destructive">
+          <AlertCircle />
+          <div>
+            <AlertTitle>Redis unreachable</AlertTitle>
+            <AlertDescription className="font-mono text-xs">
+              {state.data.error}
+            </AlertDescription>
+          </div>
+        </Alert>
+      </PanelShell>
     );
   }
 
   const value = state.data;
   if (value.type === "none") {
     return (
-      <div className="rounded-md border border-dashed border-border p-10 text-center">
-        <p className="text-sm text-muted-foreground">
-          Key <span className="font-mono">{selectedKey}</span> no longer exists.
-        </p>
-      </div>
+      <PanelShell>
+        <div className="flex min-h-0 flex-1 items-center justify-center rounded-md border border-dashed border-border p-10 text-center">
+          <p className="text-sm text-muted-foreground">
+            Key <span className="font-mono">{selectedKey}</span> no longer
+            exists.
+          </p>
+        </div>
+      </PanelShell>
     );
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
+    <PanelShell>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         <span className="min-w-0 truncate font-mono text-sm font-medium">
           {value.key}
         </span>
-        <Badge variant="secondary">{value.type}</Badge>
+        <CopyButton value={value.key} label="key" className="size-6" />
+        <RedisTypeBadge type={value.type} />
         <Badge variant="outline">{formatTtl(value.ttl)}</Badge>
         <span className="text-xs text-muted-foreground">
           {value.length} {value.length === 1 ? "element" : "elements"}
@@ -118,12 +150,12 @@ function ValueBody({
       </div>
       <ValueContent value={value} />
       {value.truncated && (
-        <p className="text-xs text-muted-foreground">
+        <p className="mt-2 text-xs text-muted-foreground">
           Showing the first {shownCount(value)} of {value.length} — value
           truncated.
         </p>
       )}
-    </div>
+    </PanelShell>
   );
 }
 
@@ -131,27 +163,48 @@ function ValueBody({
 function ValueContent({ value }: { value: KeyValue }) {
   switch (value.type) {
     case "string":
-      return (
-        <pre className="max-h-96 overflow-auto rounded-md border border-border bg-muted/40 p-3 font-mono text-sm whitespace-pre-wrap break-all">
-          {value.string ?? ""}
-        </pre>
-      );
+      return <StringValue value={value.string ?? ""} />;
     case "list":
-      return <IndexedList items={value.list ?? []} />;
+      return (
+        <CollectionTable
+          columns={["#", "value"]}
+          rows={(value.list ?? []).map((item, i) => ({
+            cells: [String(i), item],
+            copies: [{ label: "value", value: item }],
+          }))}
+        />
+      );
     case "set":
-      return <PlainList items={value.set ?? []} />;
+      return (
+        <CollectionTable
+          columns={["member"]}
+          rows={(value.set ?? []).map((item) => ({
+            cells: [item],
+            copies: [{ label: "member", value: item }],
+          }))}
+        />
+      );
     case "hash":
       return (
-        <PairTable
+        <CollectionTable
           columns={["field", "value"]}
-          rows={(value.hash ?? []).map((h) => [h.field, h.value])}
+          rows={(value.hash ?? []).map((h) => ({
+            cells: [h.field, h.value],
+            copies: [
+              { label: "field", value: h.field },
+              { label: "value", value: h.value },
+            ],
+          }))}
         />
       );
     case "zset":
       return (
-        <PairTable
+        <CollectionTable
           columns={["member", "score"]}
-          rows={(value.zset ?? []).map((z) => [z.member, String(z.score)])}
+          rows={(value.zset ?? []).map((z) => ({
+            cells: [z.member, String(z.score)],
+            copies: [{ label: "member", value: z.member }],
+          }))}
         />
       );
     default:
@@ -164,70 +217,132 @@ function ValueContent({ value }: { value: KeyValue }) {
   }
 }
 
-/** A list rendered with positional indices (preserves list order). */
-function IndexedList({ items }: { items: string[] }) {
+/** A scrollable string value with a copy action. */
+function StringValue({ value }: { value: string }) {
   return (
-    <PairTable
-      columns={["#", "value"]}
-      rows={items.map((item, i) => [String(i), item])}
-    />
-  );
-}
-
-/** A single-column list (set members). */
-function PlainList({ items }: { items: string[] }) {
-  return (
-    <div className="max-h-96 overflow-auto rounded-md border border-border">
-      <Table>
-        <TableBody>
-          {items.map((item, i) => (
-            <TableRow key={i}>
-              <TableCell className="font-mono break-all">{item}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+    <div className="relative min-h-0 flex-1 rounded-md border border-border bg-muted/40">
+      <CopyButton
+        value={value}
+        label="value"
+        className="absolute top-1 right-1 z-10 size-6 bg-background/70"
+      />
+      <pre className="h-full overflow-auto p-3 pr-9 font-mono text-sm break-all whitespace-pre-wrap">
+        {value}
+      </pre>
     </div>
   );
 }
 
-/** A two-column table for hash fields, zset members, or indexed lists. */
-function PairTable({
+/**
+ * A compact table for collection values (hash, zset, list, set) with a
+ * client-side filter and per-row copy actions. Columns whose every cell is
+ * numeric are right-aligned with tabular figures so codes line up by digit.
+ */
+function CollectionTable({
   columns,
   rows,
 }: {
-  columns: [string, string];
-  rows: string[][];
+  columns: string[];
+  rows: Row[];
 }) {
+  const [query, setQuery] = useState("");
+
+  const numericCol = useMemo(
+    () =>
+      columns.map(
+        (_, col) => rows.length > 0 && rows.every((r) => isNumeric(r.cells[col])),
+      ),
+    [columns, rows],
+  );
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((r) =>
+      r.cells.some((c) => c.toLowerCase().includes(q)),
+    );
+  }, [rows, query]);
+
   return (
-    <div className="max-h-96 overflow-auto rounded-md border border-border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            {columns.map((c) => (
-              <TableHead
-                key={c}
-                className="sticky top-0 z-10 bg-background font-mono"
-              >
-                {c}
-              </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((row, i) => (
-            <TableRow key={i}>
-              {row.map((cell, j) => (
-                <TableCell key={j} className="font-mono break-all">
-                  {cell}
-                </TableCell>
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
+      <div className="relative">
+        <Search
+          className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+          aria-hidden
+        />
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={`Filter ${columns.join(" / ")}…`}
+          aria-label="Filter fields"
+          className="h-8 pl-8 font-mono text-sm"
+        />
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border">
+              {columns.map((c, i) => (
+                <th
+                  key={c}
+                  className={cn(
+                    "sticky top-0 z-10 bg-background px-3 py-1.5 text-left font-mono text-xs font-medium tracking-wide text-muted-foreground",
+                    numericCol[i] && "text-right",
+                  )}
+                >
+                  {c}
+                </th>
               ))}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+              <th className="sticky top-0 z-10 w-0 bg-background" />
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((row, i) => (
+              <tr
+                key={i}
+                className="group border-b border-border last:border-0 hover:bg-muted/50"
+              >
+                {row.cells.map((cell, j) => (
+                  <td
+                    key={j}
+                    className={cn(
+                      "px-3 py-1 align-top font-mono break-all",
+                      numericCol[j] && "text-right tabular-nums",
+                    )}
+                  >
+                    {cell}
+                  </td>
+                ))}
+                <td className="w-0 py-0 pr-1 align-middle">
+                  <div className="flex justify-end gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+                    {row.copies.map((c) => (
+                      <CopyButton
+                        key={c.label}
+                        value={c.value}
+                        label={c.label}
+                        className="size-6"
+                      />
+                    ))}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {filtered.length === 0 && (
+          <p className="p-6 text-center text-sm text-muted-foreground">
+            Nothing matches “{query}”.
+          </p>
+        )}
+      </div>
     </div>
   );
+}
+
+/** True for a non-empty integer or decimal string (used for column alignment). */
+function isNumeric(s: string): boolean {
+  return s.trim() !== "" && /^-?\d+(\.\d+)?$/.test(s.trim());
 }
 
 /** Human-readable TTL: -1 no expiry, -2 missing, otherwise seconds. */
