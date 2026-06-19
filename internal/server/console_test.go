@@ -7,9 +7,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/minhnc/easy-infra/internal/config"
 	profilepkg "github.com/minhnc/easy-infra/internal/profile"
-	"github.com/minhnc/easy-infra/internal/project"
 	"github.com/minhnc/easy-infra/internal/service"
 )
 
@@ -44,21 +42,25 @@ func newConsoleServer(t *testing.T, svc service.Service) *Server {
 	if err := reg.Register(svc); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
-	paths := newPaths(t)
-	if err := config.Scaffold().Save(paths.Config); err != nil {
-		t.Fatalf("Save config: %v", err)
+	st := newStore(t)
+	ws, err := st.CreateWorkspace("test")
+	if err != nil {
+		t.Fatalf("CreateWorkspace: %v", err)
 	}
 	prof, err := profilepkg.Scaffold(reg, svc.Name())
 	if err != nil {
 		t.Fatalf("Scaffold profile: %v", err)
 	}
-	if err := prof.Save(paths.ProfilePath("default")); err != nil {
-		t.Fatalf("Save profile: %v", err)
+	if err := st.CreateProfile(ws.ID, "default", prof.Services); err != nil {
+		t.Fatalf("CreateProfile: %v", err)
 	}
-	if _, err := project.Load(paths, reg); err != nil {
-		t.Fatalf("Load: %v", err)
+	if err := st.SetWorkspaceActiveProfile(ws.ID, "default"); err != nil {
+		t.Fatalf("SetWorkspaceActiveProfile: %v", err)
 	}
-	return New(reg, regFrom(t, paths), emptyUI)
+	if err := st.SetActiveWorkspace(ws.ID); err != nil {
+		t.Fatalf("SetActiveWorkspace: %v", err)
+	}
+	return New(reg, st, emptyUI)
 }
 
 func decodeQuery(t *testing.T, body []byte) queryResponse {

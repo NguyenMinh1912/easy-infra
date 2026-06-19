@@ -3,8 +3,9 @@ import {
   Check,
   ChevronsUpDown,
   FolderOpen,
+  Pencil,
   Plus,
-  TriangleAlert,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -18,42 +19,62 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import type { Workspace } from "@/types/workspace";
 
 import { CreateWorkspaceDialog } from "./CreateWorkspaceDialog";
+import { EditWorkspaceDialog } from "./EditWorkspaceDialog";
 import { useWorkspaces } from "./hooks/useWorkspaces";
 
 /** A full reload is the simplest correct way to refetch every screen's data
- * after the active folder changes — switching is a deliberate, infrequent act. */
+ * after the active workspace changes — switching is a deliberate, infrequent
+ * act. */
 function reloadApp() {
   window.location.reload();
 }
 
 /**
  * Sidebar control showing the active workspace with a dropdown to switch
- * between known workspaces and to create a new one. Lives at the top of the
- * sidebar so the active folder is always visible.
+ * between known workspaces, rename or remove them, and create a new one.
  */
 export function WorkspaceSwitcher() {
   const { state, actions } = useWorkspaces();
   const [createOpen, setCreateOpen] = useState(false);
+  const [editing, setEditing] = useState<Workspace | null>(null);
 
   const data = state.status === "success" ? state.data : null;
-  const active = data?.workspaces.find((w) => w.name === data.active) ?? null;
+  const active = data?.workspaces.find((w) => w.id === data.active) ?? null;
   const label =
-    state.status === "loading"
-      ? "Loading…"
-      : (active?.name ?? "No workspace");
+    state.status === "loading" ? "Loading…" : (active?.name ?? "No workspace");
 
-  async function handleActivate(name: string) {
-    if (name === data?.active) return;
+  async function handleActivate(id: number) {
+    if (id === data?.active) return;
     try {
-      await actions.activate(name);
+      await actions.activate(id);
       reloadApp();
     } catch (cause) {
       toast.error("Could not switch workspace", {
         description: cause instanceof Error ? cause.message : String(cause),
       });
     }
+  }
+
+  async function handleRemove(w: Workspace) {
+    try {
+      await actions.remove(w.id);
+      // Removing the active workspace changes the data behind every screen.
+      if (w.id === data?.active) reloadApp();
+    } catch (cause) {
+      toast.error("Could not remove workspace", {
+        description: cause instanceof Error ? cause.message : String(cause),
+      });
+    }
+  }
+
+  async function handleRename(id: number, name: string) {
+    await actions.rename(id, name);
+    // A rename changes the active workspace's display everywhere; reload if it
+    // was the active one so the whole app reflects the new name.
+    if (id === data?.active) reloadApp();
   }
 
   return (
@@ -65,42 +86,59 @@ export function WorkspaceSwitcher() {
             className="h-auto w-full justify-start gap-2 px-3 py-2 text-left"
             disabled={state.status === "loading"}
           >
-            <FolderOpen className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-            <span className="truncate font-medium" title={active?.path}>
-              {label}
-            </span>
+            <FolderOpen
+              className="size-4 shrink-0 text-muted-foreground"
+              aria-hidden
+            />
+            <span className="truncate font-medium">{label}</span>
             <ChevronsUpDown
               className="ml-auto size-4 shrink-0 text-muted-foreground"
               aria-hidden
             />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="start"
-          className="w-[14rem]"
-        >
+        <DropdownMenuContent align="start" className="w-[16rem]">
           <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
           {data?.workspaces.map((w) => (
             <DropdownMenuItem
-              key={w.name}
-              onSelect={() => handleActivate(w.name)}
+              key={w.id}
+              onSelect={() => handleActivate(w.id)}
+              className="gap-2"
             >
               <Check
                 className={cn(
-                  "size-4",
-                  w.name === data.active ? "opacity-100" : "opacity-0",
+                  "size-4 shrink-0",
+                  w.id === data.active ? "opacity-100" : "opacity-0",
                 )}
                 aria-hidden
               />
-              <span className="truncate" title={w.path}>
-                {w.name}
+              <span className="truncate">{w.name}</span>
+              <span className="ml-auto flex items-center gap-0.5">
+                <button
+                  type="button"
+                  className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  aria-label={`Rename ${w.name}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setEditing(w);
+                  }}
+                >
+                  <Pencil className="size-3.5" aria-hidden />
+                </button>
+                <button
+                  type="button"
+                  className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-destructive"
+                  aria-label={`Remove ${w.name}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleRemove(w);
+                  }}
+                >
+                  <Trash2 className="size-3.5" aria-hidden />
+                </button>
               </span>
-              {!w.exists && (
-                <TriangleAlert
-                  className="ml-auto size-4 text-destructive"
-                  aria-label="folder missing"
-                />
-              )}
             </DropdownMenuItem>
           ))}
           <DropdownMenuSeparator />
@@ -114,10 +152,17 @@ export function WorkspaceSwitcher() {
       <CreateWorkspaceDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        startPath={data?.home ?? ""}
-        separator={data?.separator ?? "/"}
         onCreate={actions.create}
         onCreated={reloadApp}
+      />
+
+      <EditWorkspaceDialog
+        open={editing !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditing(null);
+        }}
+        workspace={editing}
+        onRename={handleRename}
       />
     </>
   );

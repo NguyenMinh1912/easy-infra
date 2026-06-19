@@ -10,64 +10,41 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
-	"path/filepath"
-	"sync"
 
 	"github.com/minhnc/easy-infra/internal/project"
 	"github.com/minhnc/easy-infra/internal/service"
-	"github.com/minhnc/easy-infra/internal/workspace"
+	"github.com/minhnc/easy-infra/internal/store"
 )
 
-// Server answers API requests and serves the embedded UI. It loads the project
-// fresh on each request so the API always reflects what is on disk. The folder
-// it operates on is the active workspace, which the user can create and switch
-// from the UI; handlers derive the project paths from it per request.
+// Server answers API requests and serves the embedded UI. All data lives in the
+// central SQLite store; handlers open the active workspace fresh on each request
+// so the API always reflects what is persisted. The user creates and switches
+// workspaces from the UI.
 type Server struct {
-	reg *service.Registry
-	ui  fs.FS
-
-	mu      sync.RWMutex
-	ws      *workspace.Registry
-	backups map[string]*backupManager // keyed by backup DB path (per workspace root)
+	reg     *service.Registry
+	ui      fs.FS
+	store   *store.Store
+	backups *backupManager
 }
 
-// New builds a Server from the injected service registry, the workspace registry,
-// and the embedded UI filesystem (see the ui package).
-func New(reg *service.Registry, ws *workspace.Registry, ui fs.FS) *Server {
-	return &Server{reg: reg, ws: ws, ui: ui, backups: make(map[string]*backupManager)}
+// New builds a Server from the injected service registry, the store, and the
+// embedded UI filesystem (see the ui package).
+func New(reg *service.Registry, st *store.Store, ui fs.FS) *Server {
+	return &Server{reg: reg, store: st, ui: ui, backups: newBackupManager()}
 }
 
-// activePaths returns the project paths for the active workspace. When there is
-// no active workspace it returns the zero Paths, so project.Load fails with
-// ErrNotInitialized and handlers behave as "not initialized".
-func (s *Server) activePaths() project.Paths {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if path, ok := s.ws.ActivePath(); ok {
-		return project.PathsFor(path)
+// activeProject opens the active workspace as a Project. When no workspace is
+// active it returns project.ErrNotInitialized, so handlers behave as "not
+// initialized" (the UI then offers to create a workspace).
+func (s *Server) activeProject() (*project.Project, error) {
+	ws, ok, err := s.store.ActiveWorkspace()
+	if err != nil {
+		return nil, err
 	}
-	return project.Paths{}
-}
-
-// backupsForActive returns the backup manager for the active workspace, creating
-// it on first use. Managers are kept per workspace root so a backup started in
-// one workspace keeps its store and cancel handle even after the user switches.
-func (s *Server) backupsForActive() *backupManager {
-	dbPath := backupDBPath(s.activePaths())
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	m, ok := s.backups[dbPath]
 	if !ok {
-		m = newBackupManager(dbPath)
-		s.backups[dbPath] = m
+		return nil, project.ErrNotInitialized
 	}
-	return m
-}
-
-// backupDBPath places the backup session database alongside the JSON state, in
-// the project's .easy-infra directory.
-func backupDBPath(paths project.Paths) string {
-	return filepath.Join(filepath.Dir(paths.State), "backups.db")
+	return project.Open(s.store, s.reg, ws.ID)
 }
 
 // Handler returns the HTTP handler tree: the JSON API under /api and the SPA on
@@ -77,9 +54,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("GET /api/workspaces", s.handleListWorkspaces)
 	mux.HandleFunc("POST /api/workspaces", s.handleCreateWorkspace)
+	mux.HandleFunc("PUT /api/workspaces/{id}", s.handleRenameWorkspace)
 	mux.HandleFunc("POST /api/workspaces/activate", s.handleActivateWorkspace)
-	mux.HandleFunc("DELETE /api/workspaces/{name}", s.handleRemoveWorkspace)
-	mux.HandleFunc("GET /api/workspaces/browse", s.handleBrowseDirs)
+	mux.HandleFunc("DELETE /api/workspaces/{id}", s.handleRemoveWorkspace)
 	mux.HandleFunc("GET /api/profiles", s.handleListProfiles)
 	mux.HandleFunc("POST /api/profiles", s.handleCreateProfile)
 	mux.HandleFunc("GET /api/profiles/{name}", s.handleGetProfile)
@@ -139,7 +116,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	proj, err := project.Load(s.activePaths(), s.reg)
+	proj, err := s.activeProject()
 	if err != nil {
 		if errors.Is(err, project.ErrNotInitialized) {
 			writeJSON(w, http.StatusOK, statusResponse{Profiles: []profile{}, Services: []string{}})
@@ -155,7 +132,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	active := proj.State.ActiveProfile
+	active := proj.ActiveProfileName()
 	profiles := make([]profile, 0, len(names))
 	for _, name := range names {
 		profiles = append(profiles, profile{Name: name, Active: name == active})

@@ -1,31 +1,56 @@
 package project
 
 import (
-	"path/filepath"
 	"testing"
 
-	"github.com/minhnc/easy-infra/internal/config"
 	"github.com/minhnc/easy-infra/internal/service"
-	"github.com/minhnc/easy-infra/internal/state"
+	"github.com/minhnc/easy-infra/internal/store"
 )
 
-// newTestProject builds an in-memory project rooted at a temp dir with no
-// profiles yet. New profiles scaffold the conventional default services
-// (project.DefaultServices).
+// newTestProject builds a Project backed by a fresh store in a temp config dir,
+// with one (active) workspace and no profiles yet.
 func newTestProject(t *testing.T) *Project {
 	t.Helper()
+	t.Setenv("EASY_INFRA_CONFIG_DIR", t.TempDir())
+	st, err := store.Open()
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
 	reg := service.DefaultRegistry()
-	cfg := config.Scaffold()
-	dir := t.TempDir()
-	return &Project{
-		Config:   cfg,
-		State:    &state.State{},
-		Registry: reg,
-		Paths: Paths{
-			Config:      filepath.Join(dir, "easy-infra.yml"),
-			State:       filepath.Join(dir, "state.json"),
-			ProfilesDir: filepath.Join(dir, "profiles"),
-		},
+	ws, err := st.CreateWorkspace("test")
+	if err != nil {
+		t.Fatalf("CreateWorkspace: %v", err)
+	}
+	p, err := Open(st, reg, ws.ID)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	return p
+}
+
+func TestCreateWorkspaceScaffoldsDefault(t *testing.T) {
+	t.Setenv("EASY_INFRA_CONFIG_DIR", t.TempDir())
+	st, err := store.Open()
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer st.Close()
+	reg := service.DefaultRegistry()
+
+	ws, err := CreateWorkspace(st, reg, "app")
+	if err != nil {
+		t.Fatalf("CreateWorkspace: %v", err)
+	}
+	if ws.ActiveProfile != DefaultProfile {
+		t.Errorf("ActiveProfile = %q, want %q", ws.ActiveProfile, DefaultProfile)
+	}
+	p, err := Open(st, reg, ws.ID)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if _, err := p.LoadProfile(DefaultProfile); err != nil {
+		t.Errorf("default profile invalid: %v", err)
 	}
 }
 
@@ -36,13 +61,11 @@ func TestAddProfile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddProfile: %v", err)
 	}
-	// The new profile carries default env config for every defined service.
 	for _, name := range []string{"postgres", "redis"} {
 		if _, ok := prof.Services[name]; !ok {
 			t.Errorf("scaffolded profile missing service %q", name)
 		}
 	}
-	// It is persisted and listed.
 	names, err := p.Profiles()
 	if err != nil {
 		t.Fatalf("Profiles: %v", err)
@@ -50,7 +73,6 @@ func TestAddProfile(t *testing.T) {
 	if len(names) != 1 || names[0] != "staging" {
 		t.Errorf("Profiles() = %v, want [staging]", names)
 	}
-	// And it loads and validates.
 	if _, err := p.LoadProfile("staging"); err != nil {
 		t.Errorf("LoadProfile: %v", err)
 	}
@@ -100,8 +122,6 @@ func TestForkLocalProfile(t *testing.T) {
 		t.Errorf("name = %q, want %q", name, LocalProfile)
 	}
 
-	// The local profile carries the localised postgres env plus a copy of the
-	// source's other services, so it stays valid.
 	local, err := p.LoadProfile(LocalProfile)
 	if err != nil {
 		t.Fatalf("LoadProfile(local): %v", err)
@@ -120,7 +140,6 @@ func TestForkLocalProfilePreservesPriorForks(t *testing.T) {
 		t.Fatalf("AddProfile: %v", err)
 	}
 
-	// First fork localises postgres.
 	pgEnv := service.Config{
 		"host": "127.0.0.1", "port": 5432, "user": "app", "password": "app", "database": "app",
 	}
@@ -128,7 +147,6 @@ func TestForkLocalProfilePreservesPriorForks(t *testing.T) {
 		t.Fatalf("ForkLocalProfile(postgres): %v", err)
 	}
 
-	// A second fork of redis must keep postgres's prior localisation intact.
 	redisEnv := service.Config{"host": "127.0.0.1", "port": 6379}
 	if _, err := p.ForkLocalProfile("staging", "redis", redisEnv); err != nil {
 		t.Fatalf("ForkLocalProfile(redis): %v", err)
@@ -140,7 +158,8 @@ func TestForkLocalProfilePreservesPriorForks(t *testing.T) {
 	if local.Services["postgres"].Config["host"] != "127.0.0.1" {
 		t.Errorf("postgres host = %v, want preserved 127.0.0.1", local.Services["postgres"].Config["host"])
 	}
-	if local.Services["redis"].Config["port"] != 6379 {
+	// Config round-trips through JSON, so a numeric port comes back as float64.
+	if port, _ := local.Services["redis"].Config["port"].(float64); port != 6379 {
 		t.Errorf("redis port = %v, want 6379", local.Services["redis"].Config["port"])
 	}
 }
@@ -157,7 +176,9 @@ func TestRemoveProfileActive(t *testing.T) {
 	if _, err := p.AddProfile("staging"); err != nil {
 		t.Fatalf("AddProfile: %v", err)
 	}
-	p.State.ActiveProfile = "staging"
+	if err := p.SetActiveProfile("staging"); err != nil {
+		t.Fatalf("SetActiveProfile: %v", err)
+	}
 	if err := p.RemoveProfile("staging"); err == nil {
 		t.Error("RemoveProfile(active) error = nil, want error")
 	}

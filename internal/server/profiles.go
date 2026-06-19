@@ -75,7 +75,7 @@ var validProfileName = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 // handleListProfiles returns the project's profiles. As with /api/status, an
 // uninitialized folder yields a 200 with an empty list.
 func (s *Server) handleListProfiles(w http.ResponseWriter, _ *http.Request) {
-	proj, err := project.Load(s.activePaths(), s.reg)
+	proj, err := s.activeProject()
 	if err != nil {
 		if errors.Is(err, project.ErrNotInitialized) {
 			writeJSON(w, http.StatusOK, profilesResponse{Profiles: []profile{}})
@@ -98,7 +98,7 @@ func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "profile name must be non-empty and contain only letters, digits, '.', '_' or '-'")
 		return
 	}
-	proj, err := project.Load(s.activePaths(), s.reg)
+	proj, err := s.activeProject()
 	if err != nil {
 		s.writeProjectError(w, err)
 		return
@@ -114,7 +114,7 @@ func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 // active one and reports a missing profile.
 func (s *Server) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	proj, err := project.Load(s.activePaths(), s.reg)
+	proj, err := s.activeProject()
 	if err != nil {
 		s.writeProjectError(w, err)
 		return
@@ -129,7 +129,7 @@ func (s *Server) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
 // handleGetProfile returns the named profile's per-service environment config.
 func (s *Server) handleGetProfile(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	proj, err := project.Load(s.activePaths(), s.reg)
+	proj, err := s.activeProject()
 	if err != nil {
 		s.writeProjectError(w, err)
 		return
@@ -153,7 +153,7 @@ func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	proj, err := project.Load(s.activePaths(), s.reg)
+	proj, err := s.activeProject()
 	if err != nil {
 		s.writeProjectError(w, err)
 		return
@@ -225,7 +225,7 @@ func (s *Server) handleCreateProfileService(w http.ResponseWriter, r *http.Reque
 	if req.Type != "" {
 		displayName = req.Name
 	}
-	proj, err := project.Load(s.activePaths(), s.reg)
+	proj, err := s.activeProject()
 	if err != nil {
 		s.writeProjectError(w, err)
 		return
@@ -247,7 +247,7 @@ func (s *Server) handleUpdateProfileService(w http.ResponseWriter, r *http.Reque
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	proj, err := project.Load(s.activePaths(), s.reg)
+	proj, err := s.activeProject()
 	if err != nil {
 		s.writeProjectError(w, err)
 		return
@@ -264,7 +264,7 @@ func (s *Server) handleUpdateProfileService(w http.ResponseWriter, r *http.Reque
 func (s *Server) handleDeleteProfileService(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	svcID := r.PathValue("service")
-	proj, err := project.Load(s.activePaths(), s.reg)
+	proj, err := s.activeProject()
 	if err != nil {
 		s.writeProjectError(w, err)
 		return
@@ -293,7 +293,7 @@ func (s *Server) writeProfileConfig(w http.ResponseWriter, status int, proj *pro
 // handleActivateProfile sets the named profile as the active one.
 func (s *Server) handleActivateProfile(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	proj, err := project.Load(s.activePaths(), s.reg)
+	proj, err := s.activeProject()
 	if err != nil {
 		s.writeProjectError(w, err)
 		return
@@ -342,7 +342,7 @@ func (s *Server) writeProfiles(w http.ResponseWriter, status int, proj *project.
 		return
 	}
 	writeJSON(w, status, profilesResponse{
-		ActiveProfile: proj.State.ActiveProfile,
+		ActiveProfile: proj.ActiveProfileName(),
 		Profiles:      profiles,
 	})
 }
@@ -377,7 +377,7 @@ func listProfiles(proj *project.Project) ([]profile, error) {
 	if err != nil {
 		return nil, err
 	}
-	active := proj.State.ActiveProfile
+	active := proj.ActiveProfileName()
 	profiles := make([]profile, 0, len(names))
 	for _, name := range names {
 		profiles = append(profiles, profile{Name: name, Active: name == active})

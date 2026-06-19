@@ -1,7 +1,7 @@
 // Workspace endpoints. Translate the /api/workspaces REST surface into the
 // domain types. Components and hooks depend on these functions, not on `fetch`.
 
-import type { DirListing, WorkspacesResult } from "@/types/workspace";
+import type { WorkspacesResult } from "@/types/workspace";
 import { apiGet, apiSend } from "./client";
 
 /** List the known workspaces and the active one. */
@@ -10,38 +10,27 @@ export function getWorkspaces(signal?: AbortSignal): Promise<WorkspacesResult> {
 }
 
 /**
- * Create (or adopt) a workspace at `path` and make it active. The backend
- * scaffolds a project when the folder is not already one. Returns the updated
- * list.
+ * Create a workspace (the backend scaffolds its default profile) and make it
+ * active. Returns the updated list.
  */
-export function createWorkspace(
+export function createWorkspace(name: string): Promise<WorkspacesResult> {
+  return apiSend<WorkspacesResult>("POST", "/workspaces", { name });
+}
+
+/** Rename a workspace by id; returns the updated list. */
+export function renameWorkspace(
+  id: number,
   name: string,
-  path: string,
 ): Promise<WorkspacesResult> {
-  return apiSend<WorkspacesResult>("POST", "/workspaces", { name, path });
+  return apiSend<WorkspacesResult>("PUT", `/workspaces/${id}`, { name });
 }
 
-/** Switch the active workspace; returns the updated list. */
-export function activateWorkspace(name: string): Promise<WorkspacesResult> {
-  return apiSend<WorkspacesResult>("POST", "/workspaces/activate", { name });
+/** Switch the active workspace by id; returns the updated list. */
+export function activateWorkspace(id: number): Promise<WorkspacesResult> {
+  return apiSend<WorkspacesResult>("POST", "/workspaces/activate", { id });
 }
 
-/** Remove a workspace from the registry (leaves files on disk). */
-export function removeWorkspace(name: string): Promise<WorkspacesResult> {
-  return apiSend<WorkspacesResult>(
-    "DELETE",
-    `/workspaces/${encodeURIComponent(name)}`,
-  );
-}
-
-/**
- * List the subdirectories of a folder so the user can navigate the server's
- * filesystem. An empty `path` defaults to the user's home directory.
- */
-export function browseDirs(
-  path?: string,
-  signal?: AbortSignal,
-): Promise<DirListing> {
-  const query = path ? `?path=${encodeURIComponent(path)}` : "";
-  return apiGet<DirListing>(`/workspaces/browse${query}`, signal);
+/** Remove a workspace by id (and its profiles/services); returns the list. */
+export function removeWorkspace(id: number): Promise<WorkspacesResult> {
+  return apiSend<WorkspacesResult>("DELETE", `/workspaces/${id}`);
 }

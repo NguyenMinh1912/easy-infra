@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	profilepkg "github.com/minhnc/easy-infra/internal/profile"
 	"github.com/minhnc/easy-infra/internal/service"
 )
 
@@ -28,7 +27,7 @@ func doJSON(t *testing.T, srv *Server, method, path string, body any) *httptest.
 
 func TestServiceCatalog(t *testing.T) {
 	// The catalog comes from the registry, so it is available without a project.
-	srv := New(service.DefaultRegistry(), regFrom(t, newPaths(t)), emptyUI)
+	srv := New(service.DefaultRegistry(), newStore(t), emptyUI)
 	rec := doJSON(t, srv, http.MethodGet, "/api/services/catalog", nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("code = %d, want 200", rec.Code)
@@ -61,15 +60,15 @@ func TestServiceCatalog(t *testing.T) {
 }
 
 func TestCreateProfileService(t *testing.T) {
-	paths, reg := initProject(t, "postgres")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres")
+	srv := New(reg, st, emptyUI)
 
 	rec := doJSON(t, srv, http.MethodPost, "/api/profiles/default/services", serviceNameRequest{Type: "redis"})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("code = %d, want 201 (body %s)", rec.Code, rec.Body)
 	}
 
-	prof, err := profilepkg.Load(paths.ProfilePath("default"))
+	prof, err := loadProfile(t, st, "default")
 	if err != nil {
 		t.Fatalf("load profile: %v", err)
 	}
@@ -82,8 +81,8 @@ func TestCreateProfileService(t *testing.T) {
 }
 
 func TestCreateProfileServiceSameTypeTwice(t *testing.T) {
-	paths, reg := initProject(t, "postgres")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres")
+	srv := New(reg, st, emptyUI)
 
 	// A profile may now hold several instances of the same type; the second is
 	// assigned a distinct id rather than being rejected.
@@ -93,7 +92,7 @@ func TestCreateProfileServiceSameTypeTwice(t *testing.T) {
 		t.Fatalf("code = %d, want 201 (body %s)", rec.Code, rec.Body)
 	}
 
-	prof, err := profilepkg.Load(paths.ProfilePath("default"))
+	prof, err := loadProfile(t, st, "default")
 	if err != nil {
 		t.Fatalf("load profile: %v", err)
 	}
@@ -110,8 +109,8 @@ func TestCreateProfileServiceSameTypeTwice(t *testing.T) {
 }
 
 func TestCreateProfileServiceErrors(t *testing.T) {
-	paths, reg := initProject(t, "postgres")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres")
+	srv := New(reg, st, emptyUI)
 
 	tests := []struct {
 		name     string
@@ -131,7 +130,7 @@ func TestCreateProfileServiceErrors(t *testing.T) {
 }
 
 func TestCreateProfileServiceNotInitialized(t *testing.T) {
-	srv := New(service.DefaultRegistry(), regFrom(t, newPaths(t)), emptyUI)
+	srv := New(service.DefaultRegistry(), newStore(t), emptyUI)
 	rec := doJSON(t, srv, http.MethodPost, "/api/profiles/default/services", serviceNameRequest{Type: "redis"})
 	if rec.Code != http.StatusConflict {
 		t.Errorf("code = %d, want 409", rec.Code)
@@ -139,8 +138,8 @@ func TestCreateProfileServiceNotInitialized(t *testing.T) {
 }
 
 func TestUpdateProfileService(t *testing.T) {
-	paths, reg := initProject(t, "postgres")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres")
+	srv := New(reg, st, emptyUI)
 
 	cfg := service.Config{
 		"version": "17", "host": "db.example", "port": 5433, "user": "u", "database": "d",
@@ -151,7 +150,7 @@ func TestUpdateProfileService(t *testing.T) {
 		t.Fatalf("code = %d, want 200 (body %s)", rec.Code, rec.Body)
 	}
 
-	prof, err := profilepkg.Load(paths.ProfilePath("default"))
+	prof, err := loadProfile(t, st, "default")
 	if err != nil {
 		t.Fatalf("load profile: %v", err)
 	}
@@ -164,8 +163,8 @@ func TestUpdateProfileService(t *testing.T) {
 }
 
 func TestUpdateProfileServiceNotDefined(t *testing.T) {
-	paths, reg := initProject(t, "postgres")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres")
+	srv := New(reg, st, emptyUI)
 	rec := doJSON(t, srv, http.MethodPut, "/api/profiles/default/services/redis",
 		serviceConfigRequest{Config: service.Config{"host": "x"}})
 	if rec.Code != http.StatusNotFound {
@@ -174,15 +173,15 @@ func TestUpdateProfileServiceNotDefined(t *testing.T) {
 }
 
 func TestDeleteProfileService(t *testing.T) {
-	paths, reg := initProject(t, "postgres", "redis")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres", "redis")
+	srv := New(reg, st, emptyUI)
 
 	rec := doJSON(t, srv, http.MethodDelete, "/api/profiles/default/services/redis", nil)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("code = %d, want 204 (body %s)", rec.Code, rec.Body)
 	}
 
-	prof, err := profilepkg.Load(paths.ProfilePath("default"))
+	prof, err := loadProfile(t, st, "default")
 	if err != nil {
 		t.Fatalf("load profile: %v", err)
 	}
@@ -192,8 +191,8 @@ func TestDeleteProfileService(t *testing.T) {
 }
 
 func TestDeleteLastProfileService(t *testing.T) {
-	paths, reg := initProject(t, "postgres")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres")
+	srv := New(reg, st, emptyUI)
 	rec := doJSON(t, srv, http.MethodDelete, "/api/profiles/default/services/postgres", nil)
 	if rec.Code != http.StatusConflict {
 		t.Errorf("code = %d, want 409 (cannot remove last service)", rec.Code)

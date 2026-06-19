@@ -18,6 +18,7 @@ import (
 	profilepkg "github.com/minhnc/easy-infra/internal/profile"
 	"github.com/minhnc/easy-infra/internal/project"
 	"github.com/minhnc/easy-infra/internal/service"
+	"github.com/minhnc/easy-infra/internal/store"
 )
 
 // targetProfile resolves the profile a per-service operation acts on. The UI
@@ -52,8 +53,6 @@ func (s *Server) targetProfile(w http.ResponseWriter, r *http.Request, proj *pro
 // reconnect freely. The SQLite store is opened lazily on first use, so an
 // uninitialized project never creates a database.
 type backupManager struct {
-	dbPath string
-
 	once    sync.Once
 	store   *backup.Store
 	openErr error
@@ -62,13 +61,21 @@ type backupManager struct {
 	cancels map[string]context.CancelFunc
 }
 
-func newBackupManager(dbPath string) *backupManager {
-	return &backupManager{dbPath: dbPath, cancels: make(map[string]context.CancelFunc)}
+func newBackupManager() *backupManager {
+	return &backupManager{cancels: make(map[string]context.CancelFunc)}
 }
 
-// Store opens the backup database on first call and memoizes the result.
+// Store opens the backup database on first call and memoizes the result. It
+// shares the central database file, so all data lives in one place.
 func (m *backupManager) Store() (*backup.Store, error) {
-	m.once.Do(func() { m.store, m.openErr = backup.Open(m.dbPath) })
+	m.once.Do(func() {
+		path, err := store.DBPath()
+		if err != nil {
+			m.openErr = err
+			return
+		}
+		m.store, m.openErr = backup.Open(path)
+	})
 	return m.store, m.openErr
 }
 
@@ -81,17 +88,17 @@ func (m *backupManager) Store() (*backup.Store, error) {
 // runs when the session is cancelled or fails: a backup passes its freshly
 // written (and possibly partial) snapshot folder so it is dropped, while an
 // apply restores from an existing snapshot and passes nil to leave it untouched.
-func (m *backupManager) Start(store *backup.Store, svcName, profile string, kind backup.Kind, snapshot string, cleanup func(), run func(ctx context.Context, w io.Writer) error) (backup.Session, error) {
+func (m *backupManager) Start(store *backup.Store, workspaceID int64, svcName, profile string, kind backup.Kind, snapshot string, cleanup func(), run func(ctx context.Context, w io.Writer) error) (backup.Session, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if existing, ok, err := store.RunningForService(svcName, profile, kind); err != nil {
+	if existing, ok, err := store.RunningForService(workspaceID, svcName, profile, kind); err != nil {
 		return backup.Session{}, err
 	} else if ok {
 		return *existing, nil
 	}
 
-	sess, err := store.CreateSession(svcName, profile, kind)
+	sess, err := store.CreateSession(workspaceID, svcName, profile, kind)
 	if err != nil {
 		return backup.Session{}, err
 	}
@@ -157,7 +164,7 @@ func (s *Server) handleStartBackup(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	proj, err := project.Load(s.activePaths(), s.reg)
+	proj, err := s.activeProject()
 	if err != nil {
 		s.writeProjectError(w, err)
 		return
@@ -178,7 +185,7 @@ func (s *Server) handleStartBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	env := entry.Config
-	store, err := s.backupsForActive().Store()
+	store, err := s.backups.Store()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -206,7 +213,7 @@ func (s *Server) handleStartBackup(w http.ResponseWriter, r *http.Request) {
 	// A cancelled or failed backup may have written a partial artifact; drop the
 	// whole snapshot folder so no truncated snapshot is left behind.
 	cleanup := func() { _ = os.RemoveAll(dir) }
-	sess, err := s.backupsForActive().Start(store, svcID, profileName, backup.KindBackup, filepath.Base(dir), cleanup, run)
+	sess, err := s.backups.Start(store, proj.Workspace.ID, svcID, profileName, backup.KindBackup, filepath.Base(dir), cleanup, run)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -222,7 +229,7 @@ func (s *Server) handleStartBackup(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListSnapshots(w http.ResponseWriter, r *http.Request) {
 	svcID := r.PathValue("name")
 
-	proj, err := project.Load(s.activePaths(), s.reg)
+	proj, err := s.activeProject()
 	if err != nil {
 		s.writeProjectError(w, err)
 		return
@@ -266,7 +273,7 @@ const backupOptionsTimeout = 15 * time.Second
 func (s *Server) handleBackupOptions(w http.ResponseWriter, r *http.Request) {
 	svcID := r.PathValue("name")
 
-	proj, err := project.Load(s.activePaths(), s.reg)
+	proj, err := s.activeProject()
 	if err != nil {
 		s.writeProjectError(w, err)
 		return
@@ -368,7 +375,7 @@ func (s *Server) handleStartApply(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	proj, err := project.Load(s.activePaths(), s.reg)
+	proj, err := s.activeProject()
 	if err != nil {
 		s.writeProjectError(w, err)
 		return
@@ -404,7 +411,7 @@ func (s *Server) handleStartApply(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	store, err := s.backupsForActive().Store()
+	store, err := s.backups.Store()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -430,7 +437,7 @@ func (s *Server) handleStartApply(w http.ResponseWriter, r *http.Request) {
 		return err
 	}
 
-	sess, err := s.backupsForActive().Start(store, svcID, profileName, backup.KindApply, body.Snapshot, nil, run)
+	sess, err := s.backups.Start(store, proj.Workspace.ID, svcID, profileName, backup.KindApply, body.Snapshot, nil, run)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -461,7 +468,8 @@ const (
 func (s *Server) handleListBackups(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := paginationParams(r)
 
-	if _, err := project.Load(s.activePaths(), s.reg); err != nil {
+	proj, err := s.activeProject()
+	if err != nil {
 		if errors.Is(err, project.ErrNotInitialized) {
 			writeJSON(w, http.StatusOK, backupListResponse{
 				Sessions: []sessionJSON{}, Page: page, PageSize: pageSize,
@@ -472,18 +480,18 @@ func (s *Server) handleListBackups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store, err := s.backupsForActive().Store()
+	store, err := s.backups.Store()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	total, err := store.CountSessions()
+	total, err := store.CountSessions(proj.Workspace.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	sessions, err := store.ListSessions(pageSize, (page-1)*pageSize)
+	sessions, err := store.ListSessions(proj.Workspace.ID, pageSize, (page-1)*pageSize)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -507,7 +515,7 @@ func (s *Server) handleListBackups(w http.ResponseWriter, r *http.Request) {
 // goroutine is still writing — so deleting one is rejected with 409.
 func (s *Server) handleDeleteBackup(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	store, err := s.backupsForActive().Store()
+	store, err := s.backups.Store()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -560,7 +568,7 @@ func paginationParams(r *http.Request) (page, pageSize int) {
 // the `after` query cursor, so the UI can poll for incremental progress.
 func (s *Server) handleGetBackup(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	store, err := s.backupsForActive().Store()
+	store, err := s.backups.Store()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -593,7 +601,7 @@ func (s *Server) handleGetBackup(w http.ResponseWriter, r *http.Request) {
 // client picks up on its next poll.
 func (s *Server) handleCancelBackup(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	store, err := s.backupsForActive().Store()
+	store, err := s.backups.Store()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -609,7 +617,7 @@ func (s *Server) handleCancelBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.backupsForActive().Cancel(id)
+	s.backups.Cancel(id)
 	writeJSON(w, http.StatusAccepted, toSessionJSON(sess))
 }
 

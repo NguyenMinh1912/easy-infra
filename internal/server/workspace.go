@@ -2,109 +2,98 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
-	"os"
-	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/minhnc/easy-infra/internal/project"
-	"github.com/minhnc/easy-infra/internal/workspace"
+	"github.com/minhnc/easy-infra/internal/store"
 )
 
-// workspaceInfo is one entry in the workspaces list. Exists is false when the
-// folder has been moved or deleted under the tool, so the UI can flag it.
+// workspaceInfo is one entry in the workspaces list.
 type workspaceInfo struct {
-	Name   string `json:"name"`
-	Path   string `json:"path"`
-	Exists bool   `json:"exists"`
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
 }
 
-// workspacesResponse is the shape returned by the workspace endpoints. home and
-// separator seed the create dialog's folder browser and keep the UI from
-// hard-coding a path separator.
+// workspacesResponse is the shape returned by the workspace endpoints. Active is
+// the active workspace id, or 0 when none is set.
 type workspacesResponse struct {
-	Active     string          `json:"active"`
+	Active     int64           `json:"active"`
 	Workspaces []workspaceInfo `json:"workspaces"`
-	Home       string          `json:"home"`
-	Separator  string          `json:"separator"`
 }
 
-// workspaces builds the current workspaces payload under the read lock.
-func (s *Server) workspaces() workspacesResponse {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	home, _ := os.UserHomeDir()
-	list := make([]workspaceInfo, 0, len(s.ws.Workspaces))
-	for _, w := range s.ws.Workspaces {
-		list = append(list, workspaceInfo{Name: w.Name, Path: w.Path, Exists: isDir(w.Path)})
+// workspaces builds the current workspaces payload from the store.
+func (s *Server) workspaces() (workspacesResponse, error) {
+	list, err := s.store.ListWorkspaces()
+	if err != nil {
+		return workspacesResponse{}, err
 	}
-	return workspacesResponse{
-		Active:     s.ws.Active,
-		Workspaces: list,
-		Home:       home,
-		Separator:  string(os.PathSeparator),
+	infos := make([]workspaceInfo, 0, len(list))
+	for _, w := range list {
+		infos = append(infos, workspaceInfo{ID: w.ID, Name: w.Name})
 	}
+	var active int64
+	if w, ok, err := s.store.ActiveWorkspace(); err != nil {
+		return workspacesResponse{}, err
+	} else if ok {
+		active = w.ID
+	}
+	return workspacesResponse{Active: active, Workspaces: infos}, nil
+}
+
+// writeWorkspaces writes the current workspaces payload, or a 500 on failure.
+func (s *Server) writeWorkspaces(w http.ResponseWriter, status int) {
+	resp, err := s.workspaces()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, status, resp)
 }
 
 func (s *Server) handleListWorkspaces(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, s.workspaces())
+	s.writeWorkspaces(w, http.StatusOK)
 }
 
-// handleCreateWorkspace registers a new workspace, scaffolding a project in the
-// target folder when one is not already there, then makes it active. An empty
-// folder is created if missing; an already-initialized folder is adopted as-is.
+// handleCreateWorkspace creates a workspace (scaffolding its default profile)
+// and makes it active.
 func (s *Server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Name string `json:"name"`
-		Path string `json:"path"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	name := strings.TrimSpace(body.Name)
-	dir := strings.TrimSpace(body.Path)
-	if name == "" || dir == "" {
-		writeError(w, http.StatusBadRequest, "name and path are required")
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
-	abs, err := filepath.Abs(dir)
+	ws, err := project.CreateWorkspace(s.store, s.reg, name)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	abs = filepath.Clean(abs)
-	if err := os.MkdirAll(abs, 0o755); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	paths := project.PathsFor(abs)
-	if !project.IsInitialized(paths) {
-		if err := project.Initialize(paths, s.reg); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
+		if errors.Is(err, store.ErrWorkspaceExists) {
+			writeError(w, http.StatusConflict, err.Error())
 			return
 		}
-	}
-
-	s.mu.Lock()
-	if err := s.ws.Add(name, abs); err != nil {
-		s.mu.Unlock()
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	_ = s.ws.SetActive(name)
-	saveErr := workspace.Save(s.ws)
-	s.mu.Unlock()
-	if saveErr != nil {
-		writeError(w, http.StatusInternalServerError, saveErr.Error())
+	if err := s.store.SetActiveWorkspace(ws.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, s.workspaces())
+	s.writeWorkspaces(w, http.StatusOK)
 }
 
-// handleActivateWorkspace switches the active workspace.
-func (s *Server) handleActivateWorkspace(w http.ResponseWriter, r *http.Request) {
+// handleRenameWorkspace renames a workspace identified by its id.
+func (s *Server) handleRenameWorkspace(w http.ResponseWriter, r *http.Request) {
+	id, ok := workspaceID(w, r)
+	if !ok {
+		return
+	}
 	var body struct {
 		Name string `json:"name"`
 	}
@@ -112,98 +101,66 @@ func (s *Server) handleActivateWorkspace(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	s.mu.Lock()
-	if err := s.ws.SetActive(strings.TrimSpace(body.Name)); err != nil {
-		s.mu.Unlock()
-		writeError(w, http.StatusBadRequest, err.Error())
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
-	saveErr := workspace.Save(s.ws)
-	s.mu.Unlock()
-	if saveErr != nil {
-		writeError(w, http.StatusInternalServerError, saveErr.Error())
+	if err := s.store.RenameWorkspace(id, name); err != nil {
+		s.writeWorkspaceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.workspaces())
+	s.writeWorkspaces(w, http.StatusOK)
 }
 
-// handleRemoveWorkspace drops a workspace from the registry. Files on disk are
-// left untouched.
+// handleActivateWorkspace switches the active workspace.
+func (s *Server) handleActivateWorkspace(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := s.store.SetActiveWorkspace(body.ID); err != nil {
+		s.writeWorkspaceError(w, err)
+		return
+	}
+	s.writeWorkspaces(w, http.StatusOK)
+}
+
+// handleRemoveWorkspace drops a workspace and its profiles/services.
 func (s *Server) handleRemoveWorkspace(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
-	s.mu.Lock()
-	if err := s.ws.Remove(name); err != nil {
-		s.mu.Unlock()
-		writeError(w, http.StatusNotFound, err.Error())
+	id, ok := workspaceID(w, r)
+	if !ok {
 		return
 	}
-	saveErr := workspace.Save(s.ws)
-	s.mu.Unlock()
-	if saveErr != nil {
-		writeError(w, http.StatusInternalServerError, saveErr.Error())
+	if err := s.store.RemoveWorkspace(id); err != nil {
+		s.writeWorkspaceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.workspaces())
+	s.writeWorkspaces(w, http.StatusOK)
 }
 
-// dirEntry is a single subdirectory in a browse listing. IsProject marks folders
-// that already hold an easy-infra project.
-type dirEntry struct {
-	Name      string `json:"name"`
-	Path      string `json:"path"`
-	IsProject bool   `json:"isProject"`
-}
-
-// dirListing is the shape returned by the directory browser. parent is empty at
-// the filesystem root.
-type dirListing struct {
-	Path    string     `json:"path"`
-	Parent  string     `json:"parent"`
-	Entries []dirEntry `json:"entries"`
-}
-
-// handleBrowseDirs lists the subdirectories of a folder so the UI can navigate
-// the server's filesystem when choosing where a new workspace lives. It returns
-// directories only — never file contents — and skips entries it cannot read.
-func (s *Server) handleBrowseDirs(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimSpace(r.URL.Query().Get("path"))
-	if path == "" {
-		path, _ = os.UserHomeDir()
-	}
-	path = filepath.Clean(path)
-
-	info, err := os.Stat(path)
-	if err != nil || !info.IsDir() {
-		writeError(w, http.StatusBadRequest, "not a directory: "+path)
-		return
-	}
-	// os.ReadDir returns entries sorted by name.
-	read, err := os.ReadDir(path)
+// workspaceID parses the {id} path value, writing a 400 and returning ok=false
+// when it is not a valid integer.
+func workspaceID(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		writeError(w, http.StatusBadRequest, "invalid workspace id")
+		return 0, false
 	}
-	entries := make([]dirEntry, 0, len(read))
-	for _, e := range read {
-		if !e.IsDir() {
-			continue
-		}
-		child := filepath.Join(path, e.Name())
-		entries = append(entries, dirEntry{
-			Name:      e.Name(),
-			Path:      child,
-			IsProject: project.IsInitialized(project.PathsFor(child)),
-		})
-	}
-	parent := filepath.Dir(path)
-	if parent == path {
-		parent = ""
-	}
-	writeJSON(w, http.StatusOK, dirListing{Path: path, Parent: parent, Entries: entries})
+	return id, true
 }
 
-// isDir reports whether path is an existing directory.
-func isDir(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
+// writeWorkspaceError maps store errors onto HTTP responses.
+func (s *Server) writeWorkspaceError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, store.ErrWorkspaceNotFound):
+		writeError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, store.ErrWorkspaceExists):
+		writeError(w, http.StatusConflict, err.Error())
+	default:
+		writeError(w, http.StatusInternalServerError, err.Error())
+	}
 }
