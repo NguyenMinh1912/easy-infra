@@ -69,7 +69,7 @@ export function Sidebar() {
       <div className="border-b p-4">
         <WorkspaceSwitcher />
       </div>
-      <nav className="flex-1 space-y-1 p-4">
+      <nav className="flex-1 space-y-1 overflow-y-auto p-4">
         <ProfileNav />
         {navItems.map((item) => (
           <NavLink key={item.label} item={item} route={route} />
