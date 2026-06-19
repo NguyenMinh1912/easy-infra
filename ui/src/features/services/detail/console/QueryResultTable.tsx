@@ -1,5 +1,13 @@
-import { CheckCircle2 } from "lucide-react";
+import { useState } from "react";
+import { CheckCircle2, Expand } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -10,6 +18,9 @@ import {
 } from "@/components/ui/table";
 import { useRemainingHeight } from "@/hooks/useRemainingHeight";
 import type { QueryResult } from "@/types/console";
+
+/** Above this many characters a cell is collapsed behind a preview dialog. */
+const MAX_CELL_LENGTH = 120;
 
 interface QueryResultTableProps {
   result: QueryResult;
@@ -54,7 +65,7 @@ export function QueryResultTable({ result }: QueryResultTableProps) {
                 <TableRow key={i}>
                   {row.map((value, j) => (
                     <TableCell key={j} className="font-mono">
-                      <CellValue value={value} />
+                      <CellValue value={value} column={result.columns[j]} />
                     </TableCell>
                   ))}
                 </TableRow>
@@ -80,13 +91,55 @@ export function QueryResultTable({ result }: QueryResultTableProps) {
   );
 }
 
-/** One cell: NULL muted, objects (json, arrays) serialized, the rest as text. */
-function CellValue({ value }: { value: unknown }) {
+/** Render a cell value as text: objects (json, arrays) serialized, rest stringified. */
+function formatValue(value: unknown): string {
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+/**
+ * One cell: NULL muted, long values collapsed behind a preview dialog, the rest
+ * rendered inline as text.
+ */
+function CellValue({ value, column }: { value: unknown; column: string }) {
   if (value === null || value === undefined) {
     return <span className="italic text-muted-foreground">null</span>;
   }
-  if (typeof value === "object") {
-    return <>{JSON.stringify(value)}</>;
+  const text = formatValue(value);
+  if (text.length > MAX_CELL_LENGTH) {
+    return <LongCellValue text={text} column={column} />;
   }
-  return <>{String(value)}</>;
+  return <>{text}</>;
+}
+
+/** A long cell value: truncated to one line with a button to preview it in full. */
+function LongCellValue({ text, column }: { text: string; column: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="flex items-center gap-2">
+      <span className="block max-w-md truncate">{text}</span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-6 shrink-0 gap-1 px-2 text-xs"
+        onClick={() => setOpen(true)}
+      >
+        <Expand aria-hidden />
+        View
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-mono">{column}</DialogTitle>
+          </DialogHeader>
+          <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-muted/30 p-4 font-mono text-sm">
+            {text}
+          </pre>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
 }
