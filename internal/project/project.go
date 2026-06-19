@@ -27,9 +27,6 @@ var ErrNotInitialized = errors.New("no active workspace")
 // env here so it appears in the sidebar as a managed profile.
 const LocalProfile = "local"
 
-// DefaultProfile is the profile a freshly created workspace starts with.
-const DefaultProfile = "default"
-
 // DefaultServices is the service set a freshly scaffolded profile starts with,
 // so a new profile is immediately valid (a profile must define at least one
 // service).
@@ -56,27 +53,11 @@ func Open(st *store.Store, reg *service.Registry, wsID int64) (*Project, error) 
 	return &Project{Store: st, Registry: reg, Workspace: ws}, nil
 }
 
-// CreateWorkspace creates a workspace, scaffolds its default profile (owning the
-// conventional starter services), and records that profile as active — so a new
-// workspace is immediately usable. It does not make the workspace itself active;
-// the caller decides that.
+// CreateWorkspace creates a workspace with no profiles — the user defines their
+// own. The workspace starts with no active profile. It does not make the
+// workspace itself active; the caller decides that.
 func CreateWorkspace(st *store.Store, reg *service.Registry, name string) (store.Workspace, error) {
-	prof, err := profile.Scaffold(reg, DefaultServices...)
-	if err != nil {
-		return store.Workspace{}, err
-	}
-	ws, err := st.CreateWorkspace(name)
-	if err != nil {
-		return store.Workspace{}, err
-	}
-	if err := st.CreateProfile(ws.ID, DefaultProfile, prof.Services); err != nil {
-		return store.Workspace{}, err
-	}
-	if err := st.SetWorkspaceActiveProfile(ws.ID, DefaultProfile); err != nil {
-		return store.Workspace{}, err
-	}
-	ws.ActiveProfile = DefaultProfile
-	return ws, nil
+	return st.CreateWorkspace(name)
 }
 
 // ActiveProfileName returns the workspace's active profile name ("" when none).

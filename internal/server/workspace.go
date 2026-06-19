@@ -57,8 +57,8 @@ func (s *Server) handleListWorkspaces(w http.ResponseWriter, _ *http.Request) {
 	s.writeWorkspaces(w, http.StatusOK)
 }
 
-// handleCreateWorkspace creates a workspace (scaffolding its default profile)
-// and makes it active.
+// handleCreateWorkspace creates a workspace (with no profiles) and makes it
+// active.
 func (s *Server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Name string `json:"name"`

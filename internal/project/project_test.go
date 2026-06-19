@@ -29,7 +29,7 @@ func newTestProject(t *testing.T) *Project {
 	return p
 }
 
-func TestCreateWorkspaceScaffoldsDefault(t *testing.T) {
+func TestCreateWorkspaceHasNoProfiles(t *testing.T) {
 	t.Setenv("EASY_INFRA_CONFIG_DIR", t.TempDir())
 	st, err := store.Open()
 	if err != nil {
@@ -42,15 +42,19 @@ func TestCreateWorkspaceScaffoldsDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateWorkspace: %v", err)
 	}
-	if ws.ActiveProfile != DefaultProfile {
-		t.Errorf("ActiveProfile = %q, want %q", ws.ActiveProfile, DefaultProfile)
+	if ws.ActiveProfile != "" {
+		t.Errorf("ActiveProfile = %q, want empty", ws.ActiveProfile)
 	}
 	p, err := Open(st, reg, ws.ID)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if _, err := p.LoadProfile(DefaultProfile); err != nil {
-		t.Errorf("default profile invalid: %v", err)
+	names, err := p.Profiles()
+	if err != nil {
+		t.Fatalf("Profiles: %v", err)
+	}
+	if len(names) != 0 {
+		t.Errorf("Profiles = %v, want none", names)
 	}
 }
 
