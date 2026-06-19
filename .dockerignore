@@ -1,0 +1,16 @@
+# Build artifacts and generated output — rebuilt inside the image.
+/easy-infra
+/.go/
+/tmp/
+ui/node_modules/
+ui/dist/
+
+# VCS and local tooling.
+.git/
+.github/
+.claude/
+.air.toml
+
+# Docs and editor noise.
+*.md
+!ui/dist/.gitkeep
