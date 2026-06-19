@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/minhnc/easy-infra/internal/service"
@@ -46,6 +47,80 @@ func (s *Server) handleCloudQueues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, queuesResponse{Queues: queues})
+}
+
+// createQueueRequest is the JSON body of a create-queue request.
+type createQueueRequest struct {
+	Name string `json:"name"`
+}
+
+// handleCloudCreateQueue creates a new SQS queue in the named profile.
+func (s *Server) handleCloudCreateQueue(w http.ResponseWriter, r *http.Request) {
+	browser, spec, ok := s.resolveCloudBrowser(w, r)
+	if !ok {
+		return
+	}
+	var req createQueueRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "queue name must not be empty")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), cloudTimeout)
+	defer cancel()
+	if err := browser.CreateQueue(ctx, spec, name); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleCloudDeleteQueue deletes the queue identified by the `url` query
+// parameter — the queue URL the listing already carries.
+func (s *Server) handleCloudDeleteQueue(w http.ResponseWriter, r *http.Request) {
+	browser, spec, ok := s.resolveCloudBrowser(w, r)
+	if !ok {
+		return
+	}
+	url := r.URL.Query().Get("url")
+	if url == "" {
+		writeError(w, http.StatusBadRequest, "queue url must not be empty")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), cloudTimeout)
+	defer cancel()
+	if err := browser.DeleteQueue(ctx, spec, url); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleCloudPurgeQueue removes all messages from the queue identified by the
+// `url` query parameter, leaving the queue in place.
+func (s *Server) handleCloudPurgeQueue(w http.ResponseWriter, r *http.Request) {
+	browser, spec, ok := s.resolveCloudBrowser(w, r)
+	if !ok {
+		return
+	}
+	url := r.URL.Query().Get("url")
+	if url == "" {
+		writeError(w, http.StatusBadRequest, "queue url must not be empty")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), cloudTimeout)
+	defer cancel()
+	if err := browser.PurgeQueue(ctx, spec, url); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleCloudIdentities lists the named profile's SES identities with their

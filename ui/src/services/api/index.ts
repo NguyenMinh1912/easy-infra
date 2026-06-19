@@ -35,7 +35,13 @@ export type {
 } from "./services";
 export { executeQuery, getSchema } from "./console";
 export { getDatabases, listKeys, getKeyValue } from "./redis";
-export { listQueues, listIdentities } from "./localstack";
+export {
+  listQueues,
+  createQueue,
+  deleteQueue,
+  purgeQueue,
+  listIdentities,
+} from "./localstack";
 export {
   listBuckets,
   listObjects,
