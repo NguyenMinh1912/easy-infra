@@ -13,8 +13,9 @@ import (
 // real endpoint via the AWS SDK (realSQSOpener / realSESOpener); tests set them
 // to inject fake clients.
 type LocalStack struct {
-	openSQS sqsOpener
-	openSES sesOpener
+	openSQS    sqsOpener
+	openSES    sesOpener
+	openHealth healthGetter
 }
 
 // sqsOpener returns the SQS client opener to use, defaulting to a real dial.
@@ -23,6 +24,14 @@ func (l LocalStack) sqsOpener() sqsOpener {
 		return l.openSQS
 	}
 	return realSQSOpener
+}
+
+// healthGetter returns the health fetcher to use, defaulting to a real GET.
+func (l LocalStack) healthGetter() healthGetter {
+	if l.openHealth != nil {
+		return l.openHealth
+	}
+	return realHealthGetter
 }
 
 // sesOpener returns the SES client opener to use, defaulting to a real dial.

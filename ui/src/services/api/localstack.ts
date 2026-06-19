@@ -1,31 +1,59 @@
-// LocalStack cloud-browser endpoints: list a profile's SQS queues and SES
-// identities. Listing failures (endpoint unreachable) resolve successfully with
-// `error` set on the result — only transport/protocol problems reject.
+// LocalStack cloud-browser endpoints: the health snapshot plus a profile's SQS
+// queues and SES identities. Listing failures (endpoint unreachable) resolve
+// successfully with `error` set on the result — only transport/protocol
+// problems reject. An optional `region` re-scopes the query to that AWS region,
+// overriding the profile's saved region without mutating it.
 
-import type { IdentitiesResponse, QueuesResponse } from "@/types/localstack";
+import type {
+  HealthResponse,
+  IdentitiesResponse,
+  QueuesResponse,
+} from "@/types/localstack";
 
 import { apiGet } from "./client";
 
 const base = (profile: string, service: string) =>
   `/profiles/${encodeURIComponent(profile)}/services/${encodeURIComponent(service)}`;
 
+/** Append a `region` query param when one is selected. */
+const scoped = (path: string, region?: string) =>
+  region ? `${path}?region=${encodeURIComponent(region)}` : path;
+
+/** Read the LocalStack health snapshot: version and per-service state map. */
+export async function getLocalstackHealth(
+  profile: string,
+  service: string,
+  region?: string,
+  signal?: AbortSignal,
+): Promise<HealthResponse> {
+  return apiGet<HealthResponse>(
+    scoped(`${base(profile, service)}/health`, region),
+    signal,
+  );
+}
+
 /** List the profile's SQS queues with their message counts. */
 export async function listQueues(
   profile: string,
   service: string,
+  region?: string,
   signal?: AbortSignal,
 ): Promise<QueuesResponse> {
-  return apiGet<QueuesResponse>(`${base(profile, service)}/queues`, signal);
+  return apiGet<QueuesResponse>(
+    scoped(`${base(profile, service)}/queues`, region),
+    signal,
+  );
 }
 
 /** List the profile's SES identities with their verification status. */
 export async function listIdentities(
   profile: string,
   service: string,
+  region?: string,
   signal?: AbortSignal,
 ): Promise<IdentitiesResponse> {
   return apiGet<IdentitiesResponse>(
-    `${base(profile, service)}/identities`,
+    scoped(`${base(profile, service)}/identities`, region),
     signal,
   );
 }

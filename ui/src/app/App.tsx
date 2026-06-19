@@ -27,7 +27,12 @@ function screenForRoute(route: string): Screen {
       content: <BackupsPage />,
     };
   }
-  const profileService = route.match(/^\/profiles\/(.+)\/services\/(.+)$/);
+  // Match the profile + service segments; a trailing sub-route (e.g. the
+  // LocalStack `…/services/localstack/sqs` detail view) is handled inside the
+  // service screen, so anything after the service id is ignored here.
+  const profileService = route.match(
+    /^\/profiles\/([^/]+)\/services\/([^/]+)(?:\/.*)?$/,
+  );
   if (profileService) {
     const profile = decodeURIComponent(profileService[1]);
     const name = decodeURIComponent(profileService[2]);

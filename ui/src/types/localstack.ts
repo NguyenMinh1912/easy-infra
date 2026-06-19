@@ -32,3 +32,26 @@ export interface IdentitiesResponse {
   identities: IdentityInfo[];
   error?: string;
 }
+
+/**
+ * Reported state of one emulated AWS service, as LocalStack's
+ * `/_localstack/health` returns it. `running` services are active, `available`
+ * ones are idle (lazily started), `disabled` are not emulated, and `error`
+ * failed to start. Any other string is tolerated and treated as available.
+ */
+export type ServiceState = "running" | "available" | "disabled" | "error";
+
+/**
+ * Response of GET …/health — the LocalStack health snapshot driving the
+ * overview's service cards and Configuration panel. An unreachable endpoint
+ * comes back with `error` set and `services` empty, mirroring the listings.
+ */
+export interface HealthResponse {
+  /** Running LocalStack version (e.g. "4.0.3"), when reported. */
+  version?: string;
+  /** LocalStack edition (e.g. "community"), when reported. */
+  edition?: string;
+  /** Per-service state map, keyed by AWS service id (e.g. `{ sqs: "running" }`). */
+  services: Record<string, string>;
+  error?: string;
+}

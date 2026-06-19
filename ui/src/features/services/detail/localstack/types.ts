@@ -10,4 +10,9 @@ export interface AwsServiceDetailProps {
   service: ServiceInstance;
   /** Set when the LocalStack page is profile-scoped. */
   profile?: string;
+  /**
+   * AWS region selected in the overview header. Scopes resource listings to
+   * that region so a browser shows the same region the cards reflect.
+   */
+  region?: string;
 }

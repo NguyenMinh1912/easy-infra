@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -30,6 +32,29 @@ type sesAPI interface {
 // the AWS SDK (realSQSOpener / realSESOpener), while tests supply a fake.
 type sqsOpener func(env Config) (sqsAPI, error)
 type sesOpener func(env Config) (sesAPI, error)
+
+// healthGetter fetches the raw `/_localstack/health` JSON body for the endpoint.
+// It is a seam like the openers: the zero-value LocalStack does a real HTTP GET
+// (realHealthGetter), while tests supply canned bytes without a live endpoint.
+type healthGetter func(ctx context.Context, endpoint string) ([]byte, error)
+
+// realHealthGetter does the live GET against LocalStack's health endpoint,
+// capping the body so a misbehaving endpoint can't stream unbounded data.
+func realHealthGetter(ctx context.Context, endpoint string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/_localstack/health", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("health endpoint returned %s", resp.Status)
+	}
+	return io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+}
 
 // localstackParams is a profile's LocalStack connection settings, normalised out
 // of the discrete host/port/region fields so the openers treat them uniformly.

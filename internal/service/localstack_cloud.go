@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -12,6 +13,35 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 )
+
+// CloudHealth implements CloudBrowser: read LocalStack's `/_localstack/health`
+// endpoint and return the reported version/edition and per-service state map.
+// Unlike the SDK-backed listings this is a plain HTTP GET — the health endpoint
+// is unsigned — so it doubles as a cheap reachability probe for the overview.
+func (l LocalStack) CloudHealth(ctx context.Context, spec Spec) (CloudHealth, error) {
+	p, err := localstackParamsFrom(spec.Env)
+	if err != nil {
+		return CloudHealth{}, err
+	}
+	body, err := l.healthGetter()(ctx, p.endpoint())
+	if err != nil {
+		return CloudHealth{}, fmt.Errorf("reaching localstack: %w", err)
+	}
+	// The health payload nests the per-service map under "services" and reports
+	// the version/edition alongside it; decode only the fields we surface.
+	var raw struct {
+		Services map[string]string `json:"services"`
+		Version  string            `json:"version"`
+		Edition  string            `json:"edition"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return CloudHealth{}, fmt.Errorf("parsing localstack health: %w", err)
+	}
+	if raw.Services == nil {
+		raw.Services = map[string]string{}
+	}
+	return CloudHealth{Version: raw.Version, Edition: raw.Edition, Services: raw.Services}, nil
+}
 
 // Queues implements CloudBrowser: list the SQS queues on the emulated account,
 // annotating each with its approximate message counts. A per-queue attribute

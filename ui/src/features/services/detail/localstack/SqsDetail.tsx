@@ -22,17 +22,25 @@ import type { AwsServiceDetailProps } from "./types";
  * envelope, so it renders as an expected outcome rather than a transport error.
  * Without a profile (no connection env) it explains how to connect.
  */
-export function SqsDetail({ service, profile }: AwsServiceDetailProps) {
+export function SqsDetail({ service, profile, region }: AwsServiceDetailProps) {
   if (!profile) {
     return <NoConnection />;
   }
-  return <SqsQueues profile={profile} service={service.id} />;
+  return <SqsQueues profile={profile} service={service.id} region={region} />;
 }
 
-function SqsQueues({ profile, service }: { profile: string; service: string }) {
+function SqsQueues({
+  profile,
+  service,
+  region,
+}: {
+  profile: string;
+  service: string;
+  region?: string;
+}) {
   const state = useAsync(
-    (signal) => listQueues(profile, service, signal),
-    [profile, service],
+    (signal) => listQueues(profile, service, region, signal),
+    [profile, service, region],
   );
 
   if (state.status === "loading") {
