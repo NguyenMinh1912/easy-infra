@@ -34,6 +34,29 @@ func (s *stubQuerier) Schema(_ context.Context, spec service.Spec) (*service.Sch
 	return s.schema, s.schemaErr
 }
 
+// stubRowEditor is a console stub that also edits rows, recording the mutation
+// it was handed and serving a canned command tag.
+type stubRowEditor struct {
+	stubQuerier
+	cmd     string
+	editErr error
+	gotMut  service.RowMutation
+	deleted bool
+}
+
+func (s *stubRowEditor) UpdateRow(_ context.Context, spec service.Spec, m service.RowMutation) (string, error) {
+	s.gotSpec = spec
+	s.gotMut = m
+	return s.cmd, s.editErr
+}
+
+func (s *stubRowEditor) DeleteRow(_ context.Context, spec service.Spec, m service.RowMutation) (string, error) {
+	s.gotSpec = spec
+	s.gotMut = m
+	s.deleted = true
+	return s.cmd, s.editErr
+}
+
 // newConsoleServer scaffolds a project whose single service is the given stub,
 // with a "default" profile, and returns a server over it.
 func newConsoleServer(t *testing.T, svc service.Service) *Server {
@@ -192,6 +215,74 @@ func TestConsoleSchema(t *testing.T) {
 	}
 	if got.Error != "" || len(got.Tables) != 1 || got.Tables[0].Name != "users" {
 		t.Fatalf("response = %+v", got)
+	}
+}
+
+func TestRowUpdateHappyPath(t *testing.T) {
+	stub := &stubRowEditor{stubQuerier: stubQuerier{stubService: stubService{name: "stub"}}, cmd: "UPDATE 1"}
+	srv := newConsoleServer(t, stub)
+	email := "ada@example.com"
+	rec := doJSON(t, srv, http.MethodPatch, "/api/profiles/default/services/stub/row",
+		rowMutationRequest{Schema: "public", Table: "users", Key: map[string]string{"id": "7"}, Column: "email", Value: &email})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+	}
+	var got commandResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Command != "UPDATE 1" {
+		t.Errorf("command = %q, want %q", got.Command, "UPDATE 1")
+	}
+	if stub.gotMut.Table != "users" || stub.gotMut.Column != "email" || stub.gotMut.Key["id"] != "7" {
+		t.Errorf("mutation = %+v", stub.gotMut)
+	}
+	if stub.gotMut.Value == nil || *stub.gotMut.Value != email {
+		t.Errorf("value = %v, want %q", stub.gotMut.Value, email)
+	}
+}
+
+func TestRowDeleteHappyPath(t *testing.T) {
+	stub := &stubRowEditor{stubQuerier: stubQuerier{stubService: stubService{name: "stub"}}, cmd: "DELETE 1"}
+	srv := newConsoleServer(t, stub)
+	rec := doJSON(t, srv, http.MethodDelete, "/api/profiles/default/services/stub/row",
+		rowMutationRequest{Schema: "public", Table: "users", Key: map[string]string{"id": "7"}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+	}
+	if !stub.deleted || stub.gotMut.Key["id"] != "7" {
+		t.Errorf("delete not applied: deleted=%v mutation=%+v", stub.deleted, stub.gotMut)
+	}
+}
+
+func TestRowMutationValidation(t *testing.T) {
+	stub := &stubRowEditor{stubQuerier: stubQuerier{stubService: stubService{name: "stub"}}, cmd: "UPDATE 1"}
+	srv := newConsoleServer(t, stub)
+	cases := []struct {
+		name string
+		req  rowMutationRequest
+	}{
+		{"missing table", rowMutationRequest{Schema: "public", Key: map[string]string{"id": "7"}, Column: "email"}},
+		{"missing key", rowMutationRequest{Schema: "public", Table: "users", Column: "email"}},
+		{"missing column", rowMutationRequest{Schema: "public", Table: "users", Key: map[string]string{"id": "7"}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := doJSON(t, srv, http.MethodPatch, "/api/profiles/default/services/stub/row", tc.req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400 (body %q)", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestRowEditUnsupportedService(t *testing.T) {
+	// A plain stubQuerier supports a console but not row editing.
+	srv := newConsoleServer(t, &stubQuerier{stubService: stubService{name: "stub"}})
+	rec := doJSON(t, srv, http.MethodDelete, "/api/profiles/default/services/stub/row",
+		rowMutationRequest{Schema: "public", Table: "users", Key: map[string]string{"id": "7"}})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body %q)", rec.Code, rec.Body.String())
 	}
 }
 

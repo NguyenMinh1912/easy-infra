@@ -1,13 +1,25 @@
 import { useState } from "react";
-import { CheckCircle2, Expand } from "lucide-react";
+import { Check, CheckCircle2, Expand, Trash2, X } from "lucide-react";
+import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -17,24 +29,135 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useRemainingHeight } from "@/hooks/useRemainingHeight";
-import type { QueryResult } from "@/types/console";
+import { cn } from "@/lib/utils";
+import { ApiError, deleteRow, updateRow, type RowKey } from "@/services/api";
+import type { EditableInfo, QueryResult } from "@/types/console";
 
 /** Above this many characters a cell is collapsed behind a preview dialog. */
 const MAX_CELL_LENGTH = 120;
 
 interface QueryResultTableProps {
   result: QueryResult;
+  /** Profile the result was queried from — used to apply inline edits. */
+  profile: string;
+  /** Service the result was queried from — used to apply inline edits. */
+  service: string;
+  /** Re-run the statement that produced this result, e.g. after an edit. */
+  onChanged: () => void;
 }
+
+/**
+ * A staged inline mutation awaiting confirmation: setting one cell (update) or
+ * removing a row (delete). `preview` is the human-readable statement shown in
+ * the confirm dialog — illustrative, since the server runs a parameterized
+ * equivalent.
+ */
+type Pending =
+  | {
+      kind: "update";
+      column: string;
+      key: RowKey;
+      value: string | null;
+      preview: string;
+    }
+  | { kind: "delete"; key: RowKey; preview: string };
 
 /**
  * Renders a successful console execution: a column/row table for statements
  * that produced rows, a command-tag confirmation otherwise, and a status line
  * with the command tag, row count, duration, and a truncation notice.
+ *
+ * When the result maps back to a single table with a primary key (see
+ * {@link QueryResult.editable}), cells become click-to-edit and each row gains a
+ * delete action; both confirm before running and refresh the result on success.
  */
-export function QueryResultTable({ result }: QueryResultTableProps) {
+export function QueryResultTable({
+  result,
+  profile,
+  service,
+  onChanged,
+}: QueryResultTableProps) {
   // Cap the table to the height still visible below it so a large result set
   // scrolls in place instead of pushing the page past the viewport.
   const { ref, maxHeight } = useRemainingHeight<HTMLDivElement>();
+
+  const editable = result.editable;
+  // The cell currently in edit mode, or null. Only set for editable results.
+  const [editing, setEditing] = useState<{ row: number; col: number } | null>(
+    null,
+  );
+  // A staged mutation awaiting confirmation in the dialog, or null.
+  const [pending, setPending] = useState<Pending | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // The primary-key values identifying row `i`, or null if any key column is
+  // missing (then the row can't be edited and its affordances are hidden).
+  const rowKey = (i: number): RowKey | null => {
+    if (!editable) return null;
+    const key: RowKey = {};
+    for (const pk of editable.primaryKey) {
+      const j = editable.columns.indexOf(pk);
+      if (j < 0) return null;
+      key[pk] = keyText(result.rows[i][j]);
+    }
+    return key;
+  };
+
+  // Stage a cell update for confirmation, skipping no-op edits.
+  const stageUpdate = (i: number, j: number, value: string | null) => {
+    setEditing(null);
+    if (!editable) return;
+    const column = editable.columns[j];
+    const key = rowKey(i);
+    if (!column || !key) return;
+    const current = result.rows[i][j];
+    const unchanged =
+      value === null ? current === null : !isNull(current) && cellText(current) === value;
+    if (unchanged) return;
+    setPending({
+      kind: "update",
+      column,
+      key,
+      value,
+      preview: updatePreview(editable, column, value, key),
+    });
+  };
+
+  // Stage a row delete for confirmation.
+  const stageDelete = (i: number) => {
+    if (!editable) return;
+    const key = rowKey(i);
+    if (!key) return;
+    setPending({ kind: "delete", key, preview: deletePreview(editable, key) });
+  };
+
+  // Run the staged mutation, then refresh the result so the table reflects it.
+  const apply = async () => {
+    if (!pending || !editable) return;
+    const target = { schema: editable.schema, table: editable.table };
+    setBusy(true);
+    try {
+      const res =
+        pending.kind === "update"
+          ? await updateRow(profile, service, {
+              ...target,
+              key: pending.key,
+              column: pending.column,
+              value: pending.value,
+            })
+          : await deleteRow(profile, service, { ...target, key: pending.key });
+      toast.success(res.command);
+      setPending(null);
+      onChanged();
+    } catch (cause) {
+      toast.error(pending.kind === "update" ? "Update failed" : "Delete failed", {
+        description: cause instanceof ApiError ? cause.message : String(cause),
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-2">
       {result.columns.length > 0 ? (
@@ -58,16 +181,60 @@ export function QueryResultTable({ result }: QueryResultTableProps) {
                     {column}
                   </TableHead>
                 ))}
+                {editable && (
+                  <TableHead
+                    className="sticky top-0 z-10 w-0 bg-background shadow-[inset_0_-1px_0_var(--border)]"
+                    aria-label="Row actions"
+                  />
+                )}
               </TableRow>
             </TableHeader>
             <TableBody>
               {result.rows.map((row, i) => (
                 <TableRow key={i}>
-                  {row.map((value, j) => (
-                    <TableCell key={j} className="font-mono">
-                      <CellValue value={value} column={result.columns[j]} />
+                  {row.map((value, j) => {
+                    const column = editable?.columns[j];
+                    const isEditing = editing?.row === i && editing.col === j;
+                    return (
+                      <TableCell key={j} className="font-mono">
+                        {isEditing ? (
+                          <CellEditor
+                            initial={cellEditText(value)}
+                            onCommit={(text) => stageUpdate(i, j, text)}
+                            onNull={() => stageUpdate(i, j, null)}
+                            onCancel={() => setEditing(null)}
+                          />
+                        ) : column ? (
+                          <button
+                            type="button"
+                            title="Click to edit"
+                            className="-mx-1 block w-full rounded px-1 text-left hover:bg-muted/60"
+                            onClick={() => setEditing({ row: i, col: j })}
+                          >
+                            <CellValue value={value} column={result.columns[j]} />
+                          </button>
+                        ) : (
+                          <CellValue value={value} column={result.columns[j]} />
+                        )}
+                      </TableCell>
+                    );
+                  })}
+                  {editable && (
+                    <TableCell className="w-0 pr-2">
+                      {rowKey(i) && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-7 text-muted-foreground hover:text-destructive"
+                          aria-label="Delete row"
+                          onClick={() => stageDelete(i)}
+                        >
+                          <Trash2 aria-hidden />
+                        </Button>
+                      )}
                     </TableCell>
-                  ))}
+                  )}
                 </TableRow>
               ))}
             </TableBody>
@@ -86,9 +253,122 @@ export function QueryResultTable({ result }: QueryResultTableProps) {
           <span> · showing first {result.rows.length} rows (truncated)</span>
         )}{" "}
         · {result.durationMs} ms
+        {editable && <span> · click a cell to edit · rows deletable</span>}
       </p>
+
+      <AlertDialog
+        open={pending !== null}
+        onOpenChange={(open) => {
+          if (!open && !busy) setPending(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pending?.kind === "delete" ? "Delete this row?" : "Apply this update?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This runs the following statement against{" "}
+              <span className="font-mono">
+                {editable?.schema}.{editable?.table}
+              </span>
+              :
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <pre className="max-h-[40vh] overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-muted/30 p-3 font-mono text-xs">
+            {pending?.preview}
+          </pre>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              className={cn(
+                pending?.kind === "delete" &&
+                  buttonVariants({ variant: "destructive" }),
+              )}
+              onClick={(e) => {
+                // Keep the dialog open while the request is in flight; apply()
+                // closes it on success.
+                e.preventDefault();
+                void apply();
+              }}
+            >
+              {pending?.kind === "delete" ? "Delete" : "Update"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
+}
+
+/** Inline cell editor: a text field with save, set-null, and cancel actions. */
+function CellEditor({
+  initial,
+  onCommit,
+  onNull,
+  onCancel,
+}: {
+  initial: string;
+  onCommit: (text: string) => void;
+  onNull: () => void;
+  onCancel: () => void;
+}) {
+  const [text, setText] = useState(initial);
+  return (
+    <div className="flex items-center gap-1">
+      <Input
+        autoFocus
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            onCommit(text);
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            onCancel();
+          }
+        }}
+        className="h-7 min-w-40 flex-1 font-mono text-xs"
+      />
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="size-7 shrink-0"
+        aria-label="Save"
+        onClick={() => onCommit(text)}
+      >
+        <Check aria-hidden />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-7 shrink-0 px-2 text-xs"
+        title="Set to NULL"
+        onClick={onNull}
+      >
+        NULL
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="size-7 shrink-0"
+        aria-label="Cancel"
+        onClick={onCancel}
+      >
+        <X aria-hidden />
+      </Button>
+    </div>
+  );
+}
+
+/** True when a cell value is SQL NULL (JSON null/undefined). */
+function isNull(value: unknown): boolean {
+  return value === null || value === undefined;
 }
 
 /** Render a cell value as text: objects (json, arrays) serialized, rest stringified. */
@@ -97,6 +377,52 @@ function formatValue(value: unknown): string {
     return JSON.stringify(value);
   }
   return String(value);
+}
+
+/** Stringify a primary-key value for the row identity sent to the server. */
+function keyText(value: unknown): string {
+  return isNull(value) ? "" : formatValue(value);
+}
+
+/** Initial text for the inline editor; NULL starts as an empty field. */
+function cellEditText(value: unknown): string {
+  return isNull(value) ? "" : formatValue(value);
+}
+
+/** Stringify a (non-null) cell value for comparing against an edited value. */
+function cellText(value: unknown): string {
+  return formatValue(value);
+}
+
+/** Quote a SQL identifier for the confirmation preview, doubling quotes. */
+function quoteIdent(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+/** Render a value as a SQL literal for the confirmation preview. */
+function sqlLiteral(value: string | null): string {
+  if (value === null) return "NULL";
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+/** The primary-key predicate shared by the update and delete previews. */
+function whereText(editable: EditableInfo, key: RowKey): string {
+  return editable.primaryKey
+    .map((pk) => `${quoteIdent(pk)} = ${sqlLiteral(key[pk])}`)
+    .join(" AND ");
+}
+
+function updatePreview(
+  editable: EditableInfo,
+  column: string,
+  value: string | null,
+  key: RowKey,
+): string {
+  return `UPDATE ${quoteIdent(editable.schema)}.${quoteIdent(editable.table)}\nSET ${quoteIdent(column)} = ${sqlLiteral(value)}\nWHERE ${whereText(editable, key)};`;
+}
+
+function deletePreview(editable: EditableInfo, key: RowKey): string {
+  return `DELETE FROM ${quoteIdent(editable.schema)}.${quoteIdent(editable.table)}\nWHERE ${whereText(editable, key)};`;
 }
 
 /**
@@ -141,7 +467,11 @@ function LongCellValue({ text, column }: { text: string; column: string }) {
         variant="ghost"
         size="sm"
         className="h-6 shrink-0 gap-1 px-2 text-xs"
-        onClick={() => setOpen(true)}
+        onClick={(e) => {
+          // Don't let the click also start an inline edit on the cell.
+          e.stopPropagation();
+          setOpen(true);
+        }}
       >
         <Expand aria-hidden />
         View

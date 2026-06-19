@@ -33,7 +33,8 @@ export type {
   BackupOptions,
   SnapshotsResponse,
 } from "./services";
-export { executeQuery, getSchema } from "./console";
+export { executeQuery, getSchema, updateRow, deleteRow } from "./console";
+export type { RowKey } from "./console";
 export { getDatabases, listKeys, getKeyValue } from "./redis";
 export {
   getLocalstackHealth,

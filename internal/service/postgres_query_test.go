@@ -48,8 +48,13 @@ func (r *fakeRows) Next() bool {
 func (r *fakeRows) Scan(dest ...any) error {
 	row := r.data[r.idx-1]
 	for i, d := range dest {
-		if p, ok := d.(*string); ok {
+		switch p := d.(type) {
+		case *string:
 			*p = row[i].(string)
+		case *int:
+			*p = row[i].(int)
+		case *bool:
+			*p = row[i].(bool)
 		}
 	}
 	return nil

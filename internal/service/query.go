@@ -29,6 +29,48 @@ type QueryResult struct {
 	// Truncated is true when the row cap was hit and Rows is a prefix of the
 	// full result.
 	Truncated bool `json:"truncated"`
+	// Editable, when non-nil, describes how the result maps back to a single
+	// source table so the UI can offer inline cell edits and row deletes. It is
+	// nil unless every result column comes from one table, that table has a
+	// primary key, and all of the key's columns are present in the result.
+	Editable *EditableInfo `json:"editable,omitempty"`
+}
+
+// EditableInfo describes a single-table result the console can edit in place.
+// Columns is parallel to QueryResult.Columns: each entry is the source table
+// column a result column maps to, or "" when the result column is an expression
+// or otherwise not directly updatable.
+type EditableInfo struct {
+	Schema     string   `json:"schema"`
+	Table      string   `json:"table"`
+	PrimaryKey []string `json:"primaryKey"`
+	Columns    []string `json:"columns"`
+}
+
+// RowEditor is an optional capability a Service implements when the rows a query
+// returned can be edited in place — updating a single cell or deleting a row,
+// each addressed by the result's primary key. Postgres implements it; callers
+// type-assert for it and hide the affordance when a service does not, mirroring
+// how Querier and Provisioner are optional capabilities.
+type RowEditor interface {
+	// UpdateRow sets one column of the row identified by m.Key to m.Value and
+	// returns the resulting command tag (e.g. "UPDATE 1").
+	UpdateRow(ctx context.Context, spec Spec, m RowMutation) (string, error)
+	// DeleteRow removes the row identified by m.Key, returning its command tag.
+	DeleteRow(ctx context.Context, spec Spec, m RowMutation) (string, error)
+}
+
+// RowMutation identifies a single row to edit and, for updates, the column and
+// value to set. Key maps primary-key column names to the row's values; Column
+// and Value are used only by UpdateRow, with a nil Value setting the column to
+// NULL. Values travel as the text the user sees so the database coerces them to
+// each column's actual type.
+type RowMutation struct {
+	Schema string
+	Table  string
+	Key    map[string]string
+	Column string
+	Value  *string
 }
 
 // SchemaInfo lists the tables a console user can query.
