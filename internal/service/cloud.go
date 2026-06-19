@@ -18,6 +18,17 @@ type CloudBrowser interface {
 	// counts — the backend of the SQS detail page.
 	Queues(ctx context.Context, spec Spec) ([]QueueInfo, error)
 
+	// CreateQueue creates a new SQS queue with the given name on the emulated
+	// account. A name ending in ".fifo" creates a FIFO queue.
+	CreateQueue(ctx context.Context, spec Spec, name string) error
+
+	// DeleteQueue deletes the SQS queue identified by its URL.
+	DeleteQueue(ctx context.Context, spec Spec, url string) error
+
+	// PurgeQueue removes all messages from the SQS queue identified by its URL,
+	// leaving the queue itself in place.
+	PurgeQueue(ctx context.Context, spec Spec, url string) error
+
 	// Identities lists the SES email/domain identities on the emulated account,
 	// with their verification status — the backend of the SES detail page.
 	Identities(ctx context.Context, spec Spec) ([]IdentityInfo, error)

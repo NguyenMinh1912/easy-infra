@@ -77,6 +77,52 @@ func (l LocalStack) Queues(ctx context.Context, spec Spec) ([]QueueInfo, error) 
 	return queues, nil
 }
 
+// CreateQueue implements CloudBrowser: create a new SQS queue. A name ending in
+// ".fifo" is created as a FIFO queue, which SQS requires the FifoQueue attribute
+// to be set for.
+func (l LocalStack) CreateQueue(ctx context.Context, spec Spec, name string) error {
+	client, err := l.sqsOpener()(spec.Env)
+	if err != nil {
+		return fmt.Errorf("connecting to sqs: %w", err)
+	}
+
+	in := &sqs.CreateQueueInput{QueueName: aws.String(name)}
+	if strings.HasSuffix(name, ".fifo") {
+		in.Attributes = map[string]string{
+			string(sqstypes.QueueAttributeNameFifoQueue): "true",
+		}
+	}
+	if _, err := client.CreateQueue(ctx, in); err != nil {
+		return fmt.Errorf("creating queue: %w", err)
+	}
+	return nil
+}
+
+// DeleteQueue implements CloudBrowser: delete the SQS queue at the given URL.
+func (l LocalStack) DeleteQueue(ctx context.Context, spec Spec, url string) error {
+	client, err := l.sqsOpener()(spec.Env)
+	if err != nil {
+		return fmt.Errorf("connecting to sqs: %w", err)
+	}
+	if _, err := client.DeleteQueue(ctx, &sqs.DeleteQueueInput{QueueUrl: aws.String(url)}); err != nil {
+		return fmt.Errorf("deleting queue: %w", err)
+	}
+	return nil
+}
+
+// PurgeQueue implements CloudBrowser: remove all messages from the SQS queue at
+// the given URL.
+func (l LocalStack) PurgeQueue(ctx context.Context, spec Spec, url string) error {
+	client, err := l.sqsOpener()(spec.Env)
+	if err != nil {
+		return fmt.Errorf("connecting to sqs: %w", err)
+	}
+	if _, err := client.PurgeQueue(ctx, &sqs.PurgeQueueInput{QueueUrl: aws.String(url)}); err != nil {
+		return fmt.Errorf("purging queue: %w", err)
+	}
+	return nil
+}
+
 // Identities implements CloudBrowser: list the SES email/domain identities on
 // the emulated account with their verification status.
 func (l LocalStack) Identities(ctx context.Context, spec Spec) ([]IdentityInfo, error) {

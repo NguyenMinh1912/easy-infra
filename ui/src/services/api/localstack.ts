@@ -10,7 +10,7 @@ import type {
   QueuesResponse,
 } from "@/types/localstack";
 
-import { apiGet } from "./client";
+import { apiGet, apiSend } from "./client";
 
 const base = (profile: string, service: string) =>
   `/profiles/${encodeURIComponent(profile)}/services/${encodeURIComponent(service)}`;
@@ -41,6 +41,66 @@ export async function listQueues(
 ): Promise<QueuesResponse> {
   return apiGet<QueuesResponse>(
     scoped(`${base(profile, service)}/queues`, region),
+    signal,
+  );
+}
+
+/**
+ * Create an SQS queue named `name` in the profile. A name ending in `.fifo`
+ * creates a FIFO queue. The queue is created in `region` when one is selected,
+ * matching the region the listing reflects. Resolves on success (204) and
+ * rejects with an {@link ApiError} otherwise.
+ */
+export async function createQueue(
+  profile: string,
+  service: string,
+  name: string,
+  region?: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return apiSend<void>(
+    "POST",
+    scoped(`${base(profile, service)}/queues`, region),
+    { name },
+    signal,
+  );
+}
+
+/** Delete the queue at `url` from the profile, in `region` when selected. */
+export async function deleteQueue(
+  profile: string,
+  service: string,
+  url: string,
+  region?: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const query = new URLSearchParams({ url });
+  if (region) query.set("region", region);
+  return apiSend<void>(
+    "DELETE",
+    `${base(profile, service)}/queues?${query.toString()}`,
+    undefined,
+    signal,
+  );
+}
+
+/**
+ * Remove all messages from the queue at `url`, leaving the queue in place, in
+ * `region` when selected.
+ */
+export async function purgeQueue(
+  profile: string,
+  service: string,
+  url: string,
+  region?: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const query = new URLSearchParams({ url });
+  if (region) query.set("region", region);
+  return apiSend<void>(
+    "POST",
+    `${base(profile, service)}/queues/purge?${query.toString()}`,
+    undefined,
     signal,
   );
 }

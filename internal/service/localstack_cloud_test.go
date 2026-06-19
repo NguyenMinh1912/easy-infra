@@ -9,14 +9,21 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
 	sestypes "github.com/aws/aws-sdk-go-v2/service/sesv2/types"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 )
 
 // fakeSQS is an in-memory sqsAPI: it returns a fixed queue list and a per-URL
-// attribute map, so a test declares only the replies it cares about.
+// attribute map, so a test declares only the replies it cares about. It also
+// records the inputs of the mutating calls so tests can assert on them.
 type fakeSQS struct {
 	urls    []string
 	attrs   map[string]map[string]string
 	listErr error
+
+	created *sqs.CreateQueueInput
+	deleted *sqs.DeleteQueueInput
+	purged  *sqs.PurgeQueueInput
+	mutErr  error
 }
 
 func (f fakeSQS) ListQueues(context.Context, *sqs.ListQueuesInput, ...func(*sqs.Options)) (*sqs.ListQueuesOutput, error) {
@@ -28,6 +35,30 @@ func (f fakeSQS) ListQueues(context.Context, *sqs.ListQueuesInput, ...func(*sqs.
 
 func (f fakeSQS) GetQueueAttributes(_ context.Context, in *sqs.GetQueueAttributesInput, _ ...func(*sqs.Options)) (*sqs.GetQueueAttributesOutput, error) {
 	return &sqs.GetQueueAttributesOutput{Attributes: f.attrs[aws.ToString(in.QueueUrl)]}, nil
+}
+
+func (f *fakeSQS) CreateQueue(_ context.Context, in *sqs.CreateQueueInput, _ ...func(*sqs.Options)) (*sqs.CreateQueueOutput, error) {
+	if f.mutErr != nil {
+		return nil, f.mutErr
+	}
+	f.created = in
+	return &sqs.CreateQueueOutput{QueueUrl: aws.String("http://localhost:4566/000000000000/" + aws.ToString(in.QueueName))}, nil
+}
+
+func (f *fakeSQS) DeleteQueue(_ context.Context, in *sqs.DeleteQueueInput, _ ...func(*sqs.Options)) (*sqs.DeleteQueueOutput, error) {
+	if f.mutErr != nil {
+		return nil, f.mutErr
+	}
+	f.deleted = in
+	return &sqs.DeleteQueueOutput{}, nil
+}
+
+func (f *fakeSQS) PurgeQueue(_ context.Context, in *sqs.PurgeQueueInput, _ ...func(*sqs.Options)) (*sqs.PurgeQueueOutput, error) {
+	if f.mutErr != nil {
+		return nil, f.mutErr
+	}
+	f.purged = in
+	return &sqs.PurgeQueueOutput{}, nil
 }
 
 // fakeSES is an in-memory sesAPI returning a fixed identity list.
@@ -55,7 +86,7 @@ func TestLocalStackQueues(t *testing.T) {
 			// "emails" has no attributes: counts must default to zero, not error.
 		},
 	}
-	ls := LocalStack{openSQS: func(Config) (sqsAPI, error) { return fake, nil }}
+	ls := LocalStack{openSQS: func(Config) (sqsAPI, error) { return &fake, nil }}
 
 	queues, err := ls.Queues(context.Background(), Spec{Env: Config{"host": "localhost"}})
 	if err != nil {
@@ -77,11 +108,73 @@ func TestLocalStackQueues(t *testing.T) {
 
 func TestLocalStackQueuesListError(t *testing.T) {
 	ls := LocalStack{openSQS: func(Config) (sqsAPI, error) {
-		return fakeSQS{listErr: errors.New("connection refused")}, nil
+		return &fakeSQS{listErr: errors.New("connection refused")}, nil
 	}}
 
 	if _, err := ls.Queues(context.Background(), Spec{Env: Config{"host": "localhost"}}); err == nil {
 		t.Fatal("expected an error when ListQueues fails")
+	}
+}
+
+func TestLocalStackCreateQueue(t *testing.T) {
+	fake := &fakeSQS{}
+	ls := LocalStack{openSQS: func(Config) (sqsAPI, error) { return fake, nil }}
+
+	if err := ls.CreateQueue(context.Background(), Spec{Env: Config{"host": "localhost"}}, "orders"); err != nil {
+		t.Fatalf("CreateQueue: %v", err)
+	}
+	if fake.created == nil || aws.ToString(fake.created.QueueName) != "orders" {
+		t.Fatalf("CreateQueue input = %+v, want QueueName=orders", fake.created)
+	}
+	if len(fake.created.Attributes) != 0 {
+		t.Errorf("non-FIFO queue got attributes %v, want none", fake.created.Attributes)
+	}
+}
+
+func TestLocalStackCreateFifoQueue(t *testing.T) {
+	fake := &fakeSQS{}
+	ls := LocalStack{openSQS: func(Config) (sqsAPI, error) { return fake, nil }}
+
+	if err := ls.CreateQueue(context.Background(), Spec{Env: Config{"host": "localhost"}}, "orders.fifo"); err != nil {
+		t.Fatalf("CreateQueue: %v", err)
+	}
+	if got := fake.created.Attributes[string(sqstypes.QueueAttributeNameFifoQueue)]; got != "true" {
+		t.Errorf("FifoQueue attribute = %q, want \"true\"", got)
+	}
+}
+
+func TestLocalStackCreateQueueError(t *testing.T) {
+	ls := LocalStack{openSQS: func(Config) (sqsAPI, error) {
+		return &fakeSQS{mutErr: errors.New("boom")}, nil
+	}}
+	if err := ls.CreateQueue(context.Background(), Spec{Env: Config{"host": "localhost"}}, "orders"); err == nil {
+		t.Fatal("expected an error when CreateQueue fails")
+	}
+}
+
+func TestLocalStackDeleteQueue(t *testing.T) {
+	const url = "http://localhost:4566/000000000000/orders"
+	fake := &fakeSQS{}
+	ls := LocalStack{openSQS: func(Config) (sqsAPI, error) { return fake, nil }}
+
+	if err := ls.DeleteQueue(context.Background(), Spec{Env: Config{"host": "localhost"}}, url); err != nil {
+		t.Fatalf("DeleteQueue: %v", err)
+	}
+	if fake.deleted == nil || aws.ToString(fake.deleted.QueueUrl) != url {
+		t.Fatalf("DeleteQueue input = %+v, want QueueUrl=%s", fake.deleted, url)
+	}
+}
+
+func TestLocalStackPurgeQueue(t *testing.T) {
+	const url = "http://localhost:4566/000000000000/orders"
+	fake := &fakeSQS{}
+	ls := LocalStack{openSQS: func(Config) (sqsAPI, error) { return fake, nil }}
+
+	if err := ls.PurgeQueue(context.Background(), Spec{Env: Config{"host": "localhost"}}, url); err != nil {
+		t.Fatalf("PurgeQueue: %v", err)
+	}
+	if fake.purged == nil || aws.ToString(fake.purged.QueueUrl) != url {
+		t.Fatalf("PurgeQueue input = %+v, want QueueUrl=%s", fake.purged, url)
 	}
 }
 
