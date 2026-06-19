@@ -44,7 +44,11 @@ export function RedisOverview({ service, profile }: OverviewProps) {
         <TabsTrigger value="keys">Keys</TabsTrigger>
         <TabsTrigger value="console">Console</TabsTrigger>
       </TabsList>
-      <TabsContent value="keys" className="mt-4">
+      {/* Keep both tabs mounted (hidden when inactive) so switching tabs
+          preserves each tab's local state — the console's command input and
+          result log, and the key browser's selection — which would otherwise
+          be lost on unmount. */}
+      <TabsContent value="keys" forceMount className="mt-4 data-[state=inactive]:hidden">
         <Suspense fallback={<Skeleton className="h-48 w-full" />}>
           <RedisKeyBrowser
             profile={profile}
@@ -55,7 +59,7 @@ export function RedisOverview({ service, profile }: OverviewProps) {
           />
         </Suspense>
       </TabsContent>
-      <TabsContent value="console" className="mt-4">
+      <TabsContent value="console" forceMount className="mt-4 data-[state=inactive]:hidden">
         <Suspense fallback={<Skeleton className="h-40 w-full" />}>
           <RedisConsole
             profile={profile}
