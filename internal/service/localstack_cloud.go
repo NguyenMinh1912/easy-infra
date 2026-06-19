@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/sesv2"
-	sestypes "github.com/aws/aws-sdk-go-v2/service/sesv2/types"
+	"github.com/aws/aws-sdk-go-v2/service/ses"
+	sestypes "github.com/aws/aws-sdk-go-v2/service/ses/types"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 )
@@ -124,27 +124,53 @@ func (l LocalStack) PurgeQueue(ctx context.Context, spec Spec, url string) error
 }
 
 // Identities implements CloudBrowser: list the SES email/domain identities on
-// the emulated account with their verification status.
+// the emulated account with their verification status. It uses the SES v1 API
+// (ListIdentities + GetIdentityVerificationAttributes) because LocalStack's
+// community edition does not implement sesv2. v1 ListIdentities returns plain
+// identity names without a type, so the type is inferred from the name: a name
+// containing "@" is an email address, otherwise a domain.
 func (l LocalStack) Identities(ctx context.Context, spec Spec) ([]IdentityInfo, error) {
 	client, err := l.sesOpener()(spec.Env)
 	if err != nil {
 		return nil, fmt.Errorf("connecting to ses: %w", err)
 	}
 
-	out, err := client.ListEmailIdentities(ctx, &sesv2.ListEmailIdentitiesInput{})
+	out, err := client.ListIdentities(ctx, &ses.ListIdentitiesInput{})
 	if err != nil {
 		return nil, fmt.Errorf("listing identities: %w", err)
 	}
 
-	identities := make([]IdentityInfo, 0, len(out.EmailIdentities))
-	for _, id := range out.EmailIdentities {
+	// Verification status is a separate call in v1; a failure here is
+	// non-fatal — the identities are still listed, just as unverified.
+	var attrs map[string]sestypes.IdentityVerificationAttributes
+	if len(out.Identities) > 0 {
+		va, err := client.GetIdentityVerificationAttributes(ctx, &ses.GetIdentityVerificationAttributesInput{
+			Identities: out.Identities,
+		})
+		if err == nil {
+			attrs = va.VerificationAttributes
+		}
+	}
+
+	identities := make([]IdentityInfo, 0, len(out.Identities))
+	for _, name := range out.Identities {
 		identities = append(identities, IdentityInfo{
-			Identity: aws.ToString(id.IdentityName),
-			Type:     string(id.IdentityType),
-			Verified: id.VerificationStatus == sestypes.VerificationStatusSuccess,
+			Identity: name,
+			Type:     identityType(name),
+			Verified: attrs[name].VerificationStatus == sestypes.VerificationStatusSuccess,
 		})
 	}
 	return identities, nil
+}
+
+// identityType classifies an SES identity name the way the SESv2 API would
+// report it — an email address contains "@", anything else is a domain — so
+// the UI's type labels keep working across the v1/v2 switch.
+func identityType(name string) string {
+	if strings.Contains(name, "@") {
+		return "EMAIL_ADDRESS"
+	}
+	return "DOMAIN"
 }
 
 // queueNameFromURL extracts the queue name (the last path segment) from a queue
