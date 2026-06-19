@@ -124,7 +124,7 @@ export function PostgresConsoleTabs({
       <div className="min-w-0 flex-1">
         <Tabs value={activeId} onValueChange={setActive}>
           <div className="flex items-center gap-2">
-            <TabsList variant="line" className="flex-wrap">
+            <TabsList variant="line" className="min-w-0 flex-1 overflow-x-auto">
               {tabs.map((tab) => (
                 <TabsTrigger key={tab.id} value={tab.id} className="pr-1">
                   {tab.title}
