@@ -153,12 +153,13 @@ func (p *Project) AddProfile(name string) (*profile.Profile, error) {
 	return prof, nil
 }
 
-// ForkLocalProfile builds (or updates) the conventional "local" profile from a
-// source profile, replacing the forked service's env with its localised form
-// (localEnv) while leaving every other service as the source defines it. An
-// existing local profile's already-localised services are preserved, so forking
-// services one at a time accumulates them. The result is validated and saved,
-// and its name (LocalProfile) is returned.
+// ForkLocalProfile builds (or updates) the conventional "local" profile by
+// adding the single forked service with its localised env (localEnv). The local
+// profile holds only services the user has explicitly forked — it is not a copy
+// of the source profile, so services the user never forked do not appear there.
+// An existing local profile's already-localised services are preserved, so
+// forking services one at a time accumulates them. The result is validated and
+// saved, and its name (LocalProfile) is returned.
 func (p *Project) ForkLocalProfile(source, svcID string, localEnv service.Config) (string, error) {
 	// Load the source through LoadProfile so an invalid source is rejected before
 	// we derive anything from it.
@@ -166,12 +167,15 @@ func (p *Project) ForkLocalProfile(source, svcID string, localEnv service.Config
 	if err != nil {
 		return "", err
 	}
-
-	services := make(map[string]profile.ServiceEntry, len(src.Services))
-	for id, entry := range src.Services {
-		services[id] = entry
+	srcEntry, ok := src.Services[svcID]
+	if !ok {
+		return "", fmt.Errorf("profile %q has no service %q", source, svcID)
 	}
-	// Preserve services already localised by a previous fork.
+
+	// Start from the services a previous fork already localised, so forking one
+	// service at a time accumulates them. A first fork starts from nothing — the
+	// local profile gets only what is forked into it.
+	services := map[string]profile.ServiceEntry{}
 	localExists, err := p.Store.ProfileExists(p.Workspace.ID, LocalProfile)
 	if err != nil {
 		return "", err
@@ -182,15 +186,12 @@ func (p *Project) ForkLocalProfile(source, svcID string, localEnv service.Config
 			return "", err
 		}
 		for id, entry := range existing {
-			if _, defined := services[id]; defined {
-				services[id] = entry
-			}
+			services[id] = entry
 		}
 	}
 	// Overlay the localised connection onto the source's block so the forked
 	// service keeps its definition fields (e.g. version) while pointing at the
 	// local container, preserving its type and name.
-	srcEntry := src.Services[svcID]
 	forkedCfg := service.Config{}
 	for k, v := range srcEntry.Config {
 		forkedCfg[k] = v

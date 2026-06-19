@@ -36,6 +36,7 @@ export type {
 export { executeQuery, getSchema } from "./console";
 export { getDatabases, listKeys, getKeyValue } from "./redis";
 export {
+  getLocalstackHealth,
   listQueues,
   createQueue,
   deleteQueue,

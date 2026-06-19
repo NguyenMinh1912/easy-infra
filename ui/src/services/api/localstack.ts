@@ -1,50 +1,81 @@
-// LocalStack cloud-browser endpoints: list a profile's SQS queues and SES
-// identities. Listing failures (endpoint unreachable) resolve successfully with
-// `error` set on the result — only transport/protocol problems reject.
+// LocalStack cloud-browser endpoints: the health snapshot plus a profile's SQS
+// queues and SES identities. Listing failures (endpoint unreachable) resolve
+// successfully with `error` set on the result — only transport/protocol
+// problems reject. An optional `region` re-scopes the query to that AWS region,
+// overriding the profile's saved region without mutating it.
 
-import type { IdentitiesResponse, QueuesResponse } from "@/types/localstack";
+import type {
+  HealthResponse,
+  IdentitiesResponse,
+  QueuesResponse,
+} from "@/types/localstack";
 
 import { apiGet, apiSend } from "./client";
 
 const base = (profile: string, service: string) =>
   `/profiles/${encodeURIComponent(profile)}/services/${encodeURIComponent(service)}`;
 
+/** Append a `region` query param when one is selected. */
+const scoped = (path: string, region?: string) =>
+  region ? `${path}?region=${encodeURIComponent(region)}` : path;
+
+/** Read the LocalStack health snapshot: version and per-service state map. */
+export async function getLocalstackHealth(
+  profile: string,
+  service: string,
+  region?: string,
+  signal?: AbortSignal,
+): Promise<HealthResponse> {
+  return apiGet<HealthResponse>(
+    scoped(`${base(profile, service)}/health`, region),
+    signal,
+  );
+}
+
 /** List the profile's SQS queues with their message counts. */
 export async function listQueues(
   profile: string,
   service: string,
+  region?: string,
   signal?: AbortSignal,
 ): Promise<QueuesResponse> {
-  return apiGet<QueuesResponse>(`${base(profile, service)}/queues`, signal);
+  return apiGet<QueuesResponse>(
+    scoped(`${base(profile, service)}/queues`, region),
+    signal,
+  );
 }
 
 /**
  * Create an SQS queue named `name` in the profile. A name ending in `.fifo`
- * creates a FIFO queue. Resolves on success (204) and rejects with an
- * {@link ApiError} otherwise.
+ * creates a FIFO queue. The queue is created in `region` when one is selected,
+ * matching the region the listing reflects. Resolves on success (204) and
+ * rejects with an {@link ApiError} otherwise.
  */
 export async function createQueue(
   profile: string,
   service: string,
   name: string,
+  region?: string,
   signal?: AbortSignal,
 ): Promise<void> {
   return apiSend<void>(
     "POST",
-    `${base(profile, service)}/queues`,
+    scoped(`${base(profile, service)}/queues`, region),
     { name },
     signal,
   );
 }
 
-/** Delete the queue at `url` from the profile. */
+/** Delete the queue at `url` from the profile, in `region` when selected. */
 export async function deleteQueue(
   profile: string,
   service: string,
   url: string,
+  region?: string,
   signal?: AbortSignal,
 ): Promise<void> {
   const query = new URLSearchParams({ url });
+  if (region) query.set("region", region);
   return apiSend<void>(
     "DELETE",
     `${base(profile, service)}/queues?${query.toString()}`,
@@ -53,14 +84,19 @@ export async function deleteQueue(
   );
 }
 
-/** Remove all messages from the queue at `url`, leaving the queue in place. */
+/**
+ * Remove all messages from the queue at `url`, leaving the queue in place, in
+ * `region` when selected.
+ */
 export async function purgeQueue(
   profile: string,
   service: string,
   url: string,
+  region?: string,
   signal?: AbortSignal,
 ): Promise<void> {
   const query = new URLSearchParams({ url });
+  if (region) query.set("region", region);
   return apiSend<void>(
     "POST",
     `${base(profile, service)}/queues/purge?${query.toString()}`,
@@ -73,10 +109,11 @@ export async function purgeQueue(
 export async function listIdentities(
   profile: string,
   service: string,
+  region?: string,
   signal?: AbortSignal,
 ): Promise<IdentitiesResponse> {
   return apiGet<IdentitiesResponse>(
-    `${base(profile, service)}/identities`,
+    scoped(`${base(profile, service)}/identities`, region),
     signal,
   );
 }

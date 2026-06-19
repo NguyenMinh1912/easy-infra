@@ -149,8 +149,13 @@ func TestForkLocalProfile(t *testing.T) {
 	if local.Services["postgres"].Config["host"] != "127.0.0.1" {
 		t.Errorf("postgres host = %v, want 127.0.0.1", local.Services["postgres"].Config["host"])
 	}
-	if _, ok := local.Services["redis"]; !ok {
-		t.Error("local profile missing copied service redis")
+	// The local profile holds only what was forked. redis was never forked, so it
+	// must not leak in from the source profile.
+	if _, ok := local.Services["redis"]; ok {
+		t.Error("local profile contains redis, but only postgres was forked")
+	}
+	if len(local.Services) != 1 {
+		t.Errorf("local profile has %d services, want 1 (only the forked postgres)", len(local.Services))
 	}
 }
 

@@ -6,6 +6,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"strings"
 	"time"
@@ -29,6 +30,39 @@ type queuesResponse struct {
 type identitiesResponse struct {
 	Identities []service.IdentityInfo `json:"identities"`
 	Error      string                 `json:"error,omitempty"`
+}
+
+// healthResponse is the JSON shape of the LocalStack health snapshot. Like the
+// listings, an unreachable endpoint stays 200 with the reason in Error and the
+// service map empty, so the UI can render an "unreachable" state.
+type healthResponse struct {
+	Version  string            `json:"version,omitempty"`
+	Edition  string            `json:"edition,omitempty"`
+	Services map[string]string `json:"services"`
+	Error    string            `json:"error,omitempty"`
+}
+
+// handleCloudHealth reports the named profile's LocalStack health snapshot —
+// the per-service state map and reported version — driving the overview's
+// service cards and Configuration panel.
+func (s *Server) handleCloudHealth(w http.ResponseWriter, r *http.Request) {
+	browser, spec, ok := s.resolveCloudBrowser(w, r)
+	if !ok {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), cloudTimeout)
+	defer cancel()
+	health, err := browser.CloudHealth(ctx, spec)
+	if err != nil {
+		writeJSON(w, http.StatusOK, healthResponse{Services: map[string]string{}, Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, healthResponse{
+		Version:  health.Version,
+		Edition:  health.Edition,
+		Services: health.Services,
+	})
 }
 
 // handleCloudQueues lists the named profile's SQS queues with their message
@@ -174,5 +208,22 @@ func (s *Server) resolveCloudBrowser(w http.ResponseWriter, r *http.Request) (se
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("service %q does not support a cloud browser", svcID))
 		return nil, service.Spec{}, false
 	}
-	return browser, service.Spec{Profile: profileName, Env: entry.Config}, true
+
+	// The overview's region dropdown is the single source of truth for which
+	// region resources are queried in. When it passes ?region=, override the
+	// profile's saved region for this request without mutating the stored env.
+	env := entry.Config
+	if region := r.URL.Query().Get("region"); region != "" {
+		env = withRegion(env, region)
+	}
+	return browser, service.Spec{Profile: profileName, Env: env}, true
+}
+
+// withRegion returns a copy of env with its region set to the given value,
+// leaving the stored config untouched.
+func withRegion(env service.Config, region string) service.Config {
+	clone := make(service.Config, len(env)+1)
+	maps.Copy(clone, env)
+	clone["region"] = region
+	return clone
 }

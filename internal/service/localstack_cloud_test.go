@@ -208,6 +208,37 @@ func TestLocalStackIdentities(t *testing.T) {
 	}
 }
 
+func TestLocalStackCloudHealth(t *testing.T) {
+	const body = `{"services":{"sqs":"running","s3":"available"},"version":"4.0.3","edition":"community"}`
+	ls := LocalStack{openHealth: func(_ context.Context, endpoint string) ([]byte, error) {
+		if endpoint != "http://localhost:4566" {
+			t.Errorf("endpoint = %q, want http://localhost:4566", endpoint)
+		}
+		return []byte(body), nil
+	}}
+
+	health, err := ls.CloudHealth(context.Background(), Spec{Env: Config{"host": "localhost"}})
+	if err != nil {
+		t.Fatalf("CloudHealth: %v", err)
+	}
+	if health.Version != "4.0.3" || health.Edition != "community" {
+		t.Errorf("version/edition = %q/%q, want 4.0.3/community", health.Version, health.Edition)
+	}
+	if health.Services["sqs"] != "running" || health.Services["s3"] != "available" {
+		t.Errorf("services = %v, want sqs=running s3=available", health.Services)
+	}
+}
+
+func TestLocalStackCloudHealthUnreachable(t *testing.T) {
+	ls := LocalStack{openHealth: func(context.Context, string) ([]byte, error) {
+		return nil, errors.New("connection refused")
+	}}
+
+	if _, err := ls.CloudHealth(context.Background(), Spec{Env: Config{"host": "localhost"}}); err == nil {
+		t.Fatal("expected an error when the health GET fails")
+	}
+}
+
 // LocalStack must satisfy the CloudBrowser capability so the server can
 // type-assert for it, mirroring how redis satisfies KeyBrowser.
 var _ CloudBrowser = LocalStack{}

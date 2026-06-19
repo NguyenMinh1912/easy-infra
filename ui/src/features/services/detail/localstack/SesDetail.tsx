@@ -23,23 +23,27 @@ import type { AwsServiceDetailProps } from "./types";
  * envelope, so it renders as an expected outcome rather than a transport error.
  * Without a profile (no connection env) it explains how to connect.
  */
-export function SesDetail({ service, profile }: AwsServiceDetailProps) {
+export function SesDetail({ service, profile, region }: AwsServiceDetailProps) {
   if (!profile) {
     return <NoConnection />;
   }
-  return <SesIdentities profile={profile} service={service.id} />;
+  return (
+    <SesIdentities profile={profile} service={service.id} region={region} />
+  );
 }
 
 function SesIdentities({
   profile,
   service,
+  region,
 }: {
   profile: string;
   service: string;
+  region?: string;
 }) {
   const state = useAsync(
-    (signal) => listIdentities(profile, service, signal),
-    [profile, service],
+    (signal) => listIdentities(profile, service, region, signal),
+    [profile, service, region],
   );
 
   if (state.status === "loading") {

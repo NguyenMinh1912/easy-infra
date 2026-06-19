@@ -9,6 +9,11 @@ import "context"
 // keyspace and Browser the object store. LocalStack is the only implementer
 // today; each method backs one AWS service's detail page.
 type CloudBrowser interface {
+	// CloudHealth reports the emulator's state: its version/edition and the
+	// per-service health map (e.g. {"sqs": "running"}) — the backend of the
+	// LocalStack overview's data-driven service cards and Configuration panel.
+	CloudHealth(ctx context.Context, spec Spec) (CloudHealth, error)
+
 	// Queues lists the SQS queues on the emulated account, with their message
 	// counts — the backend of the SQS detail page.
 	Queues(ctx context.Context, spec Spec) ([]QueueInfo, error)
@@ -27,6 +32,20 @@ type CloudBrowser interface {
 	// Identities lists the SES email/domain identities on the emulated account,
 	// with their verification status — the backend of the SES detail page.
 	Identities(ctx context.Context, spec Spec) ([]IdentityInfo, error)
+}
+
+// CloudHealth is the emulator's reported status, read from LocalStack's
+// `/_localstack/health` endpoint and shaped for JSON. Services maps each
+// emulated AWS service to its state ("running", "available", "disabled",
+// "error", …); the UI drives both the service cards and the Configuration panel
+// from it so they cannot disagree.
+type CloudHealth struct {
+	// Version is the running LocalStack version (e.g. "4.0.3"), when reported.
+	Version string `json:"version,omitempty"`
+	// Edition is the LocalStack edition (e.g. "community"), when reported.
+	Edition string `json:"edition,omitempty"`
+	// Services maps each emulated AWS service id to its health state.
+	Services map[string]string `json:"services"`
 }
 
 // QueueInfo is one SQS queue and its summary metadata, shaped for JSON.

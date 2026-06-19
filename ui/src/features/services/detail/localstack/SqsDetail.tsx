@@ -40,21 +40,29 @@ import type { AwsServiceDetailProps } from "./types";
  * envelope, so it renders as an expected outcome rather than a transport error.
  * Without a profile (no connection env) it explains how to connect.
  */
-export function SqsDetail({ service, profile }: AwsServiceDetailProps) {
+export function SqsDetail({ service, profile, region }: AwsServiceDetailProps) {
   if (!profile) {
     return <NoConnection />;
   }
-  return <SqsQueues profile={profile} service={service.id} />;
+  return <SqsQueues profile={profile} service={service.id} region={region} />;
 }
 
-function SqsQueues({ profile, service }: { profile: string; service: string }) {
+function SqsQueues({
+  profile,
+  service,
+  region,
+}: {
+  profile: string;
+  service: string;
+  region?: string;
+}) {
   // Bumped after a mutation so the listing reloads and reflects the change.
   const [reloadKey, setReloadKey] = useState(0);
   const reload = () => setReloadKey((k) => k + 1);
 
   const state = useAsync(
-    (signal) => listQueues(profile, service, signal),
-    [profile, service, reloadKey],
+    (signal) => listQueues(profile, service, region, signal),
+    [profile, service, region, reloadKey],
   );
 
   const queues =
@@ -65,7 +73,7 @@ function SqsQueues({ profile, service }: { profile: string; service: string }) {
       <CreateQueueForm
         existingNames={queues.map((q) => q.name)}
         onCreate={async (name) => {
-          await createQueue(profile, service, name);
+          await createQueue(profile, service, name, region);
           reload();
         }}
       />
@@ -73,6 +81,7 @@ function SqsQueues({ profile, service }: { profile: string; service: string }) {
         state={state}
         profile={profile}
         service={service}
+        region={region}
         onChanged={reload}
       />
     </div>
@@ -84,11 +93,13 @@ function QueueList({
   state,
   profile,
   service,
+  region,
   onChanged,
 }: {
   state: ReturnType<typeof useAsync<QueuesResponse>>;
   profile: string;
   service: string;
+  region?: string;
   onChanged: () => void;
 }) {
   if (state.status === "loading") {
@@ -154,6 +165,7 @@ function QueueList({
                 queue={q}
                 profile={profile}
                 service={service}
+                region={region}
                 onChanged={onChanged}
               />
             ))}
@@ -169,11 +181,13 @@ function QueueRow({
   queue,
   profile,
   service,
+  region,
   onChanged,
 }: {
   queue: QueueInfo;
   profile: string;
   service: string;
+  region?: string;
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -211,7 +225,7 @@ function QueueRow({
             variant="destructive"
             onConfirm={() =>
               void run(
-                () => purgeQueue(profile, service, queue.url),
+                () => purgeQueue(profile, service, queue.url, region),
                 `Purged "${queue.name}"`,
                 "Could not purge queue",
               )
@@ -234,7 +248,7 @@ function QueueRow({
             variant="destructive"
             onConfirm={() =>
               void run(
-                () => deleteQueue(profile, service, queue.url),
+                () => deleteQueue(profile, service, queue.url, region),
                 `Deleted "${queue.name}"`,
                 "Could not delete queue",
               )
