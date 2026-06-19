@@ -88,6 +88,28 @@ func TestRedisQueryRendersArray(t *testing.T) {
 	}
 }
 
+func TestRedisQueryPreservesScanStructure(t *testing.T) {
+	// SCAN replies [cursor, [keys...]]; the keys must stay a nested array so the
+	// console can label the cursor and list keys individually, rather than being
+	// flattened into a space-joined string.
+	fake := &fakeRedis{handlers: map[string]func([]any) (any, error){
+		"SCAN": func([]any) (any, error) {
+			return []any{"7", []any{"user:1", "user:2"}}, nil
+		},
+	}}
+	res, err := redisWith(fake).Query(context.Background(), Spec{}, "SCAN 0 MATCH user:*")
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	want := [][]any{{"7"}, {[]any{"user:1", "user:2"}}}
+	if !reflect.DeepEqual(res.Rows, want) {
+		t.Errorf("Rows = %#v, want %#v", res.Rows, want)
+	}
+	if res.Command != "SCAN" {
+		t.Errorf("Command = %q, want SCAN", res.Command)
+	}
+}
+
 func TestRedisQueryNilKeyIsNotAnError(t *testing.T) {
 	fake := &fakeRedis{handlers: map[string]func([]any) (any, error){
 		"GET": func([]any) (any, error) { return nil, redis.Nil },

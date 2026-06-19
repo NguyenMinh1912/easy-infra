@@ -2,8 +2,6 @@ import {
   AlertCircle,
   ArrowDownAZ,
   ArrowUpAZ,
-  ChevronsUpDown,
-  Database,
   ListOrdered,
   Search,
 } from "lucide-react";
@@ -11,12 +9,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -26,6 +18,7 @@ import { getDatabases, listKeys } from "@/services/api";
 import type { KeyEntry } from "@/types/redis";
 
 import { CopyButton } from "./CopyButton";
+import { DbSelector } from "./DbSelector";
 import { RedisTypeBadge } from "./RedisTypeBadge";
 import { RedisValuePanel } from "./RedisValuePanel";
 
@@ -34,6 +27,15 @@ interface RedisKeyBrowserProps {
   profile: string;
   /** Service name within the profile (the API path segment). */
   service: string;
+  /** Logical database to scan, shared with the console so both stay in sync. */
+  db: number;
+  onDbChange: (db: number) => void;
+  /**
+   * A key to select and view, set when the user clicks a key in the console's
+   * results. The nonce changes on every request so re-opening the same key
+   * re-triggers selection.
+   */
+  openKey?: { key: string; nonce: number } | null;
 }
 
 /** Accumulated key-list state across SCAN pages. */
@@ -53,13 +55,18 @@ type SortMode = "scan" | "asc" | "desc";
  * failure (server unreachable) comes back inside the response envelope, so it
  * renders as an expected outcome rather than a transport error.
  */
-export function RedisKeyBrowser({ profile, service }: RedisKeyBrowserProps) {
+export function RedisKeyBrowser({
+  profile,
+  service,
+  db,
+  onDbChange,
+  openKey,
+}: RedisKeyBrowserProps) {
   const dbState = useAsync(
     (signal) => getDatabases(profile, service, signal),
     [profile, service],
   );
 
-  const [db, setDb] = useState(0);
   // The pattern in the input vs. the one actually applied to the scan: typing
   // alone does not re-scan; submitting (Enter or the search button) does.
   const [draftPattern, setDraftPattern] = useState("*");
@@ -77,6 +84,13 @@ export function RedisKeyBrowser({ profile, service }: RedisKeyBrowserProps) {
   // unmount so a stale page never lands after a newer one.
   const controllerRef = useRef<AbortController | null>(null);
   useEffect(() => () => controllerRef.current?.abort(), []);
+
+  // Select a key requested from elsewhere (a console result). The value panel
+  // reads it directly by name, so it shows even if the key is not on the
+  // currently loaded scan page.
+  useEffect(() => {
+    if (openKey) setSelectedKey(openKey.key);
+  }, [openKey]);
 
   const loadPage = useCallback(
     (cursor: number, append: boolean) => {
@@ -156,44 +170,17 @@ export function RedisKeyBrowser({ profile, service }: RedisKeyBrowserProps) {
     );
   }
 
-  const databases = Math.max(1, dbState.data.count);
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="justify-between gap-2"
-              aria-label="Select database"
-            >
-              <span className="flex items-center gap-2">
-                <Database className="size-4 text-muted-foreground" aria-hidden />
-                db {db}
-              </span>
-              <ChevronsUpDown className="size-4 text-muted-foreground" aria-hidden />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="start"
-            className="max-h-72 overflow-y-auto"
-          >
-            {Array.from({ length: databases }, (_, i) => (
-              <DropdownMenuItem
-                key={i}
-                onSelect={() => {
-                  setSelectedKey(null);
-                  setDb(i);
-                }}
-              >
-                db {i}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <DbSelector
+          db={db}
+          count={dbState.data.count}
+          onChange={(i) => {
+            setSelectedKey(null);
+            onDbChange(i);
+          }}
+        />
 
         <form
           className="flex min-w-0 flex-1 items-center gap-2"
