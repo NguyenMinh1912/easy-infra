@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/sesv2"
-	sestypes "github.com/aws/aws-sdk-go-v2/service/sesv2/types"
+	"github.com/aws/aws-sdk-go-v2/service/ses"
+	sestypes "github.com/aws/aws-sdk-go-v2/service/ses/types"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 )
@@ -73,17 +73,31 @@ func (f *fakeSQS) ReceiveMessage(_ context.Context, in *sqs.ReceiveMessageInput,
 	return &sqs.ReceiveMessageOutput{Messages: f.messages}, nil
 }
 
-// fakeSES is an in-memory sesAPI returning a fixed identity list.
+// fakeSES is an in-memory sesAPI returning a fixed identity list and a per-name
+// verification status map, mirroring the SES v1 two-call shape.
 type fakeSES struct {
-	ids     []sestypes.IdentityInfo
+	ids     []string
+	verify  map[string]sestypes.VerificationStatus
 	listErr error
 }
 
-func (f fakeSES) ListEmailIdentities(context.Context, *sesv2.ListEmailIdentitiesInput, ...func(*sesv2.Options)) (*sesv2.ListEmailIdentitiesOutput, error) {
+func (f fakeSES) ListIdentities(context.Context, *ses.ListIdentitiesInput, ...func(*ses.Options)) (*ses.ListIdentitiesOutput, error) {
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
-	return &sesv2.ListEmailIdentitiesOutput{EmailIdentities: f.ids}, nil
+	return &ses.ListIdentitiesOutput{Identities: f.ids}, nil
+}
+
+func (f fakeSES) GetIdentityVerificationAttributes(_ context.Context, in *ses.GetIdentityVerificationAttributesInput, _ ...func(*ses.Options)) (*ses.GetIdentityVerificationAttributesOutput, error) {
+	attrs := make(map[string]sestypes.IdentityVerificationAttributes, len(in.Identities))
+	for _, id := range in.Identities {
+		status, ok := f.verify[id]
+		if !ok {
+			status = sestypes.VerificationStatusPending
+		}
+		attrs[id] = sestypes.IdentityVerificationAttributes{VerificationStatus: status}
+	}
+	return &ses.GetIdentityVerificationAttributesOutput{VerificationAttributes: attrs}, nil
 }
 
 func TestLocalStackQueues(t *testing.T) {
@@ -257,18 +271,13 @@ func TestLocalStackMessagesError(t *testing.T) {
 }
 
 func TestLocalStackIdentities(t *testing.T) {
-	fake := fakeSES{ids: []sestypes.IdentityInfo{
-		{
-			IdentityName:       aws.String("dev@example.com"),
-			IdentityType:       sestypes.IdentityTypeEmailAddress,
-			VerificationStatus: sestypes.VerificationStatusSuccess,
+	fake := fakeSES{
+		ids: []string{"dev@example.com", "example.org"},
+		verify: map[string]sestypes.VerificationStatus{
+			"dev@example.com": sestypes.VerificationStatusSuccess,
+			"example.org":     sestypes.VerificationStatusPending,
 		},
-		{
-			IdentityName:       aws.String("example.org"),
-			IdentityType:       sestypes.IdentityTypeDomain,
-			VerificationStatus: sestypes.VerificationStatusPending,
-		},
-	}}
+	}
 	ls := LocalStack{openSES: func(Config) (sesAPI, error) { return fake, nil }}
 
 	ids, err := ls.Identities(context.Background(), Spec{Env: Config{"host": "localhost"}})
