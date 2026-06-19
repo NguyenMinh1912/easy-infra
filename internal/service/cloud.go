@@ -32,6 +32,14 @@ type CloudBrowser interface {
 	// Identities lists the SES email/domain identities on the emulated account,
 	// with their verification status — the backend of the SES detail page.
 	Identities(ctx context.Context, spec Spec) ([]IdentityInfo, error)
+
+	// CreateIdentity registers a new SES identity for verification. An identity
+	// containing "@" is verified as an email address, otherwise as a domain.
+	CreateIdentity(ctx context.Context, spec Spec, identity string) error
+
+	// DeleteIdentity removes the SES identity (email address or domain) from the
+	// emulated account.
+	DeleteIdentity(ctx context.Context, spec Spec, identity string) error
 }
 
 // CloudHealth is the emulator's reported status, read from LocalStack's

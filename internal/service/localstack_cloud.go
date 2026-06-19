@@ -163,6 +163,45 @@ func (l LocalStack) Identities(ctx context.Context, spec Spec) ([]IdentityInfo, 
 	return identities, nil
 }
 
+// CreateIdentity implements CloudBrowser: register an SES identity for
+// verification. An identity containing "@" is verified as an email address,
+// anything else as a domain — matching how identityType classifies them. Both
+// calls are idempotent on LocalStack, which marks new identities as verified
+// immediately rather than sending a real confirmation.
+func (l LocalStack) CreateIdentity(ctx context.Context, spec Spec, identity string) error {
+	client, err := l.sesOpener()(spec.Env)
+	if err != nil {
+		return fmt.Errorf("connecting to ses: %w", err)
+	}
+
+	if identityType(identity) == "EMAIL_ADDRESS" {
+		_, err = client.VerifyEmailIdentity(ctx, &ses.VerifyEmailIdentityInput{
+			EmailAddress: aws.String(identity),
+		})
+	} else {
+		_, err = client.VerifyDomainIdentity(ctx, &ses.VerifyDomainIdentityInput{
+			Domain: aws.String(identity),
+		})
+	}
+	if err != nil {
+		return fmt.Errorf("verifying identity: %w", err)
+	}
+	return nil
+}
+
+// DeleteIdentity implements CloudBrowser: remove the SES identity (email
+// address or domain) from the emulated account.
+func (l LocalStack) DeleteIdentity(ctx context.Context, spec Spec, identity string) error {
+	client, err := l.sesOpener()(spec.Env)
+	if err != nil {
+		return fmt.Errorf("connecting to ses: %w", err)
+	}
+	if _, err := client.DeleteIdentity(ctx, &ses.DeleteIdentityInput{Identity: aws.String(identity)}); err != nil {
+		return fmt.Errorf("deleting identity: %w", err)
+	}
+	return nil
+}
+
 // identityType classifies an SES identity name the way the SESv2 API would
 // report it — an email address contains "@", anything else is a domain — so
 // the UI's type labels keep working across the v1/v2 switch.

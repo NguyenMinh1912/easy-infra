@@ -84,6 +84,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/profiles/{name}/services/{service}/queues", s.handleCloudDeleteQueue)
 	mux.HandleFunc("POST /api/profiles/{name}/services/{service}/queues/purge", s.handleCloudPurgeQueue)
 	mux.HandleFunc("GET /api/profiles/{name}/services/{service}/identities", s.handleCloudIdentities)
+	mux.HandleFunc("POST /api/profiles/{name}/services/{service}/identities", s.handleCloudCreateIdentity)
+	mux.HandleFunc("DELETE /api/profiles/{name}/services/{service}/identities", s.handleCloudDeleteIdentity)
 	mux.HandleFunc("GET /api/services/catalog", s.handleServiceCatalog)
 	mux.HandleFunc("POST /api/services/{name}/backup", s.handleStartBackup)
 	mux.HandleFunc("GET /api/services/{name}/backup-options", s.handleBackupOptions)

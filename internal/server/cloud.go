@@ -175,6 +175,60 @@ func (s *Server) handleCloudIdentities(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, identitiesResponse{Identities: identities})
 }
 
+// createIdentityRequest is the JSON body of a create-identity request.
+type createIdentityRequest struct {
+	Identity string `json:"identity"`
+}
+
+// handleCloudCreateIdentity registers a new SES identity for verification in the
+// named profile. An identity containing "@" is verified as an email address,
+// otherwise as a domain.
+func (s *Server) handleCloudCreateIdentity(w http.ResponseWriter, r *http.Request) {
+	browser, spec, ok := s.resolveCloudBrowser(w, r)
+	if !ok {
+		return
+	}
+	var req createIdentityRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	identity := strings.TrimSpace(req.Identity)
+	if identity == "" {
+		writeError(w, http.StatusBadRequest, "identity must not be empty")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), cloudTimeout)
+	defer cancel()
+	if err := browser.CreateIdentity(ctx, spec, identity); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleCloudDeleteIdentity removes the SES identity named by the `identity`
+// query parameter — the identity name the listing already carries.
+func (s *Server) handleCloudDeleteIdentity(w http.ResponseWriter, r *http.Request) {
+	browser, spec, ok := s.resolveCloudBrowser(w, r)
+	if !ok {
+		return
+	}
+	identity := r.URL.Query().Get("identity")
+	if identity == "" {
+		writeError(w, http.StatusBadRequest, "identity must not be empty")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), cloudTimeout)
+	defer cancel()
+	if err := browser.DeleteIdentity(ctx, spec, identity); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // resolveCloudBrowser maps the {name}/{service} path onto a cloud-browse-capable
 // service and the Spec for the profile's saved env. On failure it writes the
 // error response and returns ok=false. It mirrors resolveKeyBrowser.
