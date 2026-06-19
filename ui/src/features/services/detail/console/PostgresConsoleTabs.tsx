@@ -126,8 +126,12 @@ export function PostgresConsoleTabs({
           <div className="flex items-center gap-2">
             <TabsList variant="line" className="min-w-0 flex-1 overflow-x-auto">
               {tabs.map((tab) => (
-                <TabsTrigger key={tab.id} value={tab.id} className="pr-1">
-                  {tab.title}
+                <TabsTrigger
+                  key={tab.id}
+                  value={tab.id}
+                  className="w-40 flex-none justify-between pr-1"
+                >
+                  <span className="min-w-0 flex-1 truncate text-left">{tab.title}</span>
                   {tabs.length > 1 && (
                     <span
                       role="button"
