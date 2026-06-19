@@ -2,6 +2,10 @@
 
 Guidance for Claude Code (and humans) working in this repository.
 
+> See [`AGENTS.md`](./AGENTS.md) for the tool-agnostic agent entry point — a
+> concise orientation that indexes this file, [`CONVENTIONS.md`](./CONVENTIONS.md),
+> and [`ui/CONVENTIONS.md`](./ui/CONVENTIONS.md).
+
 ## What we build
 
 `easy-infra` is an **app** for managing a project's local/dev infrastructure.
