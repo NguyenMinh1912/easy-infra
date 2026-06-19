@@ -1,6 +1,11 @@
 package service
 
-import "context"
+import (
+	"context"
+	"fmt"
+
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+)
 
 // LocalStack provisions a LocalStack service emulating AWS APIs locally.
 //
@@ -82,8 +87,20 @@ func (LocalStack) ValidateEnv(cfg Config) error {
 // Apply implements Service.
 func (LocalStack) Apply(context.Context, Spec) error { return notImplemented("localstack", "apply") }
 
-// Health implements Service.
-func (LocalStack) Health(context.Context, Spec) error { return notImplemented("localstack", "health") }
+// Health implements Service: connect to the configured endpoint and confirm
+// LocalStack is reachable by listing SQS queues. Like minio's bucket listing,
+// it is a cheap round-trip to the edge port that the SDK signs and LocalStack
+// answers — SQS is one of the services emulated by default.
+func (l LocalStack) Health(ctx context.Context, spec Spec) error {
+	client, err := l.sqsOpener()(spec.Env)
+	if err != nil {
+		return fmt.Errorf("connecting to localstack: %w", err)
+	}
+	if _, err := client.ListQueues(ctx, &sqs.ListQueuesInput{}); err != nil {
+		return fmt.Errorf("localstack not ready: %w", err)
+	}
+	return nil
+}
 
 // Backup implements Service.
 func (LocalStack) Backup(context.Context, Spec) error { return notImplemented("localstack", "backup") }

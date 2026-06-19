@@ -86,10 +86,10 @@ func TestLifecycleSeam(t *testing.T) {
 			"backup": svc.Backup,
 			"clean":  svc.Clean,
 		}
-		// Redis implements Health (a PING against the configured server), so it
-		// no longer reports ErrNotImplemented for that op; only its provisioning
-		// lifecycle remains unimplemented.
-		if name == "redis" {
+		// Redis and localstack implement Health (a PING / SQS list against the
+		// configured server), so they no longer report ErrNotImplemented for that
+		// op; only their provisioning lifecycle remains unimplemented.
+		if name == "redis" || name == "localstack" {
 			delete(ops, "health")
 		}
 		for op, fn := range ops {
