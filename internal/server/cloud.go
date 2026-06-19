@@ -32,6 +32,14 @@ type identitiesResponse struct {
 	Error      string                 `json:"error,omitempty"`
 }
 
+// messagesResponse is the JSON shape of an identity's SES message listing. Like
+// the other listings, an unreachable endpoint stays 200 with the reason in
+// Error and Messages empty.
+type messagesResponse struct {
+	Messages []service.MessageInfo `json:"messages"`
+	Error    string                `json:"error,omitempty"`
+}
+
 // healthResponse is the JSON shape of the LocalStack health snapshot. Like the
 // listings, an unreachable endpoint stays 200 with the reason in Error and the
 // service map empty, so the UI can render an "unreachable" state.
@@ -173,6 +181,29 @@ func (s *Server) handleCloudIdentities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, identitiesResponse{Identities: identities})
+}
+
+// handleCloudMessages lists the SES messages involving the identity named by
+// the `identity` query parameter, for the identity's mail list page.
+func (s *Server) handleCloudMessages(w http.ResponseWriter, r *http.Request) {
+	browser, spec, ok := s.resolveCloudBrowser(w, r)
+	if !ok {
+		return
+	}
+	identity := r.URL.Query().Get("identity")
+	if identity == "" {
+		writeError(w, http.StatusBadRequest, "identity must not be empty")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), cloudTimeout)
+	defer cancel()
+	messages, err := browser.Messages(ctx, spec, identity)
+	if err != nil {
+		writeJSON(w, http.StatusOK, messagesResponse{Messages: []service.MessageInfo{}, Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, messagesResponse{Messages: messages})
 }
 
 // createIdentityRequest is the JSON body of a create-identity request.

@@ -163,6 +163,98 @@ func (l LocalStack) Identities(ctx context.Context, spec Spec) ([]IdentityInfo, 
 	return identities, nil
 }
 
+// Messages implements CloudBrowser: list the SES messages the emulator recorded
+// that involve the given identity, newest first. LocalStack keeps every message
+// sent through SES in an in-memory store exposed at the `/_aws/ses` developer
+// endpoint (there is no SDK call for it), so this is a plain HTTP GET like the
+// health probe. A message matches the identity when the identity is its sender
+// or one of its recipients; a domain identity also matches any address at that
+// domain.
+func (l LocalStack) Messages(ctx context.Context, spec Spec, identity string) ([]MessageInfo, error) {
+	p, err := localstackParamsFrom(spec.Env)
+	if err != nil {
+		return nil, err
+	}
+	body, err := l.messagesGetter()(ctx, p.endpoint())
+	if err != nil {
+		return nil, fmt.Errorf("reaching localstack: %w", err)
+	}
+
+	// The store nests messages under "messages"; each carries its sender,
+	// recipients split across To/Cc/Bcc, and either a subject+body (SendEmail)
+	// or only raw data (SendRawEmail). Decode the fields we surface and tolerate
+	// the rest.
+	var raw struct {
+		Messages []struct {
+			ID          string `json:"Id"`
+			Source      string `json:"Source"`
+			Subject     string `json:"Subject"`
+			Timestamp   string `json:"Timestamp"`
+			Destination struct {
+				ToAddresses  []string `json:"ToAddresses"`
+				CcAddresses  []string `json:"CcAddresses"`
+				BccAddresses []string `json:"BccAddresses"`
+			} `json:"Destination"`
+			Body struct {
+				TextPart string `json:"text_part"`
+				HTMLPart string `json:"html_part"`
+			} `json:"Body"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("parsing localstack ses messages: %w", err)
+	}
+
+	messages := make([]MessageInfo, 0, len(raw.Messages))
+	for _, m := range raw.Messages {
+		dest := make([]string, 0, len(m.Destination.ToAddresses)+len(m.Destination.CcAddresses)+len(m.Destination.BccAddresses))
+		dest = append(dest, m.Destination.ToAddresses...)
+		dest = append(dest, m.Destination.CcAddresses...)
+		dest = append(dest, m.Destination.BccAddresses...)
+
+		if !messageInvolves(identity, m.Source, dest) {
+			continue
+		}
+
+		body := m.Body.TextPart
+		if body == "" {
+			body = m.Body.HTMLPart
+		}
+		messages = append(messages, MessageInfo{
+			ID:          m.ID,
+			Source:      m.Source,
+			Destination: dest,
+			Subject:     m.Subject,
+			Body:        body,
+			Timestamp:   m.Timestamp,
+		})
+	}
+	// Newest first, so the most recent mail is at the top of the list. The store
+	// returns messages oldest-first.
+	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
+		messages[i], messages[j] = messages[j], messages[i]
+	}
+	return messages, nil
+}
+
+// messageInvolves reports whether the identity is the message's sender or one of
+// its recipients. A domain identity (no "@") also matches any address at that
+// domain, so a domain's mail list shows every message to or from it.
+func messageInvolves(identity, source string, dest []string) bool {
+	addresses := append([]string{source}, dest...)
+	domain := identityType(identity) == "DOMAIN"
+	suffix := "@" + identity
+	for _, addr := range addresses {
+		if strings.EqualFold(addr, identity) {
+			return true
+		}
+		if domain && strings.HasSuffix(strings.ToLower(addr), strings.ToLower(suffix)) {
+			return true
+		}
+	}
+	return false
+}
+
 // CreateIdentity implements CloudBrowser: register an SES identity for
 // verification. An identity containing "@" is verified as an email address,
 // anything else as a domain — matching how identityType classifies them. Both
