@@ -1,13 +1,17 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Check,
   ChevronsUpDown,
+  Download,
   FolderOpen,
   Pencil,
   Plus,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
+
+import { exportWorkspaceUrl } from "@/services/api";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -40,6 +44,7 @@ export function WorkspaceSwitcher() {
   const { state, actions } = useWorkspaces();
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<Workspace | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const data = state.status === "success" ? state.data : null;
   const active = data?.workspaces.find((w) => w.id === data.active) ?? null;
@@ -65,6 +70,29 @@ export function WorkspaceSwitcher() {
       if (w.id === data?.active) reloadApp();
     } catch (cause) {
       toast.error("Could not remove workspace", {
+        description: cause instanceof Error ? cause.message : String(cause),
+      });
+    }
+  }
+
+  function handleExport(w: Workspace) {
+    // The endpoint sends the file with a Content-Disposition header, so a
+    // hidden anchor click lets the browser save it without leaving the app.
+    const a = document.createElement("a");
+    a.href = exportWorkspaceUrl(w.id);
+    a.download = `${w.name}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  async function handleImportFile(file: File) {
+    try {
+      await actions.importFile(file);
+      // The imported workspace becomes active, so reload to reflect it app-wide.
+      reloadApp();
+    } catch (cause) {
+      toast.error("Could not import workspace", {
         description: cause instanceof Error ? cause.message : String(cause),
       });
     }
@@ -117,6 +145,18 @@ export function WorkspaceSwitcher() {
                 <button
                   type="button"
                   className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  aria-label={`Export ${w.name}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleExport(w);
+                  }}
+                >
+                  <Download className="size-3.5" aria-hidden />
+                </button>
+                <button
+                  type="button"
+                  className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                   aria-label={`Rename ${w.name}`}
                   onClick={(e) => {
                     e.preventDefault();
@@ -146,8 +186,25 @@ export function WorkspaceSwitcher() {
             <Plus className="size-4" aria-hidden />
             Create workspace…
           </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => importInputRef.current?.click()}>
+            <Upload className="size-4" aria-hidden />
+            Import workspace…
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <input
+        ref={importInputRef}
+        type="file"
+        accept="application/json,.json"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          // Reset so selecting the same file again still fires onChange.
+          e.target.value = "";
+          if (file) void handleImportFile(file);
+        }}
+      />
 
       <CreateWorkspaceDialog
         open={createOpen}

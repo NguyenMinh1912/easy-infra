@@ -5,6 +5,7 @@ import {
   activateWorkspace,
   createWorkspace,
   getWorkspaces,
+  importWorkspace,
   removeWorkspace,
   renameWorkspace,
 } from "@/services/api";
@@ -14,6 +15,7 @@ import type { WorkspacesResult } from "@/types/workspace";
 export interface WorkspaceActions {
   activate: (id: number) => Promise<void>;
   create: (name: string) => Promise<void>;
+  importFile: (file: File) => Promise<void>;
   rename: (id: number, name: string) => Promise<void>;
   remove: (id: number) => Promise<void>;
 }
@@ -42,6 +44,9 @@ export function useWorkspaces(): {
       },
       create: async (name) => {
         await createWorkspace(name);
+      },
+      importFile: async (file) => {
+        await importWorkspace(file);
       },
       rename: async (id, name) => {
         await renameWorkspace(id, name);
