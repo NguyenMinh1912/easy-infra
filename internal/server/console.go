@@ -36,13 +36,14 @@ type queryRequest struct {
 // check, a failing statement is an expected outcome: OK stays 200 and the
 // reason lands in Error with the result fields empty.
 type queryResponse struct {
-	Columns    []string `json:"columns"`
-	Rows       [][]any  `json:"rows"`
-	RowCount   int      `json:"rowCount"`
-	Command    string   `json:"command"`
-	Truncated  bool     `json:"truncated"`
-	DurationMs int64    `json:"durationMs"`
-	Error      string   `json:"error,omitempty"`
+	Columns    []string              `json:"columns"`
+	Rows       [][]any               `json:"rows"`
+	RowCount   int                   `json:"rowCount"`
+	Command    string                `json:"command"`
+	Truncated  bool                  `json:"truncated"`
+	DurationMs int64                 `json:"durationMs"`
+	Editable   *service.EditableInfo `json:"editable,omitempty"`
+	Error      string                `json:"error,omitempty"`
 }
 
 // schemaResponse is the JSON shape of a schema introspection. Introspection
@@ -106,6 +107,7 @@ func (s *Server) handleConsoleQuery(w http.ResponseWriter, r *http.Request) {
 		Command:    res.Command,
 		Truncated:  res.Truncated,
 		DurationMs: elapsed,
+		Editable:   res.Editable,
 	})
 }
 
@@ -126,10 +128,117 @@ func (s *Server) handleConsoleSchema(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, schemaResponse{Tables: info.Tables, CurrentSchema: info.CurrentSchema})
 }
 
+// rowMutationRequest identifies a single row to edit, addressed by its primary
+// key. Column and Value apply to updates only; a null Value sets the column to
+// NULL. Values travel as the text shown in the result so the database coerces
+// them to each column's actual type.
+type rowMutationRequest struct {
+	Schema string            `json:"schema"`
+	Table  string            `json:"table"`
+	Key    map[string]string `json:"key"`
+	Column string            `json:"column"`
+	Value  *string           `json:"value"`
+}
+
+// commandResponse reports a row mutation's command tag, e.g. "UPDATE 1".
+type commandResponse struct {
+	Command string `json:"command"`
+}
+
+// handleRowUpdate sets one column of a single row in the result's source table.
+func (s *Server) handleRowUpdate(w http.ResponseWriter, r *http.Request) {
+	var req rowMutationRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	editor, spec, ok := s.resolveRowEditor(w, r, &req)
+	if !ok {
+		return
+	}
+	if strings.TrimSpace(req.Column) == "" {
+		writeError(w, http.StatusBadRequest, "column must not be empty")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), queryTimeout)
+	defer cancel()
+	cmd, err := editor.UpdateRow(ctx, spec, service.RowMutation{
+		Schema: req.Schema, Table: req.Table, Key: req.Key, Column: req.Column, Value: req.Value,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, commandResponse{Command: cmd})
+}
+
+// handleRowDelete removes a single row from the result's source table.
+func (s *Server) handleRowDelete(w http.ResponseWriter, r *http.Request) {
+	var req rowMutationRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	editor, spec, ok := s.resolveRowEditor(w, r, &req)
+	if !ok {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), queryTimeout)
+	defer cancel()
+	cmd, err := editor.DeleteRow(ctx, spec, service.RowMutation{
+		Schema: req.Schema, Table: req.Table, Key: req.Key,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, commandResponse{Command: cmd})
+}
+
 // resolveQuerier maps the {name}/{service} path onto a console-capable service
 // and the Spec for the profile's saved env. On failure it writes the error
 // response and returns ok=false.
 func (s *Server) resolveQuerier(w http.ResponseWriter, r *http.Request) (service.Querier, service.Spec, bool) {
+	svc, spec, ok := s.resolveConsoleService(w, r)
+	if !ok {
+		return nil, service.Spec{}, false
+	}
+	querier, ok := svc.(service.Querier)
+	if !ok {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("service %q does not support a console", r.PathValue("service")))
+		return nil, service.Spec{}, false
+	}
+	return querier, spec, true
+}
+
+// resolveRowEditor maps the path onto a row-editing service and validates the
+// mutation's row identity (a table and a non-empty primary key are required to
+// target exactly one row). On failure it writes the error and returns ok=false.
+func (s *Server) resolveRowEditor(w http.ResponseWriter, r *http.Request, req *rowMutationRequest) (service.RowEditor, service.Spec, bool) {
+	if strings.TrimSpace(req.Schema) == "" || strings.TrimSpace(req.Table) == "" {
+		writeError(w, http.StatusBadRequest, "schema and table must not be empty")
+		return nil, service.Spec{}, false
+	}
+	if len(req.Key) == 0 {
+		writeError(w, http.StatusBadRequest, "key must identify the row to edit")
+		return nil, service.Spec{}, false
+	}
+	svc, spec, ok := s.resolveConsoleService(w, r)
+	if !ok {
+		return nil, service.Spec{}, false
+	}
+	editor, ok := svc.(service.RowEditor)
+	if !ok {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("service %q does not support editing rows", r.PathValue("service")))
+		return nil, service.Spec{}, false
+	}
+	return editor, spec, true
+}
+
+// resolveConsoleService maps the {name}/{service} path onto the registered
+// service and the Spec for the profile's saved env. On failure it writes the
+// error response and returns ok=false.
+func (s *Server) resolveConsoleService(w http.ResponseWriter, r *http.Request) (service.Service, service.Spec, bool) {
 	profileName := r.PathValue("name")
 	svcID := r.PathValue("service")
 
@@ -154,10 +263,5 @@ func (s *Server) resolveQuerier(w http.ResponseWriter, r *http.Request) (service
 		writeError(w, http.StatusNotFound, fmt.Sprintf("unknown service %q", svcType))
 		return nil, service.Spec{}, false
 	}
-	querier, ok := svc.(service.Querier)
-	if !ok {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("service %q does not support a console", svcID))
-		return nil, service.Spec{}, false
-	}
-	return querier, service.Spec{Profile: profileName, Env: entry.Config}, true
+	return svc, service.Spec{Profile: profileName, Env: entry.Config}, true
 }

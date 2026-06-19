@@ -17,7 +17,30 @@ export interface QueryResult {
   truncated: boolean;
   /** Server-measured execution time in milliseconds. */
   durationMs: number;
+  /**
+   * Present when the result maps back to a single editable table, enabling
+   * inline cell edits and row deletes. Absent for joins, expression results,
+   * or tables without a usable primary key.
+   */
+  editable?: EditableInfo;
   error?: string;
+}
+
+/**
+ * Describes how a single-table result maps back to its source table so the
+ * console can edit rows in place.
+ */
+export interface EditableInfo {
+  schema: string;
+  table: string;
+  /** Primary-key column names; all are present among the result columns. */
+  primaryKey: string[];
+  /**
+   * Parallel to {@link QueryResult.columns}: the source table column each
+   * result column maps to, or "" when the column isn't directly updatable
+   * (an expression, or a column we couldn't resolve).
+   */
+  columns: string[];
 }
 
 /** One queryable table and its columns, for editor autocomplete. */

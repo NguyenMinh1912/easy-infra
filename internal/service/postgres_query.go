@@ -4,7 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // maxQueryRows caps how many rows a console query returns, keeping the JSON
@@ -27,9 +31,14 @@ func (p Postgres) Query(ctx context.Context, spec Spec, sql string) (*QueryResul
 	}
 	defer rows.Close()
 
-	columns := make([]string, 0, len(rows.FieldDescriptions()))
-	for _, fd := range rows.FieldDescriptions() {
-		columns = append(columns, fd.Name)
+	// Capture the field descriptions' source-table metadata now: it drives
+	// editability detection below and may be reset once rows is closed.
+	fds := rows.FieldDescriptions()
+	columns := make([]string, len(fds))
+	metas := make([]colMeta, len(fds))
+	for i, fd := range fds {
+		columns[i] = fd.Name
+		metas[i] = colMeta{name: fd.Name, tableOID: fd.TableOID, attnum: fd.TableAttributeNumber}
 	}
 
 	out := make([][]any, 0)
@@ -63,13 +72,188 @@ func (p Postgres) Query(ctx context.Context, spec Spec, sql string) (*QueryResul
 		// No row set: the statement reports what it affected instead.
 		rowCount = int(tag.RowsAffected())
 	}
-	return &QueryResult{
+	result := &QueryResult{
 		Columns:   columns,
 		Rows:      out,
 		RowCount:  rowCount,
 		Command:   tag.String(),
 		Truncated: truncated,
-	}, nil
+	}
+	if len(columns) > 0 {
+		// Best-effort: a result that isn't a simple single-table selection (or a
+		// failed catalog lookup) just stays read-only.
+		result.Editable = editableInfo(ctx, conn, metas)
+	}
+	return result, nil
+}
+
+// colMeta is the source-table provenance of one result column, taken from its
+// pgx field description: the table it came from and its attribute number there,
+// both zero for expressions and other non-column results.
+type colMeta struct {
+	name     string
+	tableOID uint32
+	attnum   uint16
+}
+
+// editableInfo reports how a result maps back to a single editable table, or
+// nil when it cannot be edited safely. A result qualifies only when every
+// column that traces to a table traces to the same one (so joins and pure
+// expressions are read-only), that table has a primary key, and all of the
+// key's columns appear in the result so each row is uniquely addressable.
+func editableInfo(ctx context.Context, conn pgConn, metas []colMeta) *EditableInfo {
+	var oid uint32
+	for _, m := range metas {
+		if m.tableOID == 0 {
+			continue
+		}
+		if oid == 0 {
+			oid = m.tableOID
+		} else if oid != m.tableOID {
+			return nil
+		}
+	}
+	if oid == 0 {
+		return nil
+	}
+
+	schema, table, ok := tableIdentity(ctx, conn, oid)
+	if !ok {
+		return nil
+	}
+	names, pk, ok := tableColumns(ctx, conn, oid)
+	if !ok || len(pk) == 0 {
+		return nil
+	}
+
+	cols := make([]string, len(metas))
+	present := make(map[string]bool, len(metas))
+	for i, m := range metas {
+		if m.tableOID == oid && m.attnum > 0 {
+			if name, ok := names[int(m.attnum)]; ok {
+				cols[i] = name
+				present[name] = true
+			}
+		}
+	}
+	for _, k := range pk {
+		if !present[k] {
+			return nil
+		}
+	}
+	return &EditableInfo{Schema: schema, Table: table, PrimaryKey: pk, Columns: cols}
+}
+
+// tableIdentity resolves a table OID to its schema and name.
+func tableIdentity(ctx context.Context, conn pgConn, oid uint32) (schema, table string, ok bool) {
+	err := conn.QueryRow(ctx, `
+		SELECT n.nspname, c.relname
+		FROM pg_class c
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE c.oid = $1`, oid).Scan(&schema, &table)
+	if err != nil {
+		return "", "", false
+	}
+	return schema, table, true
+}
+
+// tableColumns returns the table's live columns keyed by attribute number, plus
+// the names of its primary-key columns.
+func tableColumns(ctx context.Context, conn pgConn, oid uint32) (names map[int]string, pk []string, ok bool) {
+	rows, err := conn.Query(ctx, `
+		SELECT a.attnum, a.attname, COALESCE(i.indisprimary, false)
+		FROM pg_attribute a
+		LEFT JOIN pg_index i
+			ON i.indrelid = a.attrelid AND i.indisprimary AND a.attnum = ANY(i.indkey)
+		WHERE a.attrelid = $1 AND a.attnum > 0 AND NOT a.attisdropped
+		ORDER BY a.attnum`, oid)
+	if err != nil {
+		return nil, nil, false
+	}
+	defer rows.Close()
+
+	names = make(map[int]string)
+	for rows.Next() {
+		var attnum int
+		var name string
+		var isPK bool
+		if err := rows.Scan(&attnum, &name, &isPK); err != nil {
+			return nil, nil, false
+		}
+		names[attnum] = name
+		if isPK {
+			pk = append(pk, name)
+		}
+	}
+	if rows.Err() != nil {
+		return nil, nil, false
+	}
+	return names, pk, true
+}
+
+// UpdateRow implements RowEditor: set one column of the row addressed by its
+// primary key. Identifiers are quoted and values bound as parameters, so the
+// row is matched by value and the database coerces each text value to the
+// column's actual type (via the simple protocol's unknown-type literals).
+func (p Postgres) UpdateRow(ctx context.Context, spec Spec, m RowMutation) (string, error) {
+	conn, err := p.connect(ctx, spec.Env, "")
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close(ctx)
+
+	var value any
+	if m.Value != nil {
+		value = *m.Value
+	}
+	where, keyArgs := whereClause(m.Key, 2) // $1 is the SET value
+	sql := fmt.Sprintf("UPDATE %s.%s SET %s = $1 WHERE %s",
+		quoteIdent(m.Schema), quoteIdent(m.Table), quoteIdent(m.Column), where)
+	args := append([]any{pgx.QueryExecModeSimpleProtocol, value}, keyArgs...)
+	tag, err := conn.Exec(ctx, sql, args...)
+	if err != nil {
+		return "", fmt.Errorf("updating row: %w", err)
+	}
+	return tag.String(), nil
+}
+
+// DeleteRow implements RowEditor: remove the row addressed by its primary key.
+func (p Postgres) DeleteRow(ctx context.Context, spec Spec, m RowMutation) (string, error) {
+	conn, err := p.connect(ctx, spec.Env, "")
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close(ctx)
+
+	where, keyArgs := whereClause(m.Key, 1)
+	sql := fmt.Sprintf("DELETE FROM %s.%s WHERE %s",
+		quoteIdent(m.Schema), quoteIdent(m.Table), where)
+	args := append([]any{pgx.QueryExecModeSimpleProtocol}, keyArgs...)
+	tag, err := conn.Exec(ctx, sql, args...)
+	if err != nil {
+		return "", fmt.Errorf("deleting row: %w", err)
+	}
+	return tag.String(), nil
+}
+
+// whereClause builds an "AND"-joined equality predicate over the primary-key
+// columns, with placeholders numbered from start, and returns the matching
+// argument values. Columns are sorted so placeholders and arguments stay
+// aligned regardless of map iteration order.
+func whereClause(key map[string]string, start int) (string, []any) {
+	names := make([]string, 0, len(key))
+	for name := range key {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	conds := make([]string, len(names))
+	args := make([]any, len(names))
+	for i, name := range names {
+		conds[i] = fmt.Sprintf("%s = $%d", quoteIdent(name), start+i)
+		args[i] = key[name]
+	}
+	return strings.Join(conds, " AND "), args
 }
 
 // Schema implements Querier: one pass over information_schema.columns, grouped

@@ -5,6 +5,9 @@ import type { QueryResult, SchemaInfo } from "@/types/console";
 
 import { apiGet, apiSend } from "./client";
 
+/** Identifies a single result row by its primary-key column values. */
+export type RowKey = Record<string, string>;
+
 /**
  * Execute one statement against the named profile's service. Statement
  * failures (bad SQL, unreachable database) resolve successfully with `error`
@@ -25,6 +28,47 @@ export async function executeQuery(
     "POST",
     `/profiles/${encodeURIComponent(profile)}/services/${encodeURIComponent(service)}/query`,
     db === undefined ? { sql } : { sql, db },
+    signal,
+  );
+}
+
+/**
+ * Update one column of a single result row, addressed by its primary key.
+ * `value` is the new cell text, or null to set the column to NULL. The server
+ * builds a parameterized UPDATE and coerces the text to the column's type;
+ * resolves with the command tag (e.g. "UPDATE 1").
+ */
+export async function updateRow(
+  profile: string,
+  service: string,
+  edit: {
+    schema: string;
+    table: string;
+    key: RowKey;
+    column: string;
+    value: string | null;
+  },
+  signal?: AbortSignal,
+): Promise<{ command: string }> {
+  return apiSend<{ command: string }>(
+    "PATCH",
+    `/profiles/${encodeURIComponent(profile)}/services/${encodeURIComponent(service)}/row`,
+    edit,
+    signal,
+  );
+}
+
+/** Delete a single result row, addressed by its primary key. */
+export async function deleteRow(
+  profile: string,
+  service: string,
+  row: { schema: string; table: string; key: RowKey },
+  signal?: AbortSignal,
+): Promise<{ command: string }> {
+  return apiSend<{ command: string }>(
+    "DELETE",
+    `/profiles/${encodeURIComponent(profile)}/services/${encodeURIComponent(service)}/row`,
+    row,
     signal,
   );
 }

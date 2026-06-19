@@ -27,7 +27,7 @@ export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> 
  * `undefined`, so callers expecting no body should use `apiSend<void>`.
  */
 export async function apiSend<T>(
-  method: "POST" | "PUT" | "DELETE",
+  method: "POST" | "PUT" | "PATCH" | "DELETE",
   path: string,
   body?: unknown,
   signal?: AbortSignal,

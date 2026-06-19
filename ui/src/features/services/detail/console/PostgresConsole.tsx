@@ -44,7 +44,9 @@ interface PostgresConsoleProps {
 type RunState =
   | { status: "idle" }
   | { status: "running" }
-  | { status: "done"; result: QueryResult }
+  // `statement` is the exact SQL that produced this result, so inline edits can
+  // re-run it to refresh — independent of where the cursor sits afterwards.
+  | { status: "done"; result: QueryResult; statement: string }
   | { status: "failed"; error: string };
 
 /**
@@ -86,6 +88,36 @@ export function PostgresConsole({
   const controllerRef = useRef<AbortController | null>(null);
   useEffect(() => () => controllerRef.current?.abort(), []);
 
+  // Execute one specific statement, replacing any in-flight run. Used both for
+  // user-triggered runs and to refresh after an inline row edit.
+  const execute = useCallback(
+    (statement: string) => {
+      if (!statement) return;
+      controllerRef.current?.abort();
+      const controller = new AbortController();
+      controllerRef.current = controller;
+      setRun({ status: "running" });
+
+      executeQuery(profile, service, statement, controller.signal)
+        .then((result) => {
+          if (controller.signal.aborted) return;
+          if (result.error) {
+            setRun({ status: "failed", error: result.error });
+          } else {
+            setRun({ status: "done", result, statement });
+          }
+        })
+        .catch((cause: unknown) => {
+          if (controller.signal.aborted) return;
+          setRun({
+            status: "failed",
+            error: cause instanceof Error ? cause.message : String(cause),
+          });
+        });
+    },
+    [profile, service],
+  );
+
   const runQuery = useCallback(() => {
     // Run the selection if there is one, otherwise the statement under the
     // cursor; fall back to the whole buffer before the editor mounts.
@@ -93,29 +125,8 @@ export function PostgresConsole({
     const statement = view
       ? statementToRun(view.state.doc.toString(), view.state.selection.main)
       : sql.trim();
-    if (!statement) return;
-    controllerRef.current?.abort();
-    const controller = new AbortController();
-    controllerRef.current = controller;
-    setRun({ status: "running" });
-
-    executeQuery(profile, service, statement, controller.signal)
-      .then((result) => {
-        if (controller.signal.aborted) return;
-        if (result.error) {
-          setRun({ status: "failed", error: result.error });
-        } else {
-          setRun({ status: "done", result });
-        }
-      })
-      .catch((cause: unknown) => {
-        if (controller.signal.aborted) return;
-        setRun({
-          status: "failed",
-          error: cause instanceof Error ? cause.message : String(cause),
-        });
-      });
-  }, [profile, service, sql]);
+    execute(statement);
+  }, [execute, sql]);
 
   // Fire the initial run for a pre-filled console. The buffer holds a single
   // statement, so runQuery falls back to it even before the editor view (and
@@ -193,7 +204,14 @@ export function PostgresConsole({
           </div>
         </Alert>
       )}
-      {run.status === "done" && <QueryResultTable result={run.result} />}
+      {run.status === "done" && (
+        <QueryResultTable
+          result={run.result}
+          profile={profile}
+          service={service}
+          onChanged={() => execute(run.statement)}
+        />
+      )}
     </div>
   );
 }
