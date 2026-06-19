@@ -26,7 +26,7 @@ GO := $(shell command -v go 2>/dev/null || echo $(LOCAL_GO_BIN)/go)
 
 .DEFAULT_GOAL := build
 
-.PHONY: build install uninstall test vet fmt clean ui ui-install ui-dev ensure-go
+.PHONY: build install uninstall test vet fmt clean ui ui-install ui-dev dev ensure-go
 
 build:
 	$(GO) build -o $(BIN) .
@@ -49,6 +49,13 @@ ui: ui-install
 
 ui-dev:
 	cd ui && npm run dev
+
+# One-command dev mode with hot reload, no full build: runs the Go backend under
+# air (rebuilds/reruns `easy-infra ui` on .go changes) and the Vite dev server
+# (HMR) together, tearing both down on Ctrl+C. Open the Vite URL it prints
+# (http://localhost:5173). See scripts/dev.sh.
+dev:
+	@scripts/dev.sh
 
 # Install easy-infra as a global command. Bootstraps a Go toolchain if the
 # user has none, builds the UI bundle so the installed binary embeds the
