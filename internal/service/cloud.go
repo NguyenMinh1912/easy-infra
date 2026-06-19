@@ -39,10 +39,10 @@ type CloudBrowser interface {
 	// with their verification status — the backend of the SES detail page.
 	Identities(ctx context.Context, spec Spec) ([]IdentityInfo, error)
 
-	// Messages lists the SES messages sent through the emulated account that
-	// involve the given identity (as sender or recipient) — the backend of an
-	// identity's mail list page.
-	Messages(ctx context.Context, spec Spec, identity string) ([]MessageInfo, error)
+	// IdentityMessages lists the SES messages sent through the emulated account
+	// that involve the given identity (as sender or recipient) — the backend of
+	// an identity's mail list page.
+	IdentityMessages(ctx context.Context, spec Spec, identity string) ([]MailInfo, error)
 
 	// CreateIdentity registers a new SES identity for verification. An identity
 	// containing "@" is verified as an email address, otherwise as a domain.
@@ -107,10 +107,10 @@ type IdentityInfo struct {
 	Verified bool `json:"verified"`
 }
 
-// MessageInfo is one SES message recorded by the emulator, shaped for JSON. It
+// MailInfo is one SES message recorded by the emulator, shaped for JSON. It
 // covers the SendEmail shape (subject + body); raw messages contribute their
 // recipients and source but leave subject/body empty.
-type MessageInfo struct {
+type MailInfo struct {
 	// ID is the emulator's message id.
 	ID string `json:"id"`
 	// Source is the sender (the "From" address).

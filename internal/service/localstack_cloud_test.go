@@ -376,7 +376,7 @@ func TestLocalStackDeleteIdentity(t *testing.T) {
 	}
 }
 
-func TestLocalStackMessages(t *testing.T) {
+func TestLocalStackIdentityMessages(t *testing.T) {
 	// Two messages from dev@example.com, one unrelated. Oldest first, as the
 	// store returns them.
 	const body = `{"messages":[
@@ -391,9 +391,9 @@ func TestLocalStackMessages(t *testing.T) {
 		return []byte(body), nil
 	}}
 
-	msgs, err := ls.Messages(context.Background(), Spec{Env: Config{"host": "localhost"}}, "dev@example.com")
+	msgs, err := ls.IdentityMessages(context.Background(), Spec{Env: Config{"host": "localhost"}}, "dev@example.com")
 	if err != nil {
-		t.Fatalf("Messages: %v", err)
+		t.Fatalf("IdentityMessages: %v", err)
 	}
 	if len(msgs) != 2 {
 		t.Fatalf("got %d messages, want 2 (the unrelated one filtered out)", len(msgs))
@@ -414,7 +414,7 @@ func TestLocalStackMessages(t *testing.T) {
 	}
 }
 
-func TestLocalStackMessagesDomainIdentity(t *testing.T) {
+func TestLocalStackIdentityMessagesDomainIdentity(t *testing.T) {
 	const body = `{"messages":[
 		{"Id":"1","Source":"dev@example.com","Destination":{"ToAddresses":["a@b.com"]}},
 		{"Id":"2","Source":"x@y.com","Destination":{"ToAddresses":["ops@example.com"]}},
@@ -424,9 +424,9 @@ func TestLocalStackMessagesDomainIdentity(t *testing.T) {
 		return []byte(body), nil
 	}}
 
-	msgs, err := ls.Messages(context.Background(), Spec{Env: Config{"host": "localhost"}}, "example.com")
+	msgs, err := ls.IdentityMessages(context.Background(), Spec{Env: Config{"host": "localhost"}}, "example.com")
 	if err != nil {
-		t.Fatalf("Messages: %v", err)
+		t.Fatalf("IdentityMessages: %v", err)
 	}
 	// A domain identity matches any address at the domain — id 1 (sender) and
 	// id 2 (recipient), but not id 3.
@@ -435,11 +435,11 @@ func TestLocalStackMessagesDomainIdentity(t *testing.T) {
 	}
 }
 
-func TestLocalStackMessagesUnreachable(t *testing.T) {
+func TestLocalStackIdentityMessagesUnreachable(t *testing.T) {
 	ls := LocalStack{openMessages: func(context.Context, string) ([]byte, error) {
 		return nil, errors.New("connection refused")
 	}}
-	if _, err := ls.Messages(context.Background(), Spec{Env: Config{"host": "localhost"}}, "dev@example.com"); err == nil {
+	if _, err := ls.IdentityMessages(context.Background(), Spec{Env: Config{"host": "localhost"}}, "dev@example.com"); err == nil {
 		t.Fatal("expected an error when the messages GET fails")
 	}
 }

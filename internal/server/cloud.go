@@ -41,12 +41,12 @@ type identitiesResponse struct {
 	Error      string                 `json:"error,omitempty"`
 }
 
-// messagesResponse is the JSON shape of an identity's SES message listing. Like
+// mailResponse is the JSON shape of an identity's SES message listing. Like
 // the other listings, an unreachable endpoint stays 200 with the reason in
 // Error and Messages empty.
-type messagesResponse struct {
-	Messages []service.MessageInfo `json:"messages"`
-	Error    string                `json:"error,omitempty"`
+type mailResponse struct {
+	Messages []service.MailInfo `json:"messages"`
+	Error    string             `json:"error,omitempty"`
 }
 
 // healthResponse is the JSON shape of the LocalStack health snapshot. Like the
@@ -240,12 +240,12 @@ func (s *Server) handleCloudMessages(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), cloudTimeout)
 	defer cancel()
-	messages, err := browser.Messages(ctx, spec, identity)
+	messages, err := browser.IdentityMessages(ctx, spec, identity)
 	if err != nil {
-		writeJSON(w, http.StatusOK, messagesResponse{Messages: []service.MessageInfo{}, Error: err.Error()})
+		writeJSON(w, http.StatusOK, mailResponse{Messages: []service.MailInfo{}, Error: err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, messagesResponse{Messages: messages})
+	writeJSON(w, http.StatusOK, mailResponse{Messages: messages})
 }
 
 // createIdentityRequest is the JSON body of a create-identity request.
