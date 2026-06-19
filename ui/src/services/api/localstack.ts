@@ -117,3 +117,43 @@ export async function listIdentities(
     signal,
   );
 }
+
+/**
+ * Register an SES identity for verification in the profile. An identity
+ * containing `@` is verified as an email address, otherwise as a domain. The
+ * identity is created in `region` when one is selected, matching the region the
+ * listing reflects. Resolves on success (204) and rejects with an
+ * {@link ApiError} otherwise.
+ */
+export async function createIdentity(
+  profile: string,
+  service: string,
+  identity: string,
+  region?: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return apiSend<void>(
+    "POST",
+    scoped(`${base(profile, service)}/identities`, region),
+    { identity },
+    signal,
+  );
+}
+
+/** Delete the SES `identity` from the profile, in `region` when selected. */
+export async function deleteIdentity(
+  profile: string,
+  service: string,
+  identity: string,
+  region?: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const query = new URLSearchParams({ identity });
+  if (region) query.set("region", region);
+  return apiSend<void>(
+    "DELETE",
+    `${base(profile, service)}/identities?${query.toString()}`,
+    undefined,
+    signal,
+  );
+}

@@ -31,6 +31,9 @@ type sqsAPI interface {
 type sesAPI interface {
 	ListIdentities(ctx context.Context, params *ses.ListIdentitiesInput, optFns ...func(*ses.Options)) (*ses.ListIdentitiesOutput, error)
 	GetIdentityVerificationAttributes(ctx context.Context, params *ses.GetIdentityVerificationAttributesInput, optFns ...func(*ses.Options)) (*ses.GetIdentityVerificationAttributesOutput, error)
+	VerifyEmailIdentity(ctx context.Context, params *ses.VerifyEmailIdentityInput, optFns ...func(*ses.Options)) (*ses.VerifyEmailIdentityOutput, error)
+	VerifyDomainIdentity(ctx context.Context, params *ses.VerifyDomainIdentityInput, optFns ...func(*ses.Options)) (*ses.VerifyDomainIdentityOutput, error)
+	DeleteIdentity(ctx context.Context, params *ses.DeleteIdentityInput, optFns ...func(*ses.Options)) (*ses.DeleteIdentityOutput, error)
 }
 
 // sqsOpener / sesOpener establish a client for the LocalStack endpoint described

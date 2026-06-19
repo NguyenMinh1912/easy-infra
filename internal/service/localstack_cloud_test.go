@@ -62,11 +62,17 @@ func (f *fakeSQS) PurgeQueue(_ context.Context, in *sqs.PurgeQueueInput, _ ...fu
 }
 
 // fakeSES is an in-memory sesAPI returning a fixed identity list and a per-name
-// verification status map, mirroring the SES v1 two-call shape.
+// verification status map, mirroring the SES v1 two-call shape. It also records
+// the inputs of the mutating calls so tests can assert on them.
 type fakeSES struct {
 	ids     []string
 	verify  map[string]sestypes.VerificationStatus
 	listErr error
+
+	verifiedEmail  *ses.VerifyEmailIdentityInput
+	verifiedDomain *ses.VerifyDomainIdentityInput
+	deleted        *ses.DeleteIdentityInput
+	mutErr         error
 }
 
 func (f fakeSES) ListIdentities(context.Context, *ses.ListIdentitiesInput, ...func(*ses.Options)) (*ses.ListIdentitiesOutput, error) {
@@ -86,6 +92,30 @@ func (f fakeSES) GetIdentityVerificationAttributes(_ context.Context, in *ses.Ge
 		attrs[id] = sestypes.IdentityVerificationAttributes{VerificationStatus: status}
 	}
 	return &ses.GetIdentityVerificationAttributesOutput{VerificationAttributes: attrs}, nil
+}
+
+func (f *fakeSES) VerifyEmailIdentity(_ context.Context, in *ses.VerifyEmailIdentityInput, _ ...func(*ses.Options)) (*ses.VerifyEmailIdentityOutput, error) {
+	if f.mutErr != nil {
+		return nil, f.mutErr
+	}
+	f.verifiedEmail = in
+	return &ses.VerifyEmailIdentityOutput{}, nil
+}
+
+func (f *fakeSES) VerifyDomainIdentity(_ context.Context, in *ses.VerifyDomainIdentityInput, _ ...func(*ses.Options)) (*ses.VerifyDomainIdentityOutput, error) {
+	if f.mutErr != nil {
+		return nil, f.mutErr
+	}
+	f.verifiedDomain = in
+	return &ses.VerifyDomainIdentityOutput{}, nil
+}
+
+func (f *fakeSES) DeleteIdentity(_ context.Context, in *ses.DeleteIdentityInput, _ ...func(*ses.Options)) (*ses.DeleteIdentityOutput, error) {
+	if f.mutErr != nil {
+		return nil, f.mutErr
+	}
+	f.deleted = in
+	return &ses.DeleteIdentityOutput{}, nil
 }
 
 func TestLocalStackQueues(t *testing.T) {
@@ -200,7 +230,7 @@ func TestLocalStackIdentities(t *testing.T) {
 			"example.org":     sestypes.VerificationStatusPending,
 		},
 	}
-	ls := LocalStack{openSES: func(Config) (sesAPI, error) { return fake, nil }}
+	ls := LocalStack{openSES: func(Config) (sesAPI, error) { return &fake, nil }}
 
 	ids, err := ls.Identities(context.Background(), Spec{Env: Config{"host": "localhost"}})
 	if err != nil {
@@ -214,6 +244,57 @@ func TestLocalStackIdentities(t *testing.T) {
 	}
 	if ids[1].Identity != "example.org" || ids[1].Type != "DOMAIN" || ids[1].Verified {
 		t.Errorf("id[1] = %+v, want unverified domain", ids[1])
+	}
+}
+
+func TestLocalStackCreateIdentityEmail(t *testing.T) {
+	fake := &fakeSES{}
+	ls := LocalStack{openSES: func(Config) (sesAPI, error) { return fake, nil }}
+
+	if err := ls.CreateIdentity(context.Background(), Spec{Env: Config{"host": "localhost"}}, "dev@example.com"); err != nil {
+		t.Fatalf("CreateIdentity: %v", err)
+	}
+	if fake.verifiedEmail == nil || aws.ToString(fake.verifiedEmail.EmailAddress) != "dev@example.com" {
+		t.Fatalf("VerifyEmailIdentity input = %+v, want EmailAddress=dev@example.com", fake.verifiedEmail)
+	}
+	if fake.verifiedDomain != nil {
+		t.Errorf("email identity must not verify a domain, got %+v", fake.verifiedDomain)
+	}
+}
+
+func TestLocalStackCreateIdentityDomain(t *testing.T) {
+	fake := &fakeSES{}
+	ls := LocalStack{openSES: func(Config) (sesAPI, error) { return fake, nil }}
+
+	if err := ls.CreateIdentity(context.Background(), Spec{Env: Config{"host": "localhost"}}, "example.org"); err != nil {
+		t.Fatalf("CreateIdentity: %v", err)
+	}
+	if fake.verifiedDomain == nil || aws.ToString(fake.verifiedDomain.Domain) != "example.org" {
+		t.Fatalf("VerifyDomainIdentity input = %+v, want Domain=example.org", fake.verifiedDomain)
+	}
+	if fake.verifiedEmail != nil {
+		t.Errorf("domain identity must not verify an email, got %+v", fake.verifiedEmail)
+	}
+}
+
+func TestLocalStackCreateIdentityError(t *testing.T) {
+	ls := LocalStack{openSES: func(Config) (sesAPI, error) {
+		return &fakeSES{mutErr: errors.New("boom")}, nil
+	}}
+	if err := ls.CreateIdentity(context.Background(), Spec{Env: Config{"host": "localhost"}}, "dev@example.com"); err == nil {
+		t.Fatal("expected an error when VerifyEmailIdentity fails")
+	}
+}
+
+func TestLocalStackDeleteIdentity(t *testing.T) {
+	fake := &fakeSES{}
+	ls := LocalStack{openSES: func(Config) (sesAPI, error) { return fake, nil }}
+
+	if err := ls.DeleteIdentity(context.Background(), Spec{Env: Config{"host": "localhost"}}, "dev@example.com"); err != nil {
+		t.Fatalf("DeleteIdentity: %v", err)
+	}
+	if fake.deleted == nil || aws.ToString(fake.deleted.Identity) != "dev@example.com" {
+		t.Fatalf("DeleteIdentity input = %+v, want Identity=dev@example.com", fake.deleted)
 	}
 }
 

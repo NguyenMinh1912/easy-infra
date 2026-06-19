@@ -42,6 +42,8 @@ export {
   deleteQueue,
   purgeQueue,
   listIdentities,
+  createIdentity,
+  deleteIdentity,
 } from "./localstack";
 export {
   listBuckets,
