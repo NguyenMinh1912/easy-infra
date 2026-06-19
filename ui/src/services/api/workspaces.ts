@@ -34,3 +34,28 @@ export function activateWorkspace(id: number): Promise<WorkspacesResult> {
 export function removeWorkspace(id: number): Promise<WorkspacesResult> {
   return apiSend<WorkspacesResult>("DELETE", `/workspaces/${id}`);
 }
+
+/**
+ * Trigger a download of a workspace's export file. The endpoint sends the JSON
+ * with a Content-Disposition header, so a plain navigation lets the browser
+ * save it under the workspace's name.
+ */
+export function exportWorkspaceUrl(id: number): string {
+  return `/api/workspaces/${id}/export`;
+}
+
+/**
+ * Import a workspace from a previously exported file. The new workspace is made
+ * active; returns the updated list. The file's parsed JSON is sent as the body.
+ */
+export async function importWorkspace(
+  file: File,
+): Promise<WorkspacesResult> {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(await file.text());
+  } catch {
+    throw new Error("that file is not a valid workspace export");
+  }
+  return apiSend<WorkspacesResult>("POST", "/workspaces/import", payload);
+}

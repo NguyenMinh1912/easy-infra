@@ -7,6 +7,8 @@ export {
   renameWorkspace,
   activateWorkspace,
   removeWorkspace,
+  exportWorkspaceUrl,
+  importWorkspace,
 } from "./workspaces";
 export {
   getServiceCatalog,
