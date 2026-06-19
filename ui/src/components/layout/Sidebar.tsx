@@ -2,6 +2,7 @@ import { Database, Server, type LucideIcon } from "lucide-react";
 
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { ProfileNav } from "@/features/profiles";
+import { WorkspaceSwitcher } from "@/features/workspace";
 import { useHashRoute } from "@/hooks/useHashRoute";
 import { cn } from "@/lib/utils";
 
@@ -64,6 +65,9 @@ export function Sidebar() {
           <Server className="size-4" aria-hidden />
         </span>
         <span className="text-lg font-bold tracking-tight">easy-infra</span>
+      </div>
+      <div className="border-b p-4">
+        <WorkspaceSwitcher />
       </div>
       <nav className="flex-1 space-y-1 p-4">
         <ProfileNav />

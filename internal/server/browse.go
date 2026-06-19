@@ -319,7 +319,7 @@ func (s *Server) resolveBrowser(w http.ResponseWriter, r *http.Request) (service
 	profileName := r.PathValue("name")
 	svcID := r.PathValue("service")
 
-	proj, err := project.Load(s.paths, s.reg)
+	proj, err := project.Load(s.activePaths(), s.reg)
 	if err != nil {
 		s.writeProjectError(w, err)
 		return nil, service.Spec{}, false
