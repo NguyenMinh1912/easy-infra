@@ -205,14 +205,14 @@ func (l LocalStack) Identities(ctx context.Context, spec Spec) ([]IdentityInfo, 
 	return identities, nil
 }
 
-// Messages implements CloudBrowser: list the SES messages the emulator recorded
-// that involve the given identity, newest first. LocalStack keeps every message
-// sent through SES in an in-memory store exposed at the `/_aws/ses` developer
-// endpoint (there is no SDK call for it), so this is a plain HTTP GET like the
-// health probe. A message matches the identity when the identity is its sender
-// or one of its recipients; a domain identity also matches any address at that
-// domain.
-func (l LocalStack) Messages(ctx context.Context, spec Spec, identity string) ([]MessageInfo, error) {
+// IdentityMessages implements CloudBrowser: list the SES messages the emulator
+// recorded that involve the given identity, newest first. LocalStack keeps every
+// message sent through SES in an in-memory store exposed at the `/_aws/ses`
+// developer endpoint (there is no SDK call for it), so this is a plain HTTP GET
+// like the health probe. A message matches the identity when the identity is its
+// sender or one of its recipients; a domain identity also matches any address at
+// that domain.
+func (l LocalStack) IdentityMessages(ctx context.Context, spec Spec, identity string) ([]MailInfo, error) {
 	p, err := localstackParamsFrom(spec.Env)
 	if err != nil {
 		return nil, err
@@ -247,7 +247,7 @@ func (l LocalStack) Messages(ctx context.Context, spec Spec, identity string) ([
 		return nil, fmt.Errorf("parsing localstack ses messages: %w", err)
 	}
 
-	messages := make([]MessageInfo, 0, len(raw.Messages))
+	messages := make([]MailInfo, 0, len(raw.Messages))
 	for _, m := range raw.Messages {
 		dest := make([]string, 0, len(m.Destination.ToAddresses)+len(m.Destination.CcAddresses)+len(m.Destination.BccAddresses))
 		dest = append(dest, m.Destination.ToAddresses...)
@@ -262,7 +262,7 @@ func (l LocalStack) Messages(ctx context.Context, spec Spec, identity string) ([
 		if body == "" {
 			body = m.Body.HTMLPart
 		}
-		messages = append(messages, MessageInfo{
+		messages = append(messages, MailInfo{
 			ID:          m.ID,
 			Source:      m.Source,
 			Destination: dest,
