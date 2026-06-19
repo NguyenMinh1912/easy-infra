@@ -376,6 +376,74 @@ func TestLocalStackDeleteIdentity(t *testing.T) {
 	}
 }
 
+func TestLocalStackMessages(t *testing.T) {
+	// Two messages from dev@example.com, one unrelated. Oldest first, as the
+	// store returns them.
+	const body = `{"messages":[
+		{"Id":"1","Source":"dev@example.com","Subject":"Hello","Timestamp":"2024-01-01T00:00:00Z","Destination":{"ToAddresses":["a@b.com"],"CcAddresses":["c@b.com"]},"Body":{"text_part":"hi there"}},
+		{"Id":"2","Source":"other@nope.com","Subject":"Nope","Destination":{"ToAddresses":["x@y.com"]},"Body":{"text_part":"ignore"}},
+		{"Id":"3","Source":"sender@y.com","Subject":"To dev","Timestamp":"2024-01-02T00:00:00Z","Destination":{"ToAddresses":["dev@example.com"]},"Body":{"html_part":"<p>hey</p>"}}
+	]}`
+	ls := LocalStack{openMessages: func(_ context.Context, endpoint string) ([]byte, error) {
+		if endpoint != "http://localhost:4566" {
+			t.Errorf("endpoint = %q, want http://localhost:4566", endpoint)
+		}
+		return []byte(body), nil
+	}}
+
+	msgs, err := ls.Messages(context.Background(), Spec{Env: Config{"host": "localhost"}}, "dev@example.com")
+	if err != nil {
+		t.Fatalf("Messages: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("got %d messages, want 2 (the unrelated one filtered out)", len(msgs))
+	}
+	// Newest first: id 3 (recipient match) then id 1 (sender match).
+	if msgs[0].ID != "3" || msgs[1].ID != "1" {
+		t.Errorf("order = [%s,%s], want [3,1] (newest first)", msgs[0].ID, msgs[1].ID)
+	}
+	if msgs[1].Subject != "Hello" || msgs[1].Body != "hi there" {
+		t.Errorf("msg[1] = %+v, want subject=Hello body=\"hi there\"", msgs[1])
+	}
+	if len(msgs[1].Destination) != 2 {
+		t.Errorf("msg[1] destinations = %v, want To+Cc combined", msgs[1].Destination)
+	}
+	// HTML body is the fallback when there is no text part.
+	if msgs[0].Body != "<p>hey</p>" {
+		t.Errorf("msg[0] body = %q, want the html part as fallback", msgs[0].Body)
+	}
+}
+
+func TestLocalStackMessagesDomainIdentity(t *testing.T) {
+	const body = `{"messages":[
+		{"Id":"1","Source":"dev@example.com","Destination":{"ToAddresses":["a@b.com"]}},
+		{"Id":"2","Source":"x@y.com","Destination":{"ToAddresses":["ops@example.com"]}},
+		{"Id":"3","Source":"x@y.com","Destination":{"ToAddresses":["a@b.com"]}}
+	]}`
+	ls := LocalStack{openMessages: func(context.Context, string) ([]byte, error) {
+		return []byte(body), nil
+	}}
+
+	msgs, err := ls.Messages(context.Background(), Spec{Env: Config{"host": "localhost"}}, "example.com")
+	if err != nil {
+		t.Fatalf("Messages: %v", err)
+	}
+	// A domain identity matches any address at the domain — id 1 (sender) and
+	// id 2 (recipient), but not id 3.
+	if len(msgs) != 2 {
+		t.Fatalf("got %d messages, want 2 at the domain", len(msgs))
+	}
+}
+
+func TestLocalStackMessagesUnreachable(t *testing.T) {
+	ls := LocalStack{openMessages: func(context.Context, string) ([]byte, error) {
+		return nil, errors.New("connection refused")
+	}}
+	if _, err := ls.Messages(context.Background(), Spec{Env: Config{"host": "localhost"}}, "dev@example.com"); err == nil {
+		t.Fatal("expected an error when the messages GET fails")
+	}
+}
+
 func TestLocalStackCloudHealth(t *testing.T) {
 	const body = `{"services":{"sqs":"running","s3":"available"},"version":"4.0.3","edition":"community"}`
 	ls := LocalStack{openHealth: func(_ context.Context, endpoint string) ([]byte, error) {

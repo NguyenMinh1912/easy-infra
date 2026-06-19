@@ -51,7 +51,25 @@ type healthGetter func(ctx context.Context, endpoint string) ([]byte, error)
 // realHealthGetter does the live GET against LocalStack's health endpoint,
 // capping the body so a misbehaving endpoint can't stream unbounded data.
 func realHealthGetter(ctx context.Context, endpoint string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/_localstack/health", nil)
+	return localstackGet(ctx, endpoint+"/_localstack/health")
+}
+
+// messagesGetter fetches the raw `/_aws/ses` JSON body — the emulator's record
+// of every message sent through SES, which has no SDK call, only this developer
+// endpoint. Like healthGetter it is a seam: the zero-value LocalStack does a
+// real HTTP GET (realSESMessagesGetter), while tests supply canned bytes.
+type messagesGetter func(ctx context.Context, endpoint string) ([]byte, error)
+
+// realSESMessagesGetter does the live GET against LocalStack's SES message
+// store endpoint.
+func realSESMessagesGetter(ctx context.Context, endpoint string) ([]byte, error) {
+	return localstackGet(ctx, endpoint+"/_aws/ses")
+}
+
+// localstackGet does a live GET against a LocalStack developer endpoint, capping
+// the body so a misbehaving endpoint can't stream unbounded data.
+func localstackGet(ctx context.Context, url string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +79,7 @@ func realHealthGetter(ctx context.Context, endpoint string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("health endpoint returned %s", resp.Status)
+		return nil, fmt.Errorf("%s returned %s", url, resp.Status)
 	}
 	return io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 }

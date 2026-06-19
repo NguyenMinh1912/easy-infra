@@ -55,6 +55,28 @@ export interface IdentitiesResponse {
   error?: string;
 }
 
+/** One SES message the emulator recorded, involving the selected identity. */
+export interface MessageInfo {
+  /** The emulator's message id. */
+  id: string;
+  /** The sender ("From"). */
+  source: string;
+  /** Every recipient (To, Cc and Bcc combined). */
+  destination: string[];
+  /** The subject, when the message carries one. */
+  subject: string;
+  /** The message's text body, falling back to its HTML body. */
+  body: string;
+  /** When the emulator recorded the message (RFC 3339), as reported. */
+  timestamp: string;
+}
+
+/** Response of GET …/messages — an identity's SES messages, newest first. */
+export interface MessagesResponse {
+  messages: MessageInfo[];
+  error?: string;
+}
+
 /**
  * Reported state of one emulated AWS service, as LocalStack's
  * `/_localstack/health` returns it. `running` services are active, `available`

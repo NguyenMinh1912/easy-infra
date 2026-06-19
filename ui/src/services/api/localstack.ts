@@ -163,6 +163,27 @@ export async function createIdentity(
   );
 }
 
+/**
+ * List the SES messages the emulator recorded that involve `identity` (as
+ * sender or recipient), newest first, in `region` when selected. Like the other
+ * listings an unreachable endpoint resolves with `error` set rather than
+ * rejecting.
+ */
+export async function listMessages(
+  profile: string,
+  service: string,
+  identity: string,
+  region?: string,
+  signal?: AbortSignal,
+): Promise<MessagesResponse> {
+  const query = new URLSearchParams({ identity });
+  if (region) query.set("region", region);
+  return apiGet<MessagesResponse>(
+    `${base(profile, service)}/messages?${query.toString()}`,
+    signal,
+  );
+}
+
 /** Delete the SES `identity` from the profile, in `region` when selected. */
 export async function deleteIdentity(
   profile: string,

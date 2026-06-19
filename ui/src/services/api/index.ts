@@ -45,6 +45,7 @@ export {
   listIdentities,
   createIdentity,
   deleteIdentity,
+  listMessages,
 } from "./localstack";
 export {
   listBuckets,
