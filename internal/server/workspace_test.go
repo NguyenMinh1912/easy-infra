@@ -36,13 +36,17 @@ func TestCreateAndListWorkspaces(t *testing.T) {
 	if len(got.Workspaces) != 1 || got.Workspaces[0].Name != "app" {
 		t.Fatalf("unexpected list: %+v", got)
 	}
-	// The new workspace is active, and its default profile makes status ready.
+	// The new workspace is active but starts with no profiles; the user
+	// creates their own.
 	if got.Active != got.Workspaces[0].ID {
 		t.Errorf("Active = %d, want %d", got.Active, got.Workspaces[0].ID)
 	}
 	_, status := getStatus(t, srv)
-	if !status.Initialized || status.ActiveProfile != "default" {
-		t.Errorf("status = %+v, want initialized default", status)
+	if !status.Initialized || status.ActiveProfile != "" {
+		t.Errorf("status = %+v, want initialized with no active profile", status)
+	}
+	if len(status.Profiles) != 0 {
+		t.Errorf("Profiles = %+v, want none", status.Profiles)
 	}
 }
 

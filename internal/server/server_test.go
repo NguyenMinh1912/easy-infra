@@ -46,14 +46,17 @@ func initProject(t *testing.T, services ...string) (*store.Store, *service.Regis
 	if err := st.SetActiveWorkspace(ws.ID); err != nil {
 		t.Fatalf("SetActiveWorkspace: %v", err)
 	}
-	// CreateWorkspace scaffolds the default starter services; replace them with
-	// exactly the requested set so a test gets the services it asked for.
+	// A new workspace has no profiles; create the "default" profile owning
+	// exactly the requested services and make it active.
 	prof, err := profilepkg.Scaffold(reg, services...)
 	if err != nil {
 		t.Fatalf("Scaffold profile: %v", err)
 	}
-	if err := st.ReplaceProfileServices(ws.ID, "default", prof.Services); err != nil {
-		t.Fatalf("ReplaceProfileServices: %v", err)
+	if err := st.CreateProfile(ws.ID, "default", prof.Services); err != nil {
+		t.Fatalf("CreateProfile: %v", err)
+	}
+	if err := st.SetWorkspaceActiveProfile(ws.ID, "default"); err != nil {
+		t.Fatalf("SetWorkspaceActiveProfile: %v", err)
 	}
 	return st, reg
 }
