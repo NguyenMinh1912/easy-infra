@@ -26,6 +26,12 @@ interface SqlEditorProps {
    * when deciding which statement to run.
    */
   viewRef?: MutableRefObject<EditorView | null>;
+  /**
+   * Fixed editor height in pixels. When set, the editor stays this tall and
+   * scrolls its content internally (the parent owns the drag-to-resize). Falls
+   * back to the default min/max growth range when omitted.
+   */
+  height?: number;
 }
 
 /**
@@ -40,6 +46,7 @@ export function SqlEditor({
   schema,
   onRun,
   viewRef,
+  height,
 }: SqlEditorProps) {
   const { resolvedTheme } = useTheme();
 
@@ -87,8 +94,9 @@ export function SqlEditor({
       }}
       theme={resolvedTheme}
       extensions={extensions}
-      minHeight="10rem"
-      maxHeight="24rem"
+      {...(height !== undefined
+        ? { height: `${height}px`, minHeight: "6rem" }
+        : { minHeight: "10rem", maxHeight: "24rem" })}
       placeholder="SELECT * FROM …"
       aria-label="SQL editor"
       className="overflow-hidden rounded-md border border-border text-sm [&_.cm-editor]:bg-background [&_.cm-focused]:outline-none"
