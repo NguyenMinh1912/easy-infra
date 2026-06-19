@@ -117,13 +117,16 @@ export function PostgresConsole({
       });
   }, [profile, service, sql]);
 
-  // Fire the initial run for a pre-filled console exactly once. The buffer holds
-  // a single statement, so runQuery falls back to it even before the editor view
-  // (and viewRef) is ready.
-  const autoRanRef = useRef(false);
+  // Fire the initial run for a pre-filled console. The buffer holds a single
+  // statement, so runQuery falls back to it even before the editor view (and
+  // viewRef) is ready. onAutoRun then flips `autoRun` off so this only fires on
+  // the initial open, not on later re-renders (e.g. when editing the buffer
+  // changes runQuery's identity). Crucially we do NOT guard with a "ran once"
+  // ref: under React StrictMode the mount runs setup→cleanup→setup, and the
+  // cleanup aborts the in-flight request — a persistent ref would block the
+  // second setup from re-running it, leaving the result stuck on "running".
   useEffect(() => {
-    if (autoRun && !autoRanRef.current) {
-      autoRanRef.current = true;
+    if (autoRun) {
       runQuery();
       onAutoRun?.();
     }
