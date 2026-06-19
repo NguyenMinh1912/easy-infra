@@ -1,46 +1,43 @@
 # easy-infra
 
-A command-line tool for managing a project's local/dev infrastructure. From a
-project folder you initialize the project, define one or more **profiles**
-describing the services that project needs, then apply a profile to bring those
-services up.
+An app for managing a project's local/dev infrastructure. Running the binary
+launches a local web UI and JSON API; from the UI you create one or more
+**workspaces**, define **profiles** of services within them, and apply a profile
+to bring those services up.
 
 Supported services: **postgres**, **minio**, **redis**, **localstack**.
 
 ## Concepts
 
-Configuration is organised around **profiles**:
+All data lives in a **single local SQLite database** in your user config
+directory (`$EASY_INFRA_CONFIG_DIR`, or `os.UserConfigDir()/easy-infra/easy-infra.db`).
+It is tool-owned and not meant to be hand-edited — there are no project folders,
+no `easy-infra.yml`, and no JSON state files.
 
-- **Project config** (`easy-infra.yml`, YAML) is a thin marker that records the
-  schema version and tells the tool a folder is an easy-infra project. It is
-  tracked in git and holds no services or secrets.
-- **Profile config** (`.easy-infra/profiles/<name>.yml`, YAML) is where services
-  live. Each profile **owns its own services** and can add, edit, or remove them
-  independently. A profile is keyed by service name, and each service block holds
-  the full config in one place — both *what* the service is (e.g. `version`,
-  `cleanable`) and *how to reach* it (host, port, user, password, database URL).
-  A **profile** is one environment (e.g. `default`, `ci`, `staging`); profiles
-  hold credentials and are gitignored.
-- **State** (`.easy-infra/state.json`, JSON) is tool-owned. It records derived
-  facts — most importantly the active profile — and is not hand-edited. Exactly
-  one profile is active at a time.
+- A **workspace** is a named bundle of profiles. Exactly one workspace is active
+  at a time. Create, rename, switch, and remove them from the UI.
+- A **profile** is one environment (e.g. `default`, `ci`, `staging`) within a
+  workspace. Each profile **owns its own services** and can add, edit, or remove
+  them independently; exactly one profile is active per workspace. A service
+  block holds the full config in one place — both *what* the service is (e.g.
+  `version`, `cleanable`) and *how to reach* it (host, port, user, password,
+  database URL).
+- **Backups** are recorded in the same database, scoped to their workspace.
 
-See [`easy-infra.profile.example.yml`](./easy-infra.profile.example.yml) for a
-worked profile example.
+Everything — workspaces, profiles, services, apply, and backup — is managed in
+the app and the `/api` endpoints behind it. There is no CLI for these operations.
 
-## Commands
+## Run
 
-| Command | Purpose |
-| --- | --- |
-| `easy-infra init` | Scaffold the YAML config and create the JSON state file. |
-| `easy-infra profile list` | List the project's profiles (active one marked `*`). |
-| `easy-infra use <profile>` | Set `<profile>` as the active profile. |
-| `easy-infra apply` | Reconcile the active profile: provision/start its services. |
-| `easy-infra backup` | Back up data for the services in the active profile. |
-| `easy-infra ui` | Run the web UI and a JSON API for inspecting the project (`--port`, default 8080). |
+The binary serves the app:
 
-> `apply` and `backup` currently report the per-service actions they would take;
-> Docker-based provisioning is the next step (see `CLAUDE.md`).
+```sh
+easy-infra            # serve the web UI + JSON API on http://localhost:8080
+easy-infra --port 9000
+easy-infra serve      # explicit form (alias: ui)
+```
+
+On first run the database is empty; create your first workspace from the UI.
 
 ## Install
 
@@ -89,17 +86,17 @@ make test             # run tests
 make vet              # static checks
 make fmt              # format the code
 make clean            # remove build artifacts
-go run . init         # run locally without installing
+go run .              # run locally without installing (serves the UI on :8080)
 ```
 
 ## Web UI
 
-`easy-infra ui` starts a local server with a React dashboard (Vite +
-TypeScript, under `ui/`) and a JSON API. Build the bundle once, then run it:
+`easy-infra` starts a local server with a React dashboard (Vite + TypeScript,
+under `ui/`) and a JSON API. Build the bundle once, then run it:
 
 ```sh
 make ui               # build the frontend into ui/dist (embedded in the binary)
-go run . ui           # open http://localhost:8080
+go run .              # open http://localhost:8080
 ```
 
 For development, one command runs both apps with hot reload — no build needed:
@@ -115,7 +112,7 @@ together, tearing both down on Ctrl+C. The frontend hot-reloads via Vite; the
 backend rebuilds and restarts on `.go` changes.
 
 To run the pieces manually instead, start the Vite dev server alongside the
-backend (`make ui-dev` + `go run . ui`); see [`ui/README.md`](./ui/README.md).
+backend (`make ui-dev` + `go run .`); see [`ui/README.md`](./ui/README.md).
 
 ## Contributing
 

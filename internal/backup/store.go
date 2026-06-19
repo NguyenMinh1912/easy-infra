@@ -3,9 +3,9 @@
 // launched it: the browser can disconnect and reconnect (by polling) without
 // losing progress, and finished runs remain inspectable.
 //
-// State elsewhere in easy-infra is tool-owned JSON; backup logs are append-heavy
-// and queried incrementally (by line cursor), which is what a tiny embedded SQL
-// store is good at. It lives at .easy-infra/backups.db alongside the JSON state.
+// Backup logs are append-heavy and queried incrementally (by line cursor),
+// which is what an embedded SQL store is good at. Sessions live in the same
+// central SQLite database as the rest of easy-infra's data, scoped by workspace.
 package backup
 
 import (
