@@ -78,6 +78,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/profiles/{name}/services/{service}/databases", s.handleKeyspaceDatabases)
 	mux.HandleFunc("GET /api/profiles/{name}/services/{service}/keys", s.handleKeyspaceKeys)
 	mux.HandleFunc("GET /api/profiles/{name}/services/{service}/key", s.handleKeyspaceValue)
+	mux.HandleFunc("GET /api/profiles/{name}/services/{service}/health", s.handleCloudHealth)
 	mux.HandleFunc("GET /api/profiles/{name}/services/{service}/queues", s.handleCloudQueues)
 	mux.HandleFunc("GET /api/profiles/{name}/services/{service}/identities", s.handleCloudIdentities)
 	mux.HandleFunc("GET /api/services/catalog", s.handleServiceCatalog)
