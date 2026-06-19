@@ -56,26 +56,37 @@ function load(profile: string, service: string): ConsoleTabsState {
 /**
  * Manages a profile/service's SQL consoles — a list of named tabs and the
  * active one — persisted to localStorage so the editor buffers survive
- * navigation and reloads. Re-keys when the connection changes.
+ * navigation and reloads. Resets to the target connection's tabs when the
+ * profile/service changes, so connections never share a tab list.
  */
 export function useConsoleTabs(profile: string, service: string) {
+  const key = storageKey(profile, service);
   const [state, setState] = useState<ConsoleTabsState>(() =>
     load(profile, service),
   );
 
-  // Reload when navigating to a different connection's console.
-  useEffect(() => {
+  // Switch to the new connection's tabs *during* render, not in an effect.
+  // Done in an effect, one render would commit with the previous connection's
+  // `state` but the new connection's `key`, and the persist effect below would
+  // write the old tabs into the new connection's storage — leaking tabs
+  // between profiles whose service ids match (e.g. each profile's first
+  // "postgres"). Adjusting state here keeps `state` and `key` in lockstep so
+  // the persist always writes the connection it belongs to. See react.dev,
+  // "You Might Not Need an Effect" (resetting state when a prop changes).
+  const [activeKey, setActiveKey] = useState(key);
+  if (activeKey !== key) {
+    setActiveKey(key);
     setState(load(profile, service));
-  }, [profile, service]);
+  }
 
   // Persist on every change.
   useEffect(() => {
     try {
-      localStorage.setItem(storageKey(profile, service), JSON.stringify(state));
+      localStorage.setItem(key, JSON.stringify(state));
     } catch {
       // Storage unavailable (private mode, quota) — keep working in memory.
     }
-  }, [profile, service, state]);
+  }, [key, state]);
 
   const setActive = useCallback((id: string) => {
     setState((s) => (s.tabs.some((t) => t.id === id) ? { ...s, activeId: id } : s));
