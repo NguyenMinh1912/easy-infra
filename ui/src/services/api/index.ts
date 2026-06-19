@@ -2,6 +2,13 @@
 export { ApiError } from "./client";
 export { getStatus } from "./status";
 export {
+  getWorkspaces,
+  createWorkspace,
+  activateWorkspace,
+  removeWorkspace,
+  browseDirs,
+} from "./workspaces";
+export {
   getServiceCatalog,
   createService,
   updateService,

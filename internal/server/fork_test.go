@@ -13,7 +13,7 @@ import (
 // and polling of the fork endpoint without touching Docker.
 func TestForkUnsupportedService(t *testing.T) {
 	paths, reg := initProject(t, "postgres", "redis")
-	srv := New(reg, paths, emptyUI)
+	srv := New(reg, regFrom(t, paths), emptyUI)
 
 	rec := doRequest(t, srv, http.MethodPost, "/api/services/redis/fork", "")
 	if rec.Code != http.StatusAccepted {
@@ -40,7 +40,7 @@ func TestForkUnsupportedService(t *testing.T) {
 
 func TestForkUnknownService(t *testing.T) {
 	paths, reg := initProject(t, "postgres")
-	srv := New(reg, paths, emptyUI)
+	srv := New(reg, regFrom(t, paths), emptyUI)
 	// redis is not defined in the active profile.
 	rec := doRequest(t, srv, http.MethodPost, "/api/services/redis/fork", "")
 	if rec.Code != http.StatusNotFound {
@@ -50,7 +50,7 @@ func TestForkUnknownService(t *testing.T) {
 
 func TestForkSnapshotNotFound(t *testing.T) {
 	paths, reg := initProject(t, "postgres")
-	srv := New(reg, paths, emptyUI)
+	srv := New(reg, regFrom(t, paths), emptyUI)
 	// A snapshot id that does not exist is rejected before any provisioning.
 	rec := doRequest(t, srv, http.MethodPost, "/api/services/postgres/fork", `{"snapshot":"nope"}`)
 	if rec.Code != http.StatusNotFound {
@@ -60,7 +60,7 @@ func TestForkSnapshotNotFound(t *testing.T) {
 
 func TestForkInvalidPort(t *testing.T) {
 	paths, reg := initProject(t, "postgres")
-	srv := New(reg, paths, emptyUI)
+	srv := New(reg, regFrom(t, paths), emptyUI)
 	// An out-of-range local port is rejected before any provisioning.
 	rec := doRequest(t, srv, http.MethodPost, "/api/services/postgres/fork", `{"port":70000}`)
 	if rec.Code != http.StatusBadRequest {
@@ -69,7 +69,7 @@ func TestForkInvalidPort(t *testing.T) {
 }
 
 func TestForkNotInitialized(t *testing.T) {
-	srv := New(service.DefaultRegistry(), newPaths(t), emptyUI)
+	srv := New(service.DefaultRegistry(), regFrom(t, newPaths(t)), emptyUI)
 	rec := doRequest(t, srv, http.MethodPost, "/api/services/postgres/fork", "")
 	if rec.Code != http.StatusConflict {
 		t.Errorf("code = %d, want 409", rec.Code)

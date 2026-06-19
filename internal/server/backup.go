@@ -157,7 +157,7 @@ func (s *Server) handleStartBackup(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	proj, err := project.Load(s.paths, s.reg)
+	proj, err := project.Load(s.activePaths(), s.reg)
 	if err != nil {
 		s.writeProjectError(w, err)
 		return
@@ -178,7 +178,7 @@ func (s *Server) handleStartBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	env := entry.Config
-	store, err := s.backups.Store()
+	store, err := s.backupsForActive().Store()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -206,7 +206,7 @@ func (s *Server) handleStartBackup(w http.ResponseWriter, r *http.Request) {
 	// A cancelled or failed backup may have written a partial artifact; drop the
 	// whole snapshot folder so no truncated snapshot is left behind.
 	cleanup := func() { _ = os.RemoveAll(dir) }
-	sess, err := s.backups.Start(store, svcID, profileName, backup.KindBackup, filepath.Base(dir), cleanup, run)
+	sess, err := s.backupsForActive().Start(store, svcID, profileName, backup.KindBackup, filepath.Base(dir), cleanup, run)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -222,7 +222,7 @@ func (s *Server) handleStartBackup(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListSnapshots(w http.ResponseWriter, r *http.Request) {
 	svcID := r.PathValue("name")
 
-	proj, err := project.Load(s.paths, s.reg)
+	proj, err := project.Load(s.activePaths(), s.reg)
 	if err != nil {
 		s.writeProjectError(w, err)
 		return
@@ -266,7 +266,7 @@ const backupOptionsTimeout = 15 * time.Second
 func (s *Server) handleBackupOptions(w http.ResponseWriter, r *http.Request) {
 	svcID := r.PathValue("name")
 
-	proj, err := project.Load(s.paths, s.reg)
+	proj, err := project.Load(s.activePaths(), s.reg)
 	if err != nil {
 		s.writeProjectError(w, err)
 		return
@@ -368,7 +368,7 @@ func (s *Server) handleStartApply(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	proj, err := project.Load(s.paths, s.reg)
+	proj, err := project.Load(s.activePaths(), s.reg)
 	if err != nil {
 		s.writeProjectError(w, err)
 		return
@@ -404,7 +404,7 @@ func (s *Server) handleStartApply(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	store, err := s.backups.Store()
+	store, err := s.backupsForActive().Store()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -430,7 +430,7 @@ func (s *Server) handleStartApply(w http.ResponseWriter, r *http.Request) {
 		return err
 	}
 
-	sess, err := s.backups.Start(store, svcID, profileName, backup.KindApply, body.Snapshot, nil, run)
+	sess, err := s.backupsForActive().Start(store, svcID, profileName, backup.KindApply, body.Snapshot, nil, run)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -461,7 +461,7 @@ const (
 func (s *Server) handleListBackups(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := paginationParams(r)
 
-	if _, err := project.Load(s.paths, s.reg); err != nil {
+	if _, err := project.Load(s.activePaths(), s.reg); err != nil {
 		if errors.Is(err, project.ErrNotInitialized) {
 			writeJSON(w, http.StatusOK, backupListResponse{
 				Sessions: []sessionJSON{}, Page: page, PageSize: pageSize,
@@ -472,7 +472,7 @@ func (s *Server) handleListBackups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store, err := s.backups.Store()
+	store, err := s.backupsForActive().Store()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -507,7 +507,7 @@ func (s *Server) handleListBackups(w http.ResponseWriter, r *http.Request) {
 // goroutine is still writing — so deleting one is rejected with 409.
 func (s *Server) handleDeleteBackup(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	store, err := s.backups.Store()
+	store, err := s.backupsForActive().Store()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -560,7 +560,7 @@ func paginationParams(r *http.Request) (page, pageSize int) {
 // the `after` query cursor, so the UI can poll for incremental progress.
 func (s *Server) handleGetBackup(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	store, err := s.backups.Store()
+	store, err := s.backupsForActive().Store()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -593,7 +593,7 @@ func (s *Server) handleGetBackup(w http.ResponseWriter, r *http.Request) {
 // client picks up on its next poll.
 func (s *Server) handleCancelBackup(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	store, err := s.backups.Store()
+	store, err := s.backupsForActive().Store()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -609,7 +609,7 @@ func (s *Server) handleCancelBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.backups.Cancel(id)
+	s.backupsForActive().Cancel(id)
 	writeJSON(w, http.StatusAccepted, toSessionJSON(sess))
 }
 

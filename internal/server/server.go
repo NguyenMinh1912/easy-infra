@@ -11,24 +11,57 @@ import (
 	"io/fs"
 	"net/http"
 	"path/filepath"
+	"sync"
 
 	"github.com/minhnc/easy-infra/internal/project"
 	"github.com/minhnc/easy-infra/internal/service"
+	"github.com/minhnc/easy-infra/internal/workspace"
 )
 
 // Server answers API requests and serves the embedded UI. It loads the project
-// fresh on each request so the API always reflects what is on disk.
+// fresh on each request so the API always reflects what is on disk. The folder
+// it operates on is the active workspace, which the user can create and switch
+// from the UI; handlers derive the project paths from it per request.
 type Server struct {
-	reg     *service.Registry
-	paths   project.Paths
-	ui      fs.FS
-	backups *backupManager
+	reg *service.Registry
+	ui  fs.FS
+
+	mu      sync.RWMutex
+	ws      *workspace.Registry
+	backups map[string]*backupManager // keyed by backup DB path (per workspace root)
 }
 
-// New builds a Server from the injected service registry, project paths, and the
-// embedded UI filesystem (see the ui package).
-func New(reg *service.Registry, paths project.Paths, ui fs.FS) *Server {
-	return &Server{reg: reg, paths: paths, ui: ui, backups: newBackupManager(backupDBPath(paths))}
+// New builds a Server from the injected service registry, the workspace registry,
+// and the embedded UI filesystem (see the ui package).
+func New(reg *service.Registry, ws *workspace.Registry, ui fs.FS) *Server {
+	return &Server{reg: reg, ws: ws, ui: ui, backups: make(map[string]*backupManager)}
+}
+
+// activePaths returns the project paths for the active workspace. When there is
+// no active workspace it returns the zero Paths, so project.Load fails with
+// ErrNotInitialized and handlers behave as "not initialized".
+func (s *Server) activePaths() project.Paths {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if path, ok := s.ws.ActivePath(); ok {
+		return project.PathsFor(path)
+	}
+	return project.Paths{}
+}
+
+// backupsForActive returns the backup manager for the active workspace, creating
+// it on first use. Managers are kept per workspace root so a backup started in
+// one workspace keeps its store and cancel handle even after the user switches.
+func (s *Server) backupsForActive() *backupManager {
+	dbPath := backupDBPath(s.activePaths())
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m, ok := s.backups[dbPath]
+	if !ok {
+		m = newBackupManager(dbPath)
+		s.backups[dbPath] = m
+	}
+	return m
 }
 
 // backupDBPath places the backup session database alongside the JSON state, in
@@ -42,6 +75,11 @@ func backupDBPath(paths project.Paths) string {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/status", s.handleStatus)
+	mux.HandleFunc("GET /api/workspaces", s.handleListWorkspaces)
+	mux.HandleFunc("POST /api/workspaces", s.handleCreateWorkspace)
+	mux.HandleFunc("POST /api/workspaces/activate", s.handleActivateWorkspace)
+	mux.HandleFunc("DELETE /api/workspaces/{name}", s.handleRemoveWorkspace)
+	mux.HandleFunc("GET /api/workspaces/browse", s.handleBrowseDirs)
 	mux.HandleFunc("GET /api/profiles", s.handleListProfiles)
 	mux.HandleFunc("POST /api/profiles", s.handleCreateProfile)
 	mux.HandleFunc("GET /api/profiles/{name}", s.handleGetProfile)
@@ -101,7 +139,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	proj, err := project.Load(s.paths, s.reg)
+	proj, err := project.Load(s.activePaths(), s.reg)
 	if err != nil {
 		if errors.Is(err, project.ErrNotInitialized) {
 			writeJSON(w, http.StatusOK, statusResponse{Profiles: []profile{}, Services: []string{}})

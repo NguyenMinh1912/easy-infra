@@ -58,7 +58,7 @@ func newConsoleServer(t *testing.T, svc service.Service) *Server {
 	if _, err := project.Load(paths, reg); err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	return New(reg, paths, emptyUI)
+	return New(reg, regFrom(t, paths), emptyUI)
 }
 
 func decodeQuery(t *testing.T, body []byte) queryResponse {

@@ -3,11 +3,8 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/minhnc/easy-infra/internal/config"
-	"github.com/minhnc/easy-infra/internal/profile"
 	"github.com/minhnc/easy-infra/internal/project"
 	"github.com/minhnc/easy-infra/internal/service"
-	"github.com/minhnc/easy-infra/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -24,31 +21,12 @@ func newInitCmd(reg *service.Registry, paths project.Paths) *cobra.Command {
 }
 
 func runInit(cmd *cobra.Command, reg *service.Registry, paths project.Paths) error {
-	if _, err := config.Load(paths.Config); err == nil {
-		return fmt.Errorf("project already initialized (%s exists)", paths.Config)
-	}
-
-	cfg := config.Scaffold()
-	if err := cfg.Save(paths.Config); err != nil {
-		return err
-	}
-
-	prof, err := profile.Scaffold(reg, project.DefaultServices...)
-	if err != nil {
-		return err
-	}
-	defaultProfilePath := paths.ProfilePath("default")
-	if err := prof.Save(defaultProfilePath); err != nil {
-		return err
-	}
-
-	st := &state.State{ActiveProfile: "default"}
-	if err := st.Save(paths.State); err != nil {
+	if err := project.Initialize(paths, reg); err != nil {
 		return err
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(),
 		"Initialized easy-infra project:\n  project config: %s\n  default profile: %s\n  state:          %s\nActive profile: default\n",
-		paths.Config, defaultProfilePath, paths.State)
+		paths.Config, paths.ProfilePath("default"), paths.State)
 	return nil
 }

@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
+	"path/filepath"
 
 	"github.com/minhnc/easy-infra/internal/config"
 	"github.com/minhnc/easy-infra/internal/profile"
@@ -44,6 +46,50 @@ func DefaultPaths() Paths {
 		State:       state.DefaultPath,
 		ProfilesDir: profile.DefaultDir,
 	}
+}
+
+// PathsFor returns the conventional project file locations rooted at dir. The
+// web server uses this to operate on a user-selected workspace folder rather
+// than the process working directory.
+func PathsFor(dir string) Paths {
+	return Paths{
+		Config:      filepath.Join(dir, config.DefaultPath),
+		State:       filepath.Join(dir, state.DefaultPath),
+		ProfilesDir: filepath.Join(dir, profile.DefaultDir),
+	}
+}
+
+// Initialize scaffolds a new project at paths: the config marker, a default
+// profile owning the conventional starter services, and the state file with
+// "default" active. The project root is created if missing. It errors if a
+// project already exists at paths.Config. Both the `init` command and the web
+// UI's "create workspace" action go through here so scaffolding lives in one
+// place.
+func Initialize(paths Paths, reg *service.Registry) error {
+	if _, err := config.Load(paths.Config); err == nil {
+		return fmt.Errorf("project already initialized (%s exists)", paths.Config)
+	}
+	if dir := filepath.Dir(paths.Config); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("creating project dir %s: %w", dir, err)
+		}
+	}
+
+	cfg := config.Scaffold()
+	if err := cfg.Save(paths.Config); err != nil {
+		return err
+	}
+
+	prof, err := profile.Scaffold(reg, DefaultServices...)
+	if err != nil {
+		return err
+	}
+	if err := prof.Save(paths.ProfilePath("default")); err != nil {
+		return err
+	}
+
+	st := &state.State{ActiveProfile: "default"}
+	return st.Save(paths.State)
 }
 
 // ProfilePath returns the file path for the named profile.
@@ -84,6 +130,13 @@ func Load(paths Paths, reg *service.Registry) (*Project, error) {
 	}
 
 	return &Project{Config: cfg, State: st, Registry: reg, Paths: paths}, nil
+}
+
+// IsInitialized reports whether an easy-infra project already exists at paths
+// (its config marker is present and readable).
+func IsInitialized(paths Paths) bool {
+	_, err := config.Load(paths.Config)
+	return err == nil
 }
 
 // Profiles lists the available profile names.

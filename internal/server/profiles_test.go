@@ -37,7 +37,7 @@ func decodeCheck(t *testing.T, rec *http.Response, body []byte) checkConnectionR
 }
 
 func TestCheckConnectionUnknownService(t *testing.T) {
-	srv := New(service.DefaultRegistry(), newPaths(t), emptyUI)
+	srv := New(service.DefaultRegistry(), regFrom(t, newPaths(t)), emptyUI)
 	rec := doJSON(t, srv, http.MethodPost, "/api/profiles/default/services/nope/check",
 		checkConnectionRequest{Config: service.Config{}})
 	if rec.Code != http.StatusNotFound {
@@ -46,7 +46,7 @@ func TestCheckConnectionUnknownService(t *testing.T) {
 }
 
 func TestCheckConnectionInvalidConfig(t *testing.T) {
-	srv := New(service.DefaultRegistry(), newPaths(t), emptyUI)
+	srv := New(service.DefaultRegistry(), regFrom(t, newPaths(t)), emptyUI)
 	// An empty postgres env fails validation before any dial is attempted.
 	rec := doJSON(t, srv, http.MethodPost, "/api/profiles/default/services/postgres/check",
 		checkConnectionRequest{Config: service.Config{}})
@@ -64,7 +64,7 @@ func TestCheckConnectionReachable(t *testing.T) {
 	if err := reg.Register(stubService{name: "stub"}); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
-	srv := New(reg, newPaths(t), emptyUI)
+	srv := New(reg, regFrom(t, newPaths(t)), emptyUI)
 	rec := doJSON(t, srv, http.MethodPost, "/api/profiles/default/services/stub/check",
 		checkConnectionRequest{Config: service.Config{"host": "x"}})
 	if rec.Code != http.StatusOK {

@@ -14,20 +14,32 @@ import (
 	profilepkg "github.com/minhnc/easy-infra/internal/profile"
 	"github.com/minhnc/easy-infra/internal/project"
 	"github.com/minhnc/easy-infra/internal/service"
+	"github.com/minhnc/easy-infra/internal/workspace"
 )
 
 // emptyUI is a UI filesystem with no built bundle.
 var emptyUI = fstest.MapFS{}
 
-// newPaths returns project paths rooted at a fresh temp dir.
+// newPaths returns project paths rooted at a fresh temp dir, in the conventional
+// workspace layout the server uses.
 func newPaths(t *testing.T) project.Paths {
 	t.Helper()
-	dir := t.TempDir()
-	return project.Paths{
-		Config:      filepath.Join(dir, "easy-infra.yml"),
-		State:       filepath.Join(dir, "state.json"),
-		ProfilesDir: filepath.Join(dir, "profiles"),
+	return project.PathsFor(t.TempDir())
+}
+
+// regFrom builds a single-workspace registry whose active workspace is the root
+// of paths, so a Server constructed with it operates on that folder.
+func regFrom(t *testing.T, paths project.Paths) *workspace.Registry {
+	t.Helper()
+	root := filepath.Dir(paths.Config)
+	r := &workspace.Registry{}
+	if err := r.Add("test", root); err != nil {
+		t.Fatalf("Add workspace: %v", err)
 	}
+	if err := r.SetActive("test"); err != nil {
+		t.Fatalf("SetActive: %v", err)
+	}
+	return r
 }
 
 // initProject scaffolds a config marker on disk plus an active "default"
@@ -75,7 +87,7 @@ func getStatus(t *testing.T, srv *Server) (*httptest.ResponseRecorder, statusRes
 }
 
 func TestStatusNotInitialized(t *testing.T) {
-	srv := New(service.DefaultRegistry(), newPaths(t), emptyUI)
+	srv := New(service.DefaultRegistry(), regFrom(t, newPaths(t)), emptyUI)
 	rec, got := getStatus(t, srv)
 
 	if rec.Code != http.StatusOK {
@@ -91,7 +103,7 @@ func TestStatusNotInitialized(t *testing.T) {
 
 func TestStatusInitialized(t *testing.T) {
 	paths, reg := initProject(t, "postgres", "redis")
-	srv := New(reg, paths, emptyUI)
+	srv := New(reg, regFrom(t, paths), emptyUI)
 	rec, got := getStatus(t, srv)
 
 	if rec.Code != http.StatusOK {
@@ -118,7 +130,7 @@ func TestStatusInitialized(t *testing.T) {
 }
 
 func TestStatusMethodNotAllowed(t *testing.T) {
-	srv := New(service.DefaultRegistry(), newPaths(t), emptyUI)
+	srv := New(service.DefaultRegistry(), regFrom(t, newPaths(t)), emptyUI)
 	req := httptest.NewRequest(http.MethodPost, "/api/status", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
@@ -152,7 +164,7 @@ func decodeProfiles(t *testing.T, rec *httptest.ResponseRecorder) profilesRespon
 
 func TestListProfiles(t *testing.T) {
 	paths, reg := initProject(t, "postgres")
-	srv := New(reg, paths, emptyUI)
+	srv := New(reg, regFrom(t, paths), emptyUI)
 
 	rec := doRequest(t, srv, http.MethodGet, "/api/profiles", "")
 	if rec.Code != http.StatusOK {
@@ -168,7 +180,7 @@ func TestListProfiles(t *testing.T) {
 }
 
 func TestListProfilesNotInitialized(t *testing.T) {
-	srv := New(service.DefaultRegistry(), newPaths(t), emptyUI)
+	srv := New(service.DefaultRegistry(), regFrom(t, newPaths(t)), emptyUI)
 	rec := doRequest(t, srv, http.MethodGet, "/api/profiles", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("code = %d, want 200", rec.Code)
@@ -180,7 +192,7 @@ func TestListProfilesNotInitialized(t *testing.T) {
 
 func TestCreateProfile(t *testing.T) {
 	paths, reg := initProject(t, "postgres")
-	srv := New(reg, paths, emptyUI)
+	srv := New(reg, regFrom(t, paths), emptyUI)
 
 	rec := doRequest(t, srv, http.MethodPost, "/api/profiles", `{"name":"staging"}`)
 	if rec.Code != http.StatusCreated {
@@ -198,7 +210,7 @@ func TestCreateProfile(t *testing.T) {
 
 func TestCreateProfileDuplicate(t *testing.T) {
 	paths, reg := initProject(t, "postgres")
-	srv := New(reg, paths, emptyUI)
+	srv := New(reg, regFrom(t, paths), emptyUI)
 
 	rec := doRequest(t, srv, http.MethodPost, "/api/profiles", `{"name":"default"}`)
 	if rec.Code != http.StatusConflict {
@@ -208,7 +220,7 @@ func TestCreateProfileDuplicate(t *testing.T) {
 
 func TestCreateProfileInvalidName(t *testing.T) {
 	paths, reg := initProject(t, "postgres")
-	srv := New(reg, paths, emptyUI)
+	srv := New(reg, regFrom(t, paths), emptyUI)
 
 	for _, name := range []string{"", "../escape", "has space", "with/slash"} {
 		rec := doRequest(t, srv, http.MethodPost, "/api/profiles", `{"name":"`+name+`"}`)
@@ -219,7 +231,7 @@ func TestCreateProfileInvalidName(t *testing.T) {
 }
 
 func TestCreateProfileNotInitialized(t *testing.T) {
-	srv := New(service.DefaultRegistry(), newPaths(t), emptyUI)
+	srv := New(service.DefaultRegistry(), regFrom(t, newPaths(t)), emptyUI)
 	rec := doRequest(t, srv, http.MethodPost, "/api/profiles", `{"name":"staging"}`)
 	if rec.Code != http.StatusConflict {
 		t.Errorf("code = %d, want 409", rec.Code)
@@ -228,7 +240,7 @@ func TestCreateProfileNotInitialized(t *testing.T) {
 
 func TestActivateProfile(t *testing.T) {
 	paths, reg := initProject(t, "postgres")
-	srv := New(reg, paths, emptyUI)
+	srv := New(reg, regFrom(t, paths), emptyUI)
 
 	if rec := doRequest(t, srv, http.MethodPost, "/api/profiles", `{"name":"staging"}`); rec.Code != http.StatusCreated {
 		t.Fatalf("create staging: code = %d", rec.Code)
@@ -246,7 +258,7 @@ func TestActivateProfile(t *testing.T) {
 
 func TestActivateProfileMissing(t *testing.T) {
 	paths, reg := initProject(t, "postgres")
-	srv := New(reg, paths, emptyUI)
+	srv := New(reg, regFrom(t, paths), emptyUI)
 
 	rec := doRequest(t, srv, http.MethodPost, "/api/profiles/ghost/activate", "")
 	if rec.Code != http.StatusConflict {
@@ -256,7 +268,7 @@ func TestActivateProfileMissing(t *testing.T) {
 
 func TestDeleteProfile(t *testing.T) {
 	paths, reg := initProject(t, "postgres")
-	srv := New(reg, paths, emptyUI)
+	srv := New(reg, regFrom(t, paths), emptyUI)
 
 	if rec := doRequest(t, srv, http.MethodPost, "/api/profiles", `{"name":"staging"}`); rec.Code != http.StatusCreated {
 		t.Fatalf("create staging: code = %d", rec.Code)
@@ -277,7 +289,7 @@ func TestDeleteProfile(t *testing.T) {
 
 func TestDeleteActiveProfileRefused(t *testing.T) {
 	paths, reg := initProject(t, "postgres")
-	srv := New(reg, paths, emptyUI)
+	srv := New(reg, regFrom(t, paths), emptyUI)
 
 	rec := doRequest(t, srv, http.MethodDelete, "/api/profiles/default", "")
 	if rec.Code != http.StatusConflict {
@@ -287,7 +299,7 @@ func TestDeleteActiveProfileRefused(t *testing.T) {
 
 func TestDeleteProfileMissing(t *testing.T) {
 	paths, reg := initProject(t, "postgres")
-	srv := New(reg, paths, emptyUI)
+	srv := New(reg, regFrom(t, paths), emptyUI)
 
 	rec := doRequest(t, srv, http.MethodDelete, "/api/profiles/ghost", "")
 	if rec.Code != http.StatusConflict {
@@ -306,7 +318,7 @@ func decodeProfileConfig(t *testing.T, rec *httptest.ResponseRecorder) profileCo
 
 func TestGetProfileConfig(t *testing.T) {
 	paths, reg := initProject(t, "postgres", "redis")
-	srv := New(reg, paths, emptyUI)
+	srv := New(reg, regFrom(t, paths), emptyUI)
 
 	rec := doRequest(t, srv, http.MethodGet, "/api/profiles/default", "")
 	if rec.Code != http.StatusOK {
@@ -327,7 +339,7 @@ func TestGetProfileConfig(t *testing.T) {
 
 func TestGetProfileConfigMissing(t *testing.T) {
 	paths, reg := initProject(t, "postgres")
-	srv := New(reg, paths, emptyUI)
+	srv := New(reg, regFrom(t, paths), emptyUI)
 
 	rec := doRequest(t, srv, http.MethodGet, "/api/profiles/ghost", "")
 	if rec.Code != http.StatusNotFound {
@@ -337,7 +349,7 @@ func TestGetProfileConfigMissing(t *testing.T) {
 
 func TestUpdateProfileConfig(t *testing.T) {
 	paths, reg := initProject(t, "postgres")
-	srv := New(reg, paths, emptyUI)
+	srv := New(reg, regFrom(t, paths), emptyUI)
 
 	// Load the scaffolded config, change one value, and write it back.
 	current := decodeProfileConfig(t, doRequest(t, srv, http.MethodGet, "/api/profiles/default", ""))
@@ -361,7 +373,7 @@ func TestUpdateProfileConfig(t *testing.T) {
 
 func TestUpdateProfileConfigMissingService(t *testing.T) {
 	paths, reg := initProject(t, "postgres")
-	srv := New(reg, paths, emptyUI)
+	srv := New(reg, regFrom(t, paths), emptyUI)
 
 	// Omitting the defined service leaves the profile invalid; the update is
 	// refused rather than silently dropping config.
@@ -373,7 +385,7 @@ func TestUpdateProfileConfigMissingService(t *testing.T) {
 
 func TestUpdateProfileConfigMissingProfile(t *testing.T) {
 	paths, reg := initProject(t, "postgres")
-	srv := New(reg, paths, emptyUI)
+	srv := New(reg, regFrom(t, paths), emptyUI)
 
 	rec := doRequest(t, srv, http.MethodPut, "/api/profiles/ghost", `{"services":[]}`)
 	if rec.Code != http.StatusBadRequest {
@@ -382,7 +394,7 @@ func TestUpdateProfileConfigMissingProfile(t *testing.T) {
 }
 
 func TestSPAUnbuilt(t *testing.T) {
-	srv := New(service.DefaultRegistry(), newPaths(t), emptyUI)
+	srv := New(service.DefaultRegistry(), regFrom(t, newPaths(t)), emptyUI)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
@@ -399,7 +411,7 @@ func TestSPAServesIndexAndFallback(t *testing.T) {
 	ui := fstest.MapFS{
 		"index.html": {Data: []byte("<!doctype html><title>app</title>")},
 	}
-	srv := New(service.DefaultRegistry(), newPaths(t), ui)
+	srv := New(service.DefaultRegistry(), regFrom(t, newPaths(t)), ui)
 
 	// Root serves index.html, and an unknown client-route falls back to it too.
 	for _, path := range []string{"/", "/profiles"} {
