@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useResizableHeight } from "@/hooks/useResizableHeight";
 import { executeQuery } from "@/services/api";
 import type { QueryResult } from "@/types/console";
 
@@ -66,6 +67,16 @@ export function PostgresConsole({
 }: PostgresConsoleProps) {
   const [run, setRun] = useState<RunState>({ status: "idle" });
 
+  // The editor's height is user-draggable (handle on its bottom edge) and
+  // remembered across reloads. Shrinking it grows the result table below, which
+  // re-caps itself to the remaining viewport — so one handle resizes both.
+  const { height: editorHeight, onResizeStart } = useResizableHeight({
+    key: "console-editor-height",
+    initial: 224,
+    min: 120,
+    max: 640,
+  });
+
   // The live editor view, used to read the cursor/selection when choosing
   // which statement to run.
   const viewRef = useRef<EditorView | null>(null);
@@ -123,13 +134,23 @@ export function PostgresConsole({
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <SqlEditor
-          value={sql}
-          onChange={onSqlChange}
-          schema={completionSchema}
-          onRun={runQuery}
-          viewRef={viewRef}
-        />
+        <div className="relative">
+          <SqlEditor
+            value={sql}
+            onChange={onSqlChange}
+            schema={completionSchema}
+            onRun={runQuery}
+            viewRef={viewRef}
+            height={editorHeight}
+          />
+          <div
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize SQL editor"
+            onPointerDown={onResizeStart}
+            className="absolute inset-x-0 -bottom-2 h-4 cursor-row-resize touch-none after:absolute after:inset-x-0 after:top-1/2 after:h-px after:-translate-y-1/2 after:bg-transparent hover:after:bg-border"
+          />
+        </div>
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs text-muted-foreground">
             <kbd className="rounded border border-border px-1 font-mono">
