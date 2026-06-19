@@ -123,6 +123,48 @@ func (l LocalStack) PurgeQueue(ctx context.Context, spec Spec, url string) error
 	return nil
 }
 
+// maxQueueMessages bounds a single message preview. SQS caps ReceiveMessage at
+// 10 messages per call, so a non-paginating preview can show at most that many.
+const maxQueueMessages = 10
+
+// Messages implements CloudBrowser: peek at up to limit messages on the queue at
+// the given URL. It is non-destructive — messages are received with a zero
+// visibility timeout so they reappear immediately for real consumers — and so it
+// shows whatever SQS happens to return, up to the per-call cap of 10.
+func (l LocalStack) Messages(ctx context.Context, spec Spec, url string, limit int) ([]MessageInfo, error) {
+	client, err := l.sqsOpener()(spec.Env)
+	if err != nil {
+		return nil, fmt.Errorf("connecting to sqs: %w", err)
+	}
+	if limit <= 0 || limit > maxQueueMessages {
+		limit = maxQueueMessages
+	}
+
+	out, err := client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
+		QueueUrl:            aws.String(url),
+		MaxNumberOfMessages: int32(limit),
+		VisibilityTimeout:   0,
+		MessageSystemAttributeNames: []sqstypes.MessageSystemAttributeName{
+			sqstypes.MessageSystemAttributeNameSentTimestamp,
+			sqstypes.MessageSystemAttributeNameApproximateReceiveCount,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("receiving messages: %w", err)
+	}
+
+	messages := make([]MessageInfo, 0, len(out.Messages))
+	for _, m := range out.Messages {
+		messages = append(messages, MessageInfo{
+			ID:           aws.ToString(m.MessageId),
+			Body:         aws.ToString(m.Body),
+			SentAt:       parseAttrInt(m.Attributes, string(sqstypes.MessageSystemAttributeNameSentTimestamp)),
+			ReceiveCount: parseAttrInt(m.Attributes, string(sqstypes.MessageSystemAttributeNameApproximateReceiveCount)),
+		})
+	}
+	return messages, nil
+}
+
 // Identities implements CloudBrowser: list the SES email/domain identities on
 // the emulated account with their verification status.
 func (l LocalStack) Identities(ctx context.Context, spec Spec) ([]IdentityInfo, error) {

@@ -1,5 +1,13 @@
 import { useState, type FormEvent } from "react";
-import { AlertCircle, Eraser, Inbox, Loader2, Plus, Trash2 } from "lucide-react";
+import {
+  AlertCircle,
+  Eraser,
+  Inbox,
+  List,
+  Loader2,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -12,6 +20,14 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -27,10 +43,15 @@ import {
   ApiError,
   createQueue,
   deleteQueue,
+  listQueueMessages,
   listQueues,
   purgeQueue,
 } from "@/services/api";
-import type { QueueInfo, QueuesResponse } from "@/types/localstack";
+import type {
+  MessageInfo,
+  QueueInfo,
+  QueuesResponse,
+} from "@/types/localstack";
 
 import type { AwsServiceDetailProps } from "./types";
 
@@ -218,6 +239,12 @@ function QueueRow({
       <TableCell className="text-right tabular-nums">{queue.inFlight}</TableCell>
       <TableCell className="text-right">
         <div className="flex justify-end gap-2">
+          <ViewMessagesDialog
+            queue={queue}
+            profile={profile}
+            service={service}
+            region={region}
+          />
           <ConfirmDialog
             title={`Purge "${queue.name}"?`}
             description="This removes all messages from the queue. The queue itself is kept. This cannot be undone."
@@ -267,6 +294,133 @@ function QueueRow({
         </div>
       </TableCell>
     </TableRow>
+  );
+}
+
+/**
+ * A dialog that previews the messages on a queue. Mounting the panel only while
+ * open means the read fires when the user opens it (and re-fires on reopen),
+ * never in the background of the listing.
+ */
+function ViewMessagesDialog({
+  queue,
+  profile,
+  service,
+  region,
+}: {
+  queue: QueueInfo;
+  profile: string;
+  service: string;
+  region?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="sm">
+          <List aria-hidden />
+          Messages
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="font-mono">{queue.name}</DialogTitle>
+          <DialogDescription>
+            A non-destructive preview of up to 10 messages. Messages stay
+            available to consumers and are not deleted.
+          </DialogDescription>
+        </DialogHeader>
+        {open && (
+          <MessagesPanel
+            queue={queue}
+            profile={profile}
+            service={service}
+            region={region}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** The message list inside the dialog: loading / error / empty / the messages. */
+function MessagesPanel({
+  queue,
+  profile,
+  service,
+  region,
+}: {
+  queue: QueueInfo;
+  profile: string;
+  service: string;
+  region?: string;
+}) {
+  const state = useAsync(
+    (signal) =>
+      listQueueMessages(profile, service, queue.url, 10, region, signal),
+    [profile, service, queue.url, region],
+  );
+
+  if (state.status === "loading") {
+    return <Skeleton className="h-40 w-full" />;
+  }
+  if (state.status === "error" || state.data.error) {
+    const message =
+      state.status === "error" ? state.error.message : state.data.error;
+    return (
+      <Alert variant="destructive">
+        <AlertCircle />
+        <div>
+          <AlertTitle>Could not read messages</AlertTitle>
+          <AlertDescription className="font-mono text-xs">
+            {message}
+          </AlertDescription>
+        </div>
+      </Alert>
+    );
+  }
+
+  const messages = state.data.messages;
+  if (messages.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-8 text-center">
+        <span className="flex size-10 items-center justify-center rounded-lg bg-muted">
+          <Inbox className="size-5 text-muted-foreground" aria-hidden />
+        </span>
+        <p className="max-w-md text-sm text-muted-foreground">
+          No messages available right now. Messages already in flight to a
+          consumer are not shown.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto">
+      {messages.map((m) => (
+        <MessageCard key={m.id} message={m} />
+      ))}
+    </div>
+  );
+}
+
+/** One previewed message: its metadata header and its body. */
+function MessageCard({ message }: { message: MessageInfo }) {
+  return (
+    <div className="rounded-lg border p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+        <span className="font-mono">{message.id}</span>
+        <span className="flex gap-3">
+          {message.sentAt > 0 && (
+            <span>{new Date(message.sentAt).toLocaleString()}</span>
+          )}
+          <span>received ×{message.receiveCount}</span>
+        </span>
+      </div>
+      <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs">
+        {message.body}
+      </pre>
+    </div>
   );
 }
 

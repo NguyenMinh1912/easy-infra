@@ -7,6 +7,7 @@
 import type {
   HealthResponse,
   IdentitiesResponse,
+  MessagesResponse,
   QueuesResponse,
 } from "@/types/localstack";
 
@@ -101,6 +102,28 @@ export async function purgeQueue(
     "POST",
     `${base(profile, service)}/queues/purge?${query.toString()}`,
     undefined,
+    signal,
+  );
+}
+
+/**
+ * Preview the messages on the queue at `url` — a non-destructive peek (SQS
+ * returns up to 10, left visible to real consumers). `limit` caps how many to
+ * request; `region` scopes the read when selected.
+ */
+export async function listQueueMessages(
+  profile: string,
+  service: string,
+  url: string,
+  limit?: number,
+  region?: string,
+  signal?: AbortSignal,
+): Promise<MessagesResponse> {
+  const query = new URLSearchParams({ url });
+  if (limit != null) query.set("limit", String(limit));
+  if (region) query.set("region", region);
+  return apiGet<MessagesResponse>(
+    `${base(profile, service)}/queues/messages?${query.toString()}`,
     signal,
   );
 }
