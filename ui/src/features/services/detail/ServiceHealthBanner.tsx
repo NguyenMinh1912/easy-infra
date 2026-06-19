@@ -10,12 +10,12 @@ import { metaFor } from "../catalog-meta";
 
 /**
  * Service types whose health can be probed over the wire. Mirrors the services
- * with a tailored connection check in their config card (postgres, minio); other
+ * with a `Health` implementation server-side (postgres, minio, redis); other
  * types have no `Health` implementation server-side, so probing them would
  * report a false "not active". Kept as a single set rather than scattered name
  * checks, in line with the "don't special-case service names" convention.
  */
-const HEALTH_CHECKABLE = new Set(["postgres", "minio"]);
+const HEALTH_CHECKABLE = new Set(["postgres", "minio", "redis"]);
 
 interface ServiceHealthBannerProps {
   /** Service whose health is probed. */
