@@ -34,6 +34,7 @@ export type {
   SnapshotsResponse,
 } from "./services";
 export { executeQuery, getSchema } from "./console";
+export { getDatabases, listKeys, getKeyValue } from "./redis";
 export {
   listBuckets,
   listObjects,

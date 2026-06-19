@@ -86,6 +86,12 @@ func TestLifecycleSeam(t *testing.T) {
 			"backup": svc.Backup,
 			"clean":  svc.Clean,
 		}
+		// Redis implements Health (a PING against the configured server), so it
+		// no longer reports ErrNotImplemented for that op; only its provisioning
+		// lifecycle remains unimplemented.
+		if name == "redis" {
+			delete(ops, "health")
+		}
 		for op, fn := range ops {
 			if err := fn(ctx, spec); !errors.Is(err, ErrNotImplemented) {
 				t.Errorf("%s %s: got %v, want ErrNotImplemented", name, op, err)
