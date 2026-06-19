@@ -37,7 +37,7 @@ export function updateProfileConfig(
   );
 }
 
-/** Create a profile scaffolded with default service config; returns the new list. */
+/** Create an empty profile (no services); returns the new list. */
 export function createProfile(name: string): Promise<ProfilesResult> {
   return apiSend<ProfilesResult>("POST", "/profiles", { name });
 }

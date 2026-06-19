@@ -27,11 +27,6 @@ var ErrNotInitialized = errors.New("no active workspace")
 // env here so it appears in the sidebar as a managed profile.
 const LocalProfile = "local"
 
-// DefaultServices is the service set a freshly scaffolded profile starts with,
-// so a new profile is immediately valid (a profile must define at least one
-// service).
-var DefaultServices = []string{"postgres", "redis"}
-
 // Project is a workspace plus the store and registry needed to read and validate
 // its profiles and services.
 type Project struct {
@@ -140,9 +135,9 @@ func (p *Project) UpdateProfile(name string, services map[string]profile.Service
 	return p.Store.ReplaceProfileServices(p.Workspace.ID, name, services)
 }
 
-// AddProfile scaffolds a new profile with default config for the conventional
-// starter services, then saves it. It errors if a profile with that name already
-// exists.
+// AddProfile creates a new, empty profile (no services) and saves it. The user
+// adds services afterwards from the profile screen. It errors if a profile with
+// that name already exists.
 func (p *Project) AddProfile(name string) (*profile.Profile, error) {
 	exists, err := p.Store.ProfileExists(p.Workspace.ID, name)
 	if err != nil {
@@ -151,10 +146,7 @@ func (p *Project) AddProfile(name string) (*profile.Profile, error) {
 	if exists {
 		return nil, fmt.Errorf("profile %q already exists", name)
 	}
-	prof, err := profile.Scaffold(p.Registry, DefaultServices...)
-	if err != nil {
-		return nil, err
-	}
+	prof := &profile.Profile{Services: map[string]profile.ServiceEntry{}}
 	if err := p.Store.CreateProfile(p.Workspace.ID, name, prof.Services); err != nil {
 		return nil, err
 	}

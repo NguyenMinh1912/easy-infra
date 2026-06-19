@@ -266,6 +266,10 @@ func TestActivateProfile(t *testing.T) {
 	if rec := doRequest(t, srv, http.MethodPost, "/api/profiles", `{"name":"staging"}`); rec.Code != http.StatusCreated {
 		t.Fatalf("create staging: code = %d", rec.Code)
 	}
+	// A new profile is empty; it needs at least one service to be activatable.
+	if rec := doJSON(t, srv, http.MethodPost, "/api/profiles/staging/services", serviceNameRequest{Type: "postgres"}); rec.Code != http.StatusCreated {
+		t.Fatalf("add service to staging: code = %d (body %s)", rec.Code, rec.Body)
+	}
 
 	rec := doRequest(t, srv, http.MethodPost, "/api/profiles/staging/activate", "")
 	if rec.Code != http.StatusOK {

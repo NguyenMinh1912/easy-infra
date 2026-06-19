@@ -39,9 +39,10 @@ func TestAddProfileServiceMultipleSameType(t *testing.T) {
 	if _, err := p.AddProfile("staging"); err != nil {
 		t.Fatalf("AddProfile: %v", err)
 	}
+	seedStarterServices(t, p, "staging")
 
-	// postgres is part of the default scaffold, so a second instance gets a
-	// distinct, suffixed id rather than being rejected.
+	// postgres is already defined, so a second instance gets a distinct,
+	// suffixed id rather than being rejected.
 	id, err := p.AddProfileService("staging", "postgres", "Analytics", nil)
 	if err != nil {
 		t.Fatalf("AddProfileService(second postgres): %v", err)
@@ -100,6 +101,7 @@ func TestUpdateProfileService(t *testing.T) {
 	if _, err := p.AddProfile("staging"); err != nil {
 		t.Fatalf("AddProfile: %v", err)
 	}
+	seedStarterServices(t, p, "staging")
 
 	cfg := map[string]any{
 		"version": "15", "host": "db.example", "port": 5433, "user": "u", "database": "d",
@@ -125,6 +127,7 @@ func TestUpdateProfileServiceRename(t *testing.T) {
 	if _, err := p.AddProfile("staging"); err != nil {
 		t.Fatalf("AddProfile: %v", err)
 	}
+	seedStarterServices(t, p, "staging")
 
 	cfg := map[string]any{
 		"version": "16", "host": "localhost", "port": 5432, "user": "u", "database": "d",
@@ -153,8 +156,9 @@ func TestUpdateProfileServiceErrors(t *testing.T) {
 	if _, err := p.AddProfile("staging"); err != nil {
 		t.Fatalf("AddProfile: %v", err)
 	}
+	seedStarterServices(t, p, "staging")
 
-	// minio is not in the default scaffold.
+	// minio is not defined on the profile.
 	if err := p.UpdateProfileService("staging", "minio", "", map[string]any{}); !errors.Is(err, ErrServiceNotDefined) {
 		t.Errorf("UpdateProfileService(undefined) error = %v, want ErrServiceNotDefined", err)
 	}
@@ -170,6 +174,7 @@ func TestRemoveProfileService(t *testing.T) {
 	if _, err := p.AddProfile("staging"); err != nil {
 		t.Fatalf("AddProfile: %v", err)
 	}
+	seedStarterServices(t, p, "staging")
 
 	if err := p.RemoveProfileService("staging", "redis"); err != nil {
 		t.Fatalf("RemoveProfileService: %v", err)
@@ -188,6 +193,7 @@ func TestRemoveProfileServiceErrors(t *testing.T) {
 	if _, err := p.AddProfile("staging"); err != nil {
 		t.Fatalf("AddProfile: %v", err)
 	}
+	seedStarterServices(t, p, "staging")
 
 	if err := p.RemoveProfileService("staging", "minio"); !errors.Is(err, ErrServiceNotDefined) {
 		t.Errorf("RemoveProfileService(undefined) error = %v, want ErrServiceNotDefined", err)

@@ -29,6 +29,18 @@ func newTestProject(t *testing.T) *Project {
 	return p
 }
 
+// seedStarterServices populates a profile with the conventional starter
+// services (postgres, redis). AddProfile creates an empty profile, so tests
+// that need a populated one call this rather than relying on a default scaffold.
+func seedStarterServices(t *testing.T, p *Project, profileName string) {
+	t.Helper()
+	for _, svc := range []string{"postgres", "redis"} {
+		if _, err := p.AddProfileService(profileName, svc, "", nil); err != nil {
+			t.Fatalf("AddProfileService(%s): %v", svc, err)
+		}
+	}
+}
+
 func TestCreateWorkspaceHasNoProfiles(t *testing.T) {
 	t.Setenv("EASY_INFRA_CONFIG_DIR", t.TempDir())
 	st, err := store.Open()
@@ -65,10 +77,9 @@ func TestAddProfile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddProfile: %v", err)
 	}
-	for _, name := range []string{"postgres", "redis"} {
-		if _, ok := prof.Services[name]; !ok {
-			t.Errorf("scaffolded profile missing service %q", name)
-		}
+	// A new profile starts empty; the user adds services afterwards.
+	if len(prof.Services) != 0 {
+		t.Errorf("new profile services = %v, want empty", prof.Services)
 	}
 	names, err := p.Profiles()
 	if err != nil {
@@ -77,8 +88,12 @@ func TestAddProfile(t *testing.T) {
 	if len(names) != 1 || names[0] != "staging" {
 		t.Errorf("Profiles() = %v, want [staging]", names)
 	}
-	if _, err := p.LoadProfile("staging"); err != nil {
-		t.Errorf("LoadProfile: %v", err)
+	stored, err := p.ProfileConfig("staging")
+	if err != nil {
+		t.Fatalf("ProfileConfig: %v", err)
+	}
+	if len(stored) != 0 {
+		t.Errorf("stored services = %v, want empty", stored)
 	}
 }
 
@@ -114,6 +129,7 @@ func TestForkLocalProfile(t *testing.T) {
 	if _, err := p.AddProfile("staging"); err != nil {
 		t.Fatalf("AddProfile: %v", err)
 	}
+	seedStarterServices(t, p, "staging")
 
 	localEnv := service.Config{
 		"host": "127.0.0.1", "port": 5432, "user": "app", "password": "app", "database": "app",
@@ -143,6 +159,7 @@ func TestForkLocalProfilePreservesPriorForks(t *testing.T) {
 	if _, err := p.AddProfile("staging"); err != nil {
 		t.Fatalf("AddProfile: %v", err)
 	}
+	seedStarterServices(t, p, "staging")
 
 	pgEnv := service.Config{
 		"host": "127.0.0.1", "port": 5432, "user": "app", "password": "app", "database": "app",
@@ -180,6 +197,7 @@ func TestRemoveProfileActive(t *testing.T) {
 	if _, err := p.AddProfile("staging"); err != nil {
 		t.Fatalf("AddProfile: %v", err)
 	}
+	seedStarterServices(t, p, "staging")
 	if err := p.SetActiveProfile("staging"); err != nil {
 		t.Fatalf("SetActiveProfile: %v", err)
 	}
