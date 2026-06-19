@@ -100,6 +100,22 @@ function formatValue(value: unknown): string {
 }
 
 /**
+ * Pretty-print text as JSON when it parses as an object or array, otherwise
+ * return it unchanged so plain text previews stay as-is.
+ */
+function prettyFormat(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+    return text;
+  }
+  try {
+    return JSON.stringify(JSON.parse(trimmed), null, 2);
+  } catch {
+    return text;
+  }
+}
+
+/**
  * One cell: NULL muted, long values collapsed behind a preview dialog, the rest
  * rendered inline as text.
  */
@@ -136,7 +152,7 @@ function LongCellValue({ text, column }: { text: string; column: string }) {
             <DialogTitle className="font-mono">{column}</DialogTitle>
           </DialogHeader>
           <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-muted/30 p-4 font-mono text-sm">
-            {text}
+            {prettyFormat(text)}
           </pre>
         </DialogContent>
       </Dialog>
