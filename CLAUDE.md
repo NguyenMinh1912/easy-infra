@@ -4,10 +4,11 @@ Guidance for Claude Code (and humans) working in this repository.
 
 ## What we build
 
-`easy-infra` is a command-line tool for managing a project's local/dev
-infrastructure. From a project folder, a user initializes the project, defines
-one or more **profiles** describing the services that project needs, and then
-applies a profile to bring those services up.
+`easy-infra` is an **app** for managing a project's local/dev infrastructure.
+Running the binary launches a local web UI + JSON API; from the UI a user
+creates one or more **workspaces**, defines **profiles** of services within
+them, and applies a profile to bring those services up. There is no separate CLI
+for these operations — the binary's job is to serve the app.
 
 Supported services:
 
@@ -16,61 +17,72 @@ Supported services:
 - **redis**
 - **localstack**
 
-### Configuration & state
+### Data model & storage
 
-- **Config** is authored by the user in **YAML** (e.g. `easy-infra.yml`). It is
-  the source of truth: it defines the project's profiles and, per profile, the
-  configuration of each service.
-- **State** is managed by the tool in **JSON** (e.g. `.easy-infra/state.json`).
-  It records runtime/derived facts — most importantly the currently active
-  profile — and is not meant to be hand-edited.
-
-A **profile** is a named bundle of service configurations (e.g. `default`,
-`ci`, `staging-like`). A project may have many profiles; exactly one is "active"
-at a time, tracked in state.
+- **All data lives in a single SQLite database** in the user config directory
+  (`$EASY_INFRA_CONFIG_DIR` or `os.UserConfigDir()/easy-infra/easy-infra.db`).
+  It is tool-owned and not meant to be hand-edited. There are no project folders,
+  no `easy-infra.yml`, and no JSON state files.
+- A **workspace** is a named bundle of profiles (it replaces the old "project
+  folder"). Exactly one workspace is active at a time.
+- A **profile** is a named bundle of service configurations (e.g. `default`,
+  `ci`, `staging-like`) within a workspace. Exactly one profile is active per
+  workspace. A service instance's config is stored as a JSON column.
+- Backup sessions live in the same database, scoped by workspace. Snapshot
+  artifacts are written under the backups directory keyed by profile/service.
 
 ## Commands
 
+The binary serves the app — running `easy-infra` (no subcommand) starts it.
+
 | Command | Purpose |
 | --- | --- |
-| `easy-infra init` | Initialize a project in the current folder: scaffold the YAML config and create the JSON state file. |
-| `easy-infra profile ...` | Manage profiles — list, add, edit, remove profiles and their service config. |
-| `easy-infra use <profile>` | Set `<profile>` as the active profile (records it in state). |
-| `easy-infra apply` | Reconcile the active profile: provision/start the services it defines. |
-| `easy-infra backup` | Back up data for the services in the active profile. |
+| `easy-infra` (default) | Open the central store and serve the web UI + JSON API. |
+| `easy-infra serve` (alias `ui`) | Same as the default; explicit form. `--port` to choose the port. |
+
+Workspaces, profiles, services, apply, and backup are all managed from the web
+UI (and the `/api` endpoints behind it), not from CLI subcommands.
 
 ## Tech stack
 
 - **Language:** Go.
-- **CLI framework:** [cobra](https://github.com/spf13/cobra) for commands;
-  [viper](https://github.com/spf13/viper) (or `gopkg.in/yaml.v3`) for config.
-- **State serialization:** standard library `encoding/json`.
-- Services are provisioned via Docker (shelling out to `docker` / compose, or
-  the Docker SDK) — confirm the approach before introducing a dependency.
+- **Entrypoint:** [cobra](https://github.com/spf13/cobra) for the root/serve
+  command.
+- **Storage:** [`modernc.org/sqlite`](https://pkg.go.dev/modernc.org/sqlite), a
+  pure-Go SQLite driver (no cgo), opened in WAL mode with a single writer.
+- Service connections use `jackc/pgx` (postgres) and `minio-go` (minio).
 
 ## Suggested layout
 
 ```
 .
 ├── main.go                 # thin entrypoint -> cmd.Execute()
-├── cmd/                    # one file per command (init, profile, use, apply, backup)
+├── cmd/                    # root command (serves the app) + serve alias
 ├── internal/
-│   ├── config/             # YAML config: load, validate, save
-│   ├── state/              # JSON state: active profile, etc.
+│   ├── store/              # the SQLite store: workspaces, profiles, services, active selections
+│   ├── profile/            # profile value types + validation (no I/O)
+│   ├── project/            # facade over the store for a workspace (used by the server)
+│   ├── backup/             # backup session store (shares the central DB)
+│   ├── server/             # HTTP API + embedded UI
 │   └── service/            # postgres, minio, redis providers (common interface)
-└── easy-infra.yml          # example/scaffolded project config
+└── ui/                     # the web app (embedded into the binary)
 ```
 
-Keep `cmd/` thin — parse flags and delegate. Put real logic in `internal/`.
+Keep `cmd/` thin. Put persistence in `internal/store`, validation in
+`internal/profile`/`internal/service`, and workflow logic in `internal/project`.
 
 ## Conventions
 
 - Add a new service by implementing the common `service` interface and
   registering it; don't special-case service names across the codebase.
-- Config (YAML) is user-owned and validated on load; state (JSON) is
-  tool-owned — never require users to edit it by hand.
-- Commands operate on the **active profile** unless one is passed explicitly.
-- Return errors up to `cmd/`; surface clear, actionable messages to the user.
+- The SQLite store is the single source of truth and tool-owned — never require
+  users to edit it by hand. `internal/store` holds persistence only; domain
+  rules (a profile needs ≥1 valid service, the active profile can't be removed)
+  live in `internal/project`.
+- The server operates on the **active workspace** and its **active profile**
+  unless one is passed explicitly.
+- Return errors up to the handler/`cmd/` layer; surface clear, actionable
+  messages to the user.
 
 ## Build, test, run
 
@@ -79,7 +91,10 @@ go build ./...        # build
 go test ./...         # run tests
 go vet ./...          # static checks
 gofmt -l .            # formatting (must be clean)
-go run . <command>    # run locally, e.g. `go run . init`
+go run .              # run the app locally (serves the UI on :8080)
 ```
+
+The web UI lives in `ui/`. Build it with `npm --prefix ui run build` (output is
+embedded into the Go binary); typecheck with `npm --prefix ui run build`.
 
 Run `go test ./...` and `gofmt` before considering a change done.

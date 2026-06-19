@@ -10,30 +10,30 @@ prefer the surrounding code and raise the discrepancy.
 The codebase follows a strict, one-directional dependency flow:
 
 ```
-main.go  ->  cmd/  ->  internal/project  ->  internal/{config,profile,state,service}
+main.go  ->  cmd/  ->  internal/server  ->  internal/project  ->  internal/{store,profile,service}
 ```
 
-- **`cmd/` is thin.** A command parses flags and delegates. No business logic,
-  file I/O, or validation lives in `cmd/` — it calls into `internal/`.
+- **`cmd/` is thin.** It opens the store and starts the server; no business
+  logic, persistence, or validation lives there.
 - **`internal/service`** is the lowest layer and depends on nothing else in the
-  repo. `config` and `profile` may import `service`; `service` must never
-  import them.
-- **`internal/project`** is the facade the command layer talks to. It wires
-  config, profiles, state, and the service registry together so commands have a
-  single dependency.
+  repo. `store` and `profile` may import `service`; `service` must never import
+  them.
+- **`internal/store`** owns persistence (the single SQLite database) and holds
+  no policy: it returns domain types and maps storage errors to sentinels.
+- **`internal/project`** is the facade the server talks to. It wires the store,
+  profiles, and the service registry together and layers validation on top, so
+  handlers have a single dependency.
 - Dependencies point inward/downward only. If you need an upward reference,
   invert it with an interface instead of creating an import cycle.
 
-### Project config vs. profile config
+### Service config: definition vs. environment
 
-A service's configuration is split across two files, owned by two packages:
+A service's config block holds two logical halves, both stored together as one
+JSON column per service instance (see `internal/store`):
 
-- **`internal/config`** — the project config (`easy-infra.yml`): which services
-  exist and their environment-independent *definition* (image/version). Tracked
-  in git; no secrets.
-- **`internal/profile`** — per-profile *environment* config
-  (`.easy-infra/profiles/<name>.yml`): host, port, user, password, database URL
-  for one environment. Holds credentials, so it is gitignored.
+- *definition* — what the service is: environment-independent settings like
+  image/version and `cleanable`.
+- *environment* — how to reach it: host, port, user, password, database URL.
 
 Each `service.Service` owns the schema for *both* halves
 (`DefaultDefinition`/`ValidateDefinition` and `DefaultEnv`/`ValidateEnv`). Keep
@@ -41,8 +41,9 @@ definition fields and environment fields on the correct side of that line.
 
 ## SOLID in this codebase
 
-- **Single responsibility** — one package, one concern: `config` owns YAML,
-  `state` owns JSON, `service` owns service definitions, `project` orchestrates.
+- **Single responsibility** — one package, one concern: `store` owns
+  persistence, `profile` owns the value types and validation, `service` owns
+  service definitions, `project` orchestrates.
 - **Open/closed** — adding a service is additive: implement the `service.Service`
   interface in its own file and register it in `DefaultRegistry`. Never add a
   `switch` on service names elsewhere; discover services through the registry.
@@ -51,9 +52,9 @@ definition fields and environment fields on the correct side of that line.
 - **Interface segregation** — `Service` exposes only what a service must
   describe: its name plus the default/validate pair for each config half
   (definition and environment). Don't add methods a caller won't use.
-- **Dependency inversion** — high-level code depends on abstractions. Commands
-  receive a `*service.Registry` and `project.Paths` by injection
-  (see `newRootCmd`); they don't construct global singletons.
+- **Dependency inversion** — high-level code depends on abstractions. The server
+  receives a `*service.Registry`, a `*store.Store`, and the UI filesystem by
+  injection (see `server.New`); it doesn't construct global singletons.
 
 ## Go style
 
@@ -69,21 +70,22 @@ definition fields and environment fields on the correct side of that line.
   the user. Don't `os.Exit` or print to stderr from `internal/`.
 - Wrap with context using `fmt.Errorf("...: %w", err)` so the chain is
   inspectable with `errors.Is`/`errors.As`.
-- Make messages actionable — name the file, the profile, the allowed values
+- Make messages actionable — name the profile, the allowed values
   (e.g. `unknown profile "ci" (available: [default])`).
-- Export sentinel errors (e.g. `project.ErrNotInitialized`) when callers need to
-  branch on a condition; check them with `errors.Is`.
+- Export sentinel errors (e.g. `store.ErrProfileNotFound`,
+  `project.ErrNotInitialized`) when callers need to branch on a condition; check
+  them with `errors.Is`.
 
-## Config vs. state
+## Persistence
 
-- **Project config (YAML)** is user-authored and the source of truth for
-  service definitions. Validate it on load and never silently rewrite it.
-- **Profile config (YAML)** is user-authored per-environment settings; it holds
-  credentials and is gitignored. Validate it against the project's defined
-  services on load.
-- **State (JSON)** is tool-owned. Never require users to hand-edit it. Write it
-  indented so diffs stay readable.
-- Commands operate on the **active profile** unless one is passed explicitly.
+- **The SQLite store is the single source of truth** and tool-owned. Never
+  require users to hand-edit it. `internal/store` holds persistence only.
+- **Validation lives above the store**, in `internal/project` /
+  `internal/service`: a profile must define at least one valid service, the
+  active profile cannot be removed, and so on. Validate on read/write; don't
+  push policy down into the store.
+- The server operates on the **active workspace** and its **active profile**
+  unless one is passed explicitly.
 
 ## Testing
 

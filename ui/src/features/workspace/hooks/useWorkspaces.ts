@@ -6,21 +6,24 @@ import {
   createWorkspace,
   getWorkspaces,
   removeWorkspace,
+  renameWorkspace,
 } from "@/services/api";
 import type { WorkspacesResult } from "@/types/workspace";
 
 /** Mutations the workspace switcher can perform. */
 export interface WorkspaceActions {
-  activate: (name: string) => Promise<void>;
-  create: (name: string, path: string) => Promise<void>;
-  remove: (name: string) => Promise<void>;
+  activate: (id: number) => Promise<void>;
+  create: (name: string) => Promise<void>;
+  rename: (id: number, name: string) => Promise<void>;
+  remove: (id: number) => Promise<void>;
 }
 
 /**
- * Load the known workspaces and expose actions to switch, create, and remove
- * them. Switching or creating changes the folder behind every screen, so the
- * caller is expected to reload the app after a successful activate/create — the
- * switcher does this via a full reload (see {@link reloadApp}).
+ * Load the known workspaces and expose actions to switch, create, rename, and
+ * remove them. Switching or creating changes the data behind every screen, so
+ * the caller is expected to reload the app after a successful activate/create —
+ * the switcher does this via a full reload. Rename and remove only refetch the
+ * list (handled here via {@link reload}).
  */
 export function useWorkspaces(): {
   state: AsyncState<WorkspacesResult>;
@@ -34,14 +37,18 @@ export function useWorkspaces(): {
 
   const actions = useMemo<WorkspaceActions>(
     () => ({
-      activate: async (name) => {
-        await activateWorkspace(name);
+      activate: async (id) => {
+        await activateWorkspace(id);
       },
-      create: async (name, path) => {
-        await createWorkspace(name, path);
+      create: async (name) => {
+        await createWorkspace(name);
       },
-      remove: async (name) => {
-        await removeWorkspace(name);
+      rename: async (id, name) => {
+        await renameWorkspace(id, name);
+        reload();
+      },
+      remove: async (id) => {
+        await removeWorkspace(id);
         reload();
       },
     }),

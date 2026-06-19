@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -12,46 +12,43 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import type { Workspace } from "@/types/workspace";
 
-interface CreateWorkspaceDialogProps {
+interface EditWorkspaceDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreate: (name: string) => Promise<void>;
-  /** Called after a workspace is created so the app can reload. */
-  onCreated: () => void;
+  /** The workspace being renamed (null when the dialog is closed). */
+  workspace: Workspace | null;
+  onRename: (id: number, name: string) => Promise<void>;
 }
 
-/**
- * Create-workspace dialog. A workspace is just a name now — all data lives in
- * the central store, with no folder to choose. The backend scaffolds the
- * workspace's default profile on create.
- */
-export function CreateWorkspaceDialog({
+/** Rename-workspace dialog. The only editable field is the name. */
+export function EditWorkspaceDialog({
   open,
   onOpenChange,
-  onCreate,
-  onCreated,
-}: CreateWorkspaceDialogProps) {
+  workspace,
+  onRename,
+}: EditWorkspaceDialogProps) {
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (open) setName("");
-  }, [open]);
+    if (open && workspace) setName(workspace.name);
+  }, [open, workspace]);
 
   const trimmed = name.trim();
-  const canSubmit = trimmed.length > 0 && !submitting;
+  const canSubmit =
+    trimmed.length > 0 && trimmed !== workspace?.name && !submitting;
 
-  async function handleCreate() {
-    if (!canSubmit) return;
+  async function handleRename() {
+    if (!canSubmit || !workspace) return;
     setSubmitting(true);
     try {
-      await onCreate(trimmed);
-      toast.success(`Workspace "${trimmed}" created`);
+      await onRename(workspace.id, trimmed);
+      toast.success(`Workspace renamed to "${trimmed}"`);
       onOpenChange(false);
-      onCreated();
     } catch (cause) {
-      toast.error("Could not create workspace", {
+      toast.error("Could not rename workspace", {
         description: cause instanceof Error ? cause.message : String(cause),
       });
     } finally {
@@ -63,26 +60,25 @@ export function CreateWorkspaceDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Create workspace</DialogTitle>
+          <DialogTitle>Rename workspace</DialogTitle>
           <DialogDescription>
-            Name the workspace. A default profile is scaffolded for you; all data
-            is stored locally.
+            Give this workspace a new name. Its profiles and services are
+            unchanged.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="workspace-name" className="text-sm font-medium">
+          <label htmlFor="rename-workspace" className="text-sm font-medium">
             Name
           </label>
           <Input
-            id="workspace-name"
+            id="rename-workspace"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. my-app"
             disabled={submitting}
             autoFocus
             onKeyDown={(e) => {
-              if (e.key === "Enter") handleCreate();
+              if (e.key === "Enter") handleRename();
             }}
           />
         </div>
@@ -96,13 +92,13 @@ export function CreateWorkspaceDialog({
           >
             Cancel
           </Button>
-          <Button type="button" disabled={!canSubmit} onClick={handleCreate}>
+          <Button type="button" disabled={!canSubmit} onClick={handleRename}>
             {submitting ? (
               <Loader2 className="animate-spin" aria-hidden />
             ) : (
-              <Plus aria-hidden />
+              <Pencil aria-hidden />
             )}
-            {submitting ? "Creating…" : "Create workspace"}
+            {submitting ? "Saving…" : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>

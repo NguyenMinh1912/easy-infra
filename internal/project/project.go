@@ -1,159 +1,102 @@
-// Package project ties together the project config, profiles, state, and the
-// service registry into a single facade for the command layer. Commands depend
-// on this package rather than re-implementing the load/validate/resolve
-// sequence, keeping the cmd/ layer thin and the workflow logic in one place.
+// Package project ties the store, the service registry, and a workspace into a
+// single facade for the HTTP server. Handlers depend on this package rather than
+// re-implementing the load/validate/resolve sequence, keeping request handling
+// thin and the workflow logic in one place.
+//
+// A Project is scoped to one workspace. Storage lives in package store (a single
+// SQLite database); this package layers validation and the profile/service
+// workflows on top of it.
 package project
 
 import (
 	"errors"
 	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
 
-	"github.com/minhnc/easy-infra/internal/config"
 	"github.com/minhnc/easy-infra/internal/profile"
 	"github.com/minhnc/easy-infra/internal/service"
-	"github.com/minhnc/easy-infra/internal/state"
+	"github.com/minhnc/easy-infra/internal/store"
 )
 
-// ErrNotInitialized signals that the current folder has no easy-infra project.
-// Commands surface it as a hint to run `easy-infra init`.
-var ErrNotInitialized = errors.New("project not initialized")
+// ErrNotInitialized signals that there is no workspace to operate on (none
+// active, or the requested one is gone). Handlers surface it as "create a
+// workspace first".
+var ErrNotInitialized = errors.New("no active workspace")
 
-// LocalProfile is the conventional name of the profile that holds a project's
-// locally-forked services. "fork to local" writes the forked service's
-// localised env here so it appears in the sidebar as a managed profile.
+// LocalProfile is the conventional name of the profile that holds a workspace's
+// locally-forked services. "fork to local" writes the forked service's localised
+// env here so it appears in the sidebar as a managed profile.
 const LocalProfile = "local"
+
+// DefaultProfile is the profile a freshly created workspace starts with.
+const DefaultProfile = "default"
 
 // DefaultServices is the service set a freshly scaffolded profile starts with,
 // so a new profile is immediately valid (a profile must define at least one
-// service). Used by `init` and when adding a profile.
+// service).
 var DefaultServices = []string{"postgres", "redis"}
 
-// Paths locates a project's config, state, and profile files.
-type Paths struct {
-	Config      string
-	State       string
-	ProfilesDir string
-}
-
-// DefaultPaths returns the conventional file locations for a project rooted at
-// the current working directory.
-func DefaultPaths() Paths {
-	return Paths{
-		Config:      config.DefaultPath,
-		State:       state.DefaultPath,
-		ProfilesDir: profile.DefaultDir,
-	}
-}
-
-// PathsFor returns the conventional project file locations rooted at dir. The
-// web server uses this to operate on a user-selected workspace folder rather
-// than the process working directory.
-func PathsFor(dir string) Paths {
-	return Paths{
-		Config:      filepath.Join(dir, config.DefaultPath),
-		State:       filepath.Join(dir, state.DefaultPath),
-		ProfilesDir: filepath.Join(dir, profile.DefaultDir),
-	}
-}
-
-// Initialize scaffolds a new project at paths: the config marker, a default
-// profile owning the conventional starter services, and the state file with
-// "default" active. The project root is created if missing. It errors if a
-// project already exists at paths.Config. Both the `init` command and the web
-// UI's "create workspace" action go through here so scaffolding lives in one
-// place.
-func Initialize(paths Paths, reg *service.Registry) error {
-	if _, err := config.Load(paths.Config); err == nil {
-		return fmt.Errorf("project already initialized (%s exists)", paths.Config)
-	}
-	if dir := filepath.Dir(paths.Config); dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return fmt.Errorf("creating project dir %s: %w", dir, err)
-		}
-	}
-
-	cfg := config.Scaffold()
-	if err := cfg.Save(paths.Config); err != nil {
-		return err
-	}
-
-	prof, err := profile.Scaffold(reg, DefaultServices...)
-	if err != nil {
-		return err
-	}
-	if err := prof.Save(paths.ProfilePath("default")); err != nil {
-		return err
-	}
-
-	st := &state.State{ActiveProfile: "default"}
-	return st.Save(paths.State)
-}
-
-// ProfilePath returns the file path for the named profile.
-func (p Paths) ProfilePath(name string) string {
-	return profile.Path(p.ProfilesDir, name)
-}
-
-// Project is a loaded, validated project config plus its current state and the
-// registry used to interpret service config. Profiles are loaded on demand.
+// Project is a workspace plus the store and registry needed to read and validate
+// its profiles and services.
 type Project struct {
-	Config   *config.Config
-	State    *state.State
-	Registry *service.Registry
-	Paths    Paths
+	Store     *store.Store
+	Registry  *service.Registry
+	Workspace store.Workspace
 }
 
-// Load reads and validates the project config, then loads (or initializes) the
-// state. It returns ErrNotInitialized if the config is absent.
-func Load(paths Paths, reg *service.Registry) (*Project, error) {
-	cfg, err := config.Load(paths.Config)
+// Open loads the workspace with id and returns a Project scoped to it. An
+// unknown workspace yields ErrNotInitialized.
+func Open(st *store.Store, reg *service.Registry, wsID int64) (*Project, error) {
+	ws, err := st.GetWorkspace(wsID)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
+		if errors.Is(err, store.ErrWorkspaceNotFound) {
 			return nil, ErrNotInitialized
 		}
 		return nil, err
 	}
-	if err := cfg.Validate(); err != nil {
-		return nil, err
-	}
+	return &Project{Store: st, Registry: reg, Workspace: ws}, nil
+}
 
-	st, err := state.Load(paths.State)
+// CreateWorkspace creates a workspace, scaffolds its default profile (owning the
+// conventional starter services), and records that profile as active — so a new
+// workspace is immediately usable. It does not make the workspace itself active;
+// the caller decides that.
+func CreateWorkspace(st *store.Store, reg *service.Registry, name string) (store.Workspace, error) {
+	prof, err := profile.Scaffold(reg, DefaultServices...)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			st = &state.State{}
-		} else {
-			return nil, err
-		}
+		return store.Workspace{}, err
 	}
-
-	return &Project{Config: cfg, State: st, Registry: reg, Paths: paths}, nil
+	ws, err := st.CreateWorkspace(name)
+	if err != nil {
+		return store.Workspace{}, err
+	}
+	if err := st.CreateProfile(ws.ID, DefaultProfile, prof.Services); err != nil {
+		return store.Workspace{}, err
+	}
+	if err := st.SetWorkspaceActiveProfile(ws.ID, DefaultProfile); err != nil {
+		return store.Workspace{}, err
+	}
+	ws.ActiveProfile = DefaultProfile
+	return ws, nil
 }
 
-// IsInitialized reports whether an easy-infra project already exists at paths
-// (its config marker is present and readable).
-func IsInitialized(paths Paths) bool {
-	_, err := config.Load(paths.Config)
-	return err == nil
+// ActiveProfileName returns the workspace's active profile name ("" when none).
+func (p *Project) ActiveProfileName() string {
+	return p.Workspace.ActiveProfile
 }
 
-// Profiles lists the available profile names.
+// Profiles lists the workspace's profile names, sorted.
 func (p *Project) Profiles() ([]string, error) {
-	return profile.List(p.Paths.ProfilesDir)
+	return p.Store.ListProfiles(p.Workspace.ID)
 }
 
 // LoadProfile loads and validates the named profile, checking each service it
 // owns against the registry.
 func (p *Project) LoadProfile(name string) (*profile.Profile, error) {
-	prof, err := profile.Load(p.Paths.ProfilePath(name))
+	services, err := p.ProfileConfig(name)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, fmt.Errorf("profile %q does not exist", name)
-		}
 		return nil, err
 	}
+	prof := &profile.Profile{Services: services}
 	if err := prof.Validate(p.Registry); err != nil {
 		return nil, fmt.Errorf("profile %q: %w", name, err)
 	}
@@ -163,9 +106,9 @@ func (p *Project) LoadProfile(name string) (*profile.Profile, error) {
 // ActiveProfile resolves and loads the currently active profile. It returns an
 // actionable error when no profile is active.
 func (p *Project) ActiveProfile() (string, *profile.Profile, error) {
-	name := p.State.ActiveProfile
+	name := p.Workspace.ActiveProfile
 	if name == "" {
-		return "", nil, fmt.Errorf("no active profile; run `easy-infra use <profile>` first")
+		return "", nil, fmt.Errorf("no active profile; choose one first")
 	}
 	prof, err := p.LoadProfile(name)
 	if err != nil {
@@ -174,34 +117,32 @@ func (p *Project) ActiveProfile() (string, *profile.Profile, error) {
 	return name, prof, nil
 }
 
-// SetActiveProfile records name as the active profile after confirming the
-// profile exists and is valid, then persists the state.
+// SetActiveProfile records name as the active profile after confirming it exists
+// and is valid, then persists it.
 func (p *Project) SetActiveProfile(name string) error {
 	if _, err := p.LoadProfile(name); err != nil {
 		return err
 	}
-	p.State.ActiveProfile = name
-	return p.State.Save(p.Paths.State)
+	if err := p.Store.SetWorkspaceActiveProfile(p.Workspace.ID, name); err != nil {
+		return err
+	}
+	p.Workspace.ActiveProfile = name
+	return nil
 }
 
-// SaveProfile writes a profile to its conventional path.
-func (p *Project) SaveProfile(name string, prof *profile.Profile) error {
-	return prof.Save(p.Paths.ProfilePath(name))
-}
-
-// ProfileConfig returns the named profile's per-service environment config for
-// display or editing. Unlike LoadProfile it does not validate, so a profile
-// momentarily out of sync with the service definitions can still be opened and
-// fixed. A missing profile is reported as an actionable error.
+// ProfileConfig returns the named profile's per-service config for display or
+// editing. Unlike LoadProfile it does not validate, so a profile momentarily out
+// of sync with the service definitions can still be opened and fixed. A missing
+// profile is reported as an actionable error.
 func (p *Project) ProfileConfig(name string) (map[string]profile.ServiceEntry, error) {
-	prof, err := profile.Load(p.Paths.ProfilePath(name))
+	services, err := p.Store.ProfileServices(p.Workspace.ID, name)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
+		if errors.Is(err, store.ErrProfileNotFound) {
 			return nil, fmt.Errorf("profile %q does not exist", name)
 		}
 		return nil, err
 	}
-	return prof.Services, nil
+	return services, nil
 }
 
 // UpdateProfile replaces the named profile's per-service config, after
@@ -215,25 +156,25 @@ func (p *Project) UpdateProfile(name string, services map[string]profile.Service
 	if err := prof.Validate(p.Registry); err != nil {
 		return fmt.Errorf("profile %q: %w", name, err)
 	}
-	return p.SaveProfile(name, prof)
+	return p.Store.ReplaceProfileServices(p.Workspace.ID, name, services)
 }
 
 // AddProfile scaffolds a new profile with default config for the conventional
-// starter services, then saves it. A new profile owns its own services and can
-// add or remove them afterwards. It errors if a profile with that name already
+// starter services, then saves it. It errors if a profile with that name already
 // exists.
 func (p *Project) AddProfile(name string) (*profile.Profile, error) {
-	path := p.Paths.ProfilePath(name)
-	if _, err := profile.Load(path); err == nil {
-		return nil, fmt.Errorf("profile %q already exists", name)
-	} else if !errors.Is(err, fs.ErrNotExist) {
+	exists, err := p.Store.ProfileExists(p.Workspace.ID, name)
+	if err != nil {
 		return nil, err
+	}
+	if exists {
+		return nil, fmt.Errorf("profile %q already exists", name)
 	}
 	prof, err := profile.Scaffold(p.Registry, DefaultServices...)
 	if err != nil {
 		return nil, err
 	}
-	if err := p.SaveProfile(name, prof); err != nil {
+	if err := p.Store.CreateProfile(p.Workspace.ID, name, prof.Services); err != nil {
 		return nil, err
 	}
 	return prof, nil
@@ -258,14 +199,20 @@ func (p *Project) ForkLocalProfile(source, svcID string, localEnv service.Config
 		services[id] = entry
 	}
 	// Preserve services already localised by a previous fork.
-	if existing, err := profile.Load(p.Paths.ProfilePath(LocalProfile)); err == nil {
-		for id, entry := range existing.Services {
+	localExists, err := p.Store.ProfileExists(p.Workspace.ID, LocalProfile)
+	if err != nil {
+		return "", err
+	}
+	if localExists {
+		existing, err := p.ProfileConfig(LocalProfile)
+		if err != nil {
+			return "", err
+		}
+		for id, entry := range existing {
 			if _, defined := services[id]; defined {
 				services[id] = entry
 			}
 		}
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return "", err
 	}
 	// Overlay the localised connection onto the source's block so the forked
 	// service keeps its definition fields (e.g. version) while pointing at the
@@ -284,7 +231,11 @@ func (p *Project) ForkLocalProfile(source, svcID string, localEnv service.Config
 	if err := prof.Validate(p.Registry); err != nil {
 		return "", fmt.Errorf("profile %q: %w", LocalProfile, err)
 	}
-	if err := p.SaveProfile(LocalProfile, prof); err != nil {
+	if localExists {
+		if err := p.Store.ReplaceProfileServices(p.Workspace.ID, LocalProfile, services); err != nil {
+			return "", err
+		}
+	} else if err := p.Store.CreateProfile(p.Workspace.ID, LocalProfile, services); err != nil {
 		return "", err
 	}
 	return LocalProfile, nil
@@ -293,11 +244,11 @@ func (p *Project) ForkLocalProfile(source, svcID string, localEnv service.Config
 // RemoveProfile deletes the named profile. It refuses to remove the active
 // profile and reports a missing profile as an actionable error.
 func (p *Project) RemoveProfile(name string) error {
-	if p.State.ActiveProfile == name {
-		return fmt.Errorf("cannot remove active profile %q; switch with `easy-infra use <other>` first", name)
+	if p.Workspace.ActiveProfile == name {
+		return fmt.Errorf("cannot remove active profile %q; switch to another first", name)
 	}
-	if err := profile.Remove(p.Paths.ProfilePath(name)); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
+	if err := p.Store.RemoveProfile(p.Workspace.ID, name); err != nil {
+		if errors.Is(err, store.ErrProfileNotFound) {
 			return fmt.Errorf("profile %q does not exist", name)
 		}
 		return err

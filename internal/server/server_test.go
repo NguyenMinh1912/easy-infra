@@ -5,70 +5,88 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
 
-	"github.com/minhnc/easy-infra/internal/config"
 	profilepkg "github.com/minhnc/easy-infra/internal/profile"
 	"github.com/minhnc/easy-infra/internal/project"
 	"github.com/minhnc/easy-infra/internal/service"
-	"github.com/minhnc/easy-infra/internal/workspace"
+	"github.com/minhnc/easy-infra/internal/store"
 )
 
 // emptyUI is a UI filesystem with no built bundle.
 var emptyUI = fstest.MapFS{}
 
-// newPaths returns project paths rooted at a fresh temp dir, in the conventional
-// workspace layout the server uses.
-func newPaths(t *testing.T) project.Paths {
+// newStore opens a store in a fresh temp config dir with no workspace, so a
+// Server built from it behaves as "not initialized".
+func newStore(t *testing.T) *store.Store {
 	t.Helper()
-	return project.PathsFor(t.TempDir())
+	t.Setenv("EASY_INFRA_CONFIG_DIR", t.TempDir())
+	st, err := store.Open()
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	return st
 }
 
-// regFrom builds a single-workspace registry whose active workspace is the root
-// of paths, so a Server constructed with it operates on that folder.
-func regFrom(t *testing.T, paths project.Paths) *workspace.Registry {
-	t.Helper()
-	root := filepath.Dir(paths.Config)
-	r := &workspace.Registry{}
-	if err := r.Add("test", root); err != nil {
-		t.Fatalf("Add workspace: %v", err)
-	}
-	if err := r.SetActive("test"); err != nil {
-		t.Fatalf("SetActive: %v", err)
-	}
-	return r
-}
-
-// initProject scaffolds a config marker on disk plus an active "default"
-// profile owning the given services, returning the paths the server reads from.
-func initProject(t *testing.T, services ...string) (project.Paths, *service.Registry) {
+// initProject opens a store with one active workspace whose "default" profile
+// owns the given services and is active, returning the store and registry the
+// server reads from.
+func initProject(t *testing.T, services ...string) (*store.Store, *service.Registry) {
 	t.Helper()
 	reg := service.DefaultRegistry()
-	paths := newPaths(t)
+	st := newStore(t)
 
-	if err := config.Scaffold().Save(paths.Config); err != nil {
-		t.Fatalf("Save config: %v", err)
+	ws, err := project.CreateWorkspace(st, reg, "test")
+	if err != nil {
+		t.Fatalf("CreateWorkspace: %v", err)
 	}
-
+	if err := st.SetActiveWorkspace(ws.ID); err != nil {
+		t.Fatalf("SetActiveWorkspace: %v", err)
+	}
+	// CreateWorkspace scaffolds the default starter services; replace them with
+	// exactly the requested set so a test gets the services it asked for.
 	prof, err := profilepkg.Scaffold(reg, services...)
 	if err != nil {
 		t.Fatalf("Scaffold profile: %v", err)
 	}
-	if err := prof.Save(paths.ProfilePath("default")); err != nil {
-		t.Fatalf("Save profile: %v", err)
+	if err := st.ReplaceProfileServices(ws.ID, "default", prof.Services); err != nil {
+		t.Fatalf("ReplaceProfileServices: %v", err)
 	}
+	return st, reg
+}
 
-	proj, err := project.Load(paths, reg)
+// activeWSID returns the id of the store's active workspace.
+func activeWSID(t *testing.T, st *store.Store) int64 {
+	t.Helper()
+	ws, ok, err := st.ActiveWorkspace()
+	if err != nil || !ok {
+		t.Fatalf("ActiveWorkspace = (%+v, %v, %v)", ws, ok, err)
+	}
+	return ws.ID
+}
+
+// profileServices returns the active workspace's named profile services, for
+// tests asserting what was persisted.
+func profileServices(t *testing.T, st *store.Store, name string) map[string]profilepkg.ServiceEntry {
+	t.Helper()
+	svcs, err := st.ProfileServices(activeWSID(t, st), name)
 	if err != nil {
-		t.Fatalf("Load: %v", err)
+		t.Fatalf("ProfileServices(%q): %v", name, err)
 	}
-	if err := proj.SetActiveProfile("default"); err != nil {
-		t.Fatalf("SetActiveProfile: %v", err)
+	return svcs
+}
+
+// loadProfile reads the active workspace's named profile into a Profile value,
+// so tests can assert against prof.Services as before.
+func loadProfile(t *testing.T, st *store.Store, name string) (*profilepkg.Profile, error) {
+	svcs, err := st.ProfileServices(activeWSID(t, st), name)
+	if err != nil {
+		return nil, err
 	}
-	return paths, reg
+	return &profilepkg.Profile{Services: svcs}, nil
 }
 
 func getStatus(t *testing.T, srv *Server) (*httptest.ResponseRecorder, statusResponse) {
@@ -87,7 +105,7 @@ func getStatus(t *testing.T, srv *Server) (*httptest.ResponseRecorder, statusRes
 }
 
 func TestStatusNotInitialized(t *testing.T) {
-	srv := New(service.DefaultRegistry(), regFrom(t, newPaths(t)), emptyUI)
+	srv := New(service.DefaultRegistry(), newStore(t), emptyUI)
 	rec, got := getStatus(t, srv)
 
 	if rec.Code != http.StatusOK {
@@ -102,8 +120,8 @@ func TestStatusNotInitialized(t *testing.T) {
 }
 
 func TestStatusInitialized(t *testing.T) {
-	paths, reg := initProject(t, "postgres", "redis")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres", "redis")
+	srv := New(reg, st, emptyUI)
 	rec, got := getStatus(t, srv)
 
 	if rec.Code != http.StatusOK {
@@ -130,7 +148,7 @@ func TestStatusInitialized(t *testing.T) {
 }
 
 func TestStatusMethodNotAllowed(t *testing.T) {
-	srv := New(service.DefaultRegistry(), regFrom(t, newPaths(t)), emptyUI)
+	srv := New(service.DefaultRegistry(), newStore(t), emptyUI)
 	req := httptest.NewRequest(http.MethodPost, "/api/status", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
@@ -163,8 +181,8 @@ func decodeProfiles(t *testing.T, rec *httptest.ResponseRecorder) profilesRespon
 }
 
 func TestListProfiles(t *testing.T) {
-	paths, reg := initProject(t, "postgres")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres")
+	srv := New(reg, st, emptyUI)
 
 	rec := doRequest(t, srv, http.MethodGet, "/api/profiles", "")
 	if rec.Code != http.StatusOK {
@@ -180,7 +198,7 @@ func TestListProfiles(t *testing.T) {
 }
 
 func TestListProfilesNotInitialized(t *testing.T) {
-	srv := New(service.DefaultRegistry(), regFrom(t, newPaths(t)), emptyUI)
+	srv := New(service.DefaultRegistry(), newStore(t), emptyUI)
 	rec := doRequest(t, srv, http.MethodGet, "/api/profiles", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("code = %d, want 200", rec.Code)
@@ -191,8 +209,8 @@ func TestListProfilesNotInitialized(t *testing.T) {
 }
 
 func TestCreateProfile(t *testing.T) {
-	paths, reg := initProject(t, "postgres")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres")
+	srv := New(reg, st, emptyUI)
 
 	rec := doRequest(t, srv, http.MethodPost, "/api/profiles", `{"name":"staging"}`)
 	if rec.Code != http.StatusCreated {
@@ -209,8 +227,8 @@ func TestCreateProfile(t *testing.T) {
 }
 
 func TestCreateProfileDuplicate(t *testing.T) {
-	paths, reg := initProject(t, "postgres")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres")
+	srv := New(reg, st, emptyUI)
 
 	rec := doRequest(t, srv, http.MethodPost, "/api/profiles", `{"name":"default"}`)
 	if rec.Code != http.StatusConflict {
@@ -219,8 +237,8 @@ func TestCreateProfileDuplicate(t *testing.T) {
 }
 
 func TestCreateProfileInvalidName(t *testing.T) {
-	paths, reg := initProject(t, "postgres")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres")
+	srv := New(reg, st, emptyUI)
 
 	for _, name := range []string{"", "../escape", "has space", "with/slash"} {
 		rec := doRequest(t, srv, http.MethodPost, "/api/profiles", `{"name":"`+name+`"}`)
@@ -231,7 +249,7 @@ func TestCreateProfileInvalidName(t *testing.T) {
 }
 
 func TestCreateProfileNotInitialized(t *testing.T) {
-	srv := New(service.DefaultRegistry(), regFrom(t, newPaths(t)), emptyUI)
+	srv := New(service.DefaultRegistry(), newStore(t), emptyUI)
 	rec := doRequest(t, srv, http.MethodPost, "/api/profiles", `{"name":"staging"}`)
 	if rec.Code != http.StatusConflict {
 		t.Errorf("code = %d, want 409", rec.Code)
@@ -239,8 +257,8 @@ func TestCreateProfileNotInitialized(t *testing.T) {
 }
 
 func TestActivateProfile(t *testing.T) {
-	paths, reg := initProject(t, "postgres")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres")
+	srv := New(reg, st, emptyUI)
 
 	if rec := doRequest(t, srv, http.MethodPost, "/api/profiles", `{"name":"staging"}`); rec.Code != http.StatusCreated {
 		t.Fatalf("create staging: code = %d", rec.Code)
@@ -257,8 +275,8 @@ func TestActivateProfile(t *testing.T) {
 }
 
 func TestActivateProfileMissing(t *testing.T) {
-	paths, reg := initProject(t, "postgres")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres")
+	srv := New(reg, st, emptyUI)
 
 	rec := doRequest(t, srv, http.MethodPost, "/api/profiles/ghost/activate", "")
 	if rec.Code != http.StatusConflict {
@@ -267,8 +285,8 @@ func TestActivateProfileMissing(t *testing.T) {
 }
 
 func TestDeleteProfile(t *testing.T) {
-	paths, reg := initProject(t, "postgres")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres")
+	srv := New(reg, st, emptyUI)
 
 	if rec := doRequest(t, srv, http.MethodPost, "/api/profiles", `{"name":"staging"}`); rec.Code != http.StatusCreated {
 		t.Fatalf("create staging: code = %d", rec.Code)
@@ -288,8 +306,8 @@ func TestDeleteProfile(t *testing.T) {
 }
 
 func TestDeleteActiveProfileRefused(t *testing.T) {
-	paths, reg := initProject(t, "postgres")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres")
+	srv := New(reg, st, emptyUI)
 
 	rec := doRequest(t, srv, http.MethodDelete, "/api/profiles/default", "")
 	if rec.Code != http.StatusConflict {
@@ -298,8 +316,8 @@ func TestDeleteActiveProfileRefused(t *testing.T) {
 }
 
 func TestDeleteProfileMissing(t *testing.T) {
-	paths, reg := initProject(t, "postgres")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres")
+	srv := New(reg, st, emptyUI)
 
 	rec := doRequest(t, srv, http.MethodDelete, "/api/profiles/ghost", "")
 	if rec.Code != http.StatusConflict {
@@ -317,8 +335,8 @@ func decodeProfileConfig(t *testing.T, rec *httptest.ResponseRecorder) profileCo
 }
 
 func TestGetProfileConfig(t *testing.T) {
-	paths, reg := initProject(t, "postgres", "redis")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres", "redis")
+	srv := New(reg, st, emptyUI)
 
 	rec := doRequest(t, srv, http.MethodGet, "/api/profiles/default", "")
 	if rec.Code != http.StatusOK {
@@ -338,8 +356,8 @@ func TestGetProfileConfig(t *testing.T) {
 }
 
 func TestGetProfileConfigMissing(t *testing.T) {
-	paths, reg := initProject(t, "postgres")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres")
+	srv := New(reg, st, emptyUI)
 
 	rec := doRequest(t, srv, http.MethodGet, "/api/profiles/ghost", "")
 	if rec.Code != http.StatusNotFound {
@@ -348,8 +366,8 @@ func TestGetProfileConfigMissing(t *testing.T) {
 }
 
 func TestUpdateProfileConfig(t *testing.T) {
-	paths, reg := initProject(t, "postgres")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres")
+	srv := New(reg, st, emptyUI)
 
 	// Load the scaffolded config, change one value, and write it back.
 	current := decodeProfileConfig(t, doRequest(t, srv, http.MethodGet, "/api/profiles/default", ""))
@@ -372,8 +390,8 @@ func TestUpdateProfileConfig(t *testing.T) {
 }
 
 func TestUpdateProfileConfigMissingService(t *testing.T) {
-	paths, reg := initProject(t, "postgres")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres")
+	srv := New(reg, st, emptyUI)
 
 	// Omitting the defined service leaves the profile invalid; the update is
 	// refused rather than silently dropping config.
@@ -384,8 +402,8 @@ func TestUpdateProfileConfigMissingService(t *testing.T) {
 }
 
 func TestUpdateProfileConfigMissingProfile(t *testing.T) {
-	paths, reg := initProject(t, "postgres")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres")
+	srv := New(reg, st, emptyUI)
 
 	rec := doRequest(t, srv, http.MethodPut, "/api/profiles/ghost", `{"services":[]}`)
 	if rec.Code != http.StatusBadRequest {
@@ -394,7 +412,7 @@ func TestUpdateProfileConfigMissingProfile(t *testing.T) {
 }
 
 func TestSPAUnbuilt(t *testing.T) {
-	srv := New(service.DefaultRegistry(), regFrom(t, newPaths(t)), emptyUI)
+	srv := New(service.DefaultRegistry(), newStore(t), emptyUI)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
@@ -411,7 +429,7 @@ func TestSPAServesIndexAndFallback(t *testing.T) {
 	ui := fstest.MapFS{
 		"index.html": {Data: []byte("<!doctype html><title>app</title>")},
 	}
-	srv := New(service.DefaultRegistry(), regFrom(t, newPaths(t)), ui)
+	srv := New(service.DefaultRegistry(), newStore(t), ui)
 
 	// Root serves index.html, and an unknown client-route falls back to it too.
 	for _, path := range []string{"/", "/profiles"} {

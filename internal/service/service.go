@@ -18,8 +18,8 @@ import (
 // decodes and validates it into its own typed shape, so the rest of the
 // codebase can stay service-agnostic.
 //
-// A service's config has two logical halves, both authored in one profile block
-// (.easy-infra/profiles/<name>.yml):
+// A service's config has two logical halves, stored together as one profile
+// service block (a JSON column in the store):
 //
 //   - definition — what the service is: image/version and other settings that do
 //     not vary by where it runs (e.g. `version`, `cleanable`);

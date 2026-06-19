@@ -3,7 +3,6 @@ package project
 import (
 	"errors"
 	"fmt"
-	"io/fs"
 	"sort"
 
 	"github.com/minhnc/easy-infra/internal/profile"
@@ -69,7 +68,7 @@ func (p *Project) AddProfileService(profileName, svcType, name string, cfg servi
 	if !ok {
 		return "", fmt.Errorf("%q: %w", svcType, ErrUnknownService)
 	}
-	prof, err := p.loadProfileForEdit(profileName)
+	services, err := p.ProfileConfig(profileName)
 	if err != nil {
 		return "", err
 	}
@@ -78,12 +77,12 @@ func (p *Project) AddProfileService(profileName, svcType, name string, cfg servi
 	} else if err := service.ValidateConfig(svc, cfg); err != nil {
 		return "", fmt.Errorf("%w: %v", ErrInvalidDefinition, err)
 	}
-	id := uniqueServiceID(prof.Services, svcType)
+	id := uniqueServiceID(services, svcType)
 	if name == "" {
 		name = id
 	}
-	prof.Services[id] = profile.ServiceEntry{Type: svcType, Name: name, Config: cfg}
-	if err := p.SaveProfile(profileName, prof); err != nil {
+	services[id] = profile.ServiceEntry{Type: svcType, Name: name, Config: cfg}
+	if err := p.Store.ReplaceProfileServices(p.Workspace.ID, profileName, services); err != nil {
 		return "", err
 	}
 	return id, nil
@@ -94,11 +93,11 @@ func (p *Project) AddProfileService(profileName, svcType, name string, cfg servi
 // the profile. A non-empty name renames the instance; an empty name leaves it
 // unchanged.
 func (p *Project) UpdateProfileService(profileName, id, name string, cfg service.Config) error {
-	prof, err := p.loadProfileForEdit(profileName)
+	services, err := p.ProfileConfig(profileName)
 	if err != nil {
 		return err
 	}
-	entry, exists := prof.Services[id]
+	entry, exists := services[id]
 	if !exists {
 		return fmt.Errorf("%q: %w", id, ErrServiceNotDefined)
 	}
@@ -117,32 +116,32 @@ func (p *Project) UpdateProfileService(profileName, id, name string, cfg service
 	} else {
 		entry.Name = entry.ResolveName(id)
 	}
-	prof.Services[id] = entry
-	return p.SaveProfile(profileName, prof)
+	services[id] = entry
+	return p.Store.ReplaceProfileServices(p.Workspace.ID, profileName, services)
 }
 
 // RemoveProfileService removes the instance identified by id from a profile. It
 // refuses to remove the profile's last remaining service, since a profile must
 // define at least one.
 func (p *Project) RemoveProfileService(profileName, id string) error {
-	prof, err := p.loadProfileForEdit(profileName)
+	services, err := p.ProfileConfig(profileName)
 	if err != nil {
 		return err
 	}
-	if _, exists := prof.Services[id]; !exists {
+	if _, exists := services[id]; !exists {
 		return fmt.Errorf("%q: %w", id, ErrServiceNotDefined)
 	}
-	if len(prof.Services) == 1 {
+	if len(services) == 1 {
 		return fmt.Errorf("%q: %w", id, ErrLastService)
 	}
-	delete(prof.Services, id)
-	return p.SaveProfile(profileName, prof)
+	delete(services, id)
+	return p.Store.ReplaceProfileServices(p.Workspace.ID, profileName, services)
 }
 
 // uniqueServiceID returns an id for a new instance of svcType that does not
 // collide with an existing one. The first instance of a type takes the type
-// name itself (so a single-instance profile reads naturally and matches the
-// pre-instance-id layout); subsequent instances get a numeric suffix.
+// name itself (so a single-instance profile reads naturally); subsequent
+// instances get a numeric suffix.
 func uniqueServiceID(services map[string]profile.ServiceEntry, svcType string) string {
 	if _, exists := services[svcType]; !exists {
 		return svcType
@@ -153,20 +152,6 @@ func uniqueServiceID(services map[string]profile.ServiceEntry, svcType string) s
 			return id
 		}
 	}
-}
-
-// loadProfileForEdit loads a profile without validation (via profile.Load) so a
-// block momentarily out of sync can still be edited, reporting a missing
-// profile as an actionable error.
-func (p *Project) loadProfileForEdit(name string) (*profile.Profile, error) {
-	prof, err := profile.Load(p.Paths.ProfilePath(name))
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, fmt.Errorf("profile %q does not exist", name)
-		}
-		return nil, err
-	}
-	return prof, nil
 }
 
 // sortedServiceIDs returns the ids of a profile's service instances in sorted

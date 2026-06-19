@@ -9,8 +9,8 @@ import (
 	"time"
 
 	profilepkg "github.com/minhnc/easy-infra/internal/profile"
-	"github.com/minhnc/easy-infra/internal/project"
 	"github.com/minhnc/easy-infra/internal/service"
+	"github.com/minhnc/easy-infra/internal/store"
 )
 
 func decodeSession(t *testing.T, rec *httptest.ResponseRecorder) sessionJSON {
@@ -55,8 +55,8 @@ func pollUntilDone(t *testing.T, srv *Server, id string) backupPollResponse {
 // has no provider yet, so it finishes "unsupported" after a couple of log lines
 // — enough to exercise start, persistence, and polling without a live service.
 func TestBackupRunsAndPersists(t *testing.T) {
-	paths, reg := initProject(t, "postgres", "redis")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres", "redis")
+	srv := New(reg, st, emptyUI)
 
 	rec := doRequest(t, srv, http.MethodPost, "/api/services/redis/backup", "")
 	if rec.Code != http.StatusAccepted {
@@ -87,8 +87,8 @@ func TestBackupRunsAndPersists(t *testing.T) {
 // already running for the same service returns the existing session rather than
 // spawning a duplicate.
 func TestBackupReattachesRunning(t *testing.T) {
-	paths, reg := initProject(t, "postgres", "redis")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres", "redis")
+	srv := New(reg, st, emptyUI)
 
 	first := decodeSession(t, doRequest(t, srv, http.MethodPost, "/api/services/redis/backup", ""))
 	// Let the (fast, unsupported) backup settle, then a second start makes a new
@@ -112,8 +112,8 @@ func decodeList(t *testing.T, rec *httptest.ResponseRecorder) backupListResponse
 // TestBackupListAndDelete runs two backups, lists them (newest first, with
 // pagination), then deletes one and confirms it leaves the list.
 func TestBackupListAndDelete(t *testing.T) {
-	paths, reg := initProject(t, "postgres", "redis")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres", "redis")
+	srv := New(reg, st, emptyUI)
 
 	first := decodeSession(t, doRequest(t, srv, http.MethodPost, "/api/services/redis/backup", ""))
 	pollUntilDone(t, srv, first.ID)
@@ -146,8 +146,8 @@ func TestBackupListAndDelete(t *testing.T) {
 }
 
 func TestBackupDeleteUnknownID(t *testing.T) {
-	paths, reg := initProject(t, "postgres")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres")
+	srv := New(reg, st, emptyUI)
 	rec := doRequest(t, srv, http.MethodDelete, "/api/backups/nope", "")
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("code = %d, want 404", rec.Code)
@@ -155,7 +155,7 @@ func TestBackupDeleteUnknownID(t *testing.T) {
 }
 
 func TestBackupListNotInitialized(t *testing.T) {
-	srv := New(service.DefaultRegistry(), regFrom(t, newPaths(t)), emptyUI)
+	srv := New(service.DefaultRegistry(), newStore(t), emptyUI)
 	list := decodeList(t, doRequest(t, srv, http.MethodGet, "/api/backups", ""))
 	if list.Initialized || len(list.Sessions) != 0 {
 		t.Errorf("list = %+v, want uninitialized with no sessions", list)
@@ -163,7 +163,7 @@ func TestBackupListNotInitialized(t *testing.T) {
 }
 
 func TestBackupNotInitialized(t *testing.T) {
-	srv := New(service.DefaultRegistry(), regFrom(t, newPaths(t)), emptyUI)
+	srv := New(service.DefaultRegistry(), newStore(t), emptyUI)
 	rec := doRequest(t, srv, http.MethodPost, "/api/services/redis/backup", "")
 	if rec.Code != http.StatusConflict {
 		t.Errorf("code = %d, want 409", rec.Code)
@@ -171,8 +171,8 @@ func TestBackupNotInitialized(t *testing.T) {
 }
 
 func TestBackupUnknownService(t *testing.T) {
-	paths, reg := initProject(t, "postgres")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres")
+	srv := New(reg, st, emptyUI)
 	rec := doRequest(t, srv, http.MethodPost, "/api/services/redis/backup", "")
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("code = %d, want 404 (body %q)", rec.Code, rec.Body.String())
@@ -191,8 +191,8 @@ func decodeBackupOptions(t *testing.T, rec *httptest.ResponseRecorder) backupOpt
 // TestBackupOptionsNoBuckets confirms a service without a bucket concept
 // (postgres) reports empty options, so the UI offers a plain confirmation.
 func TestBackupOptionsNoBuckets(t *testing.T) {
-	paths, reg := initProject(t, "postgres")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres")
+	srv := New(reg, st, emptyUI)
 
 	rec := doRequest(t, srv, http.MethodGet, "/api/services/postgres/backup-options", "")
 	if rec.Code != http.StatusOK {
@@ -206,14 +206,14 @@ func TestBackupOptionsNoBuckets(t *testing.T) {
 
 // addProfile scaffolds a non-active profile with the given services, so a test
 // can have a profile the UI views that differs from the active one.
-func addProfile(t *testing.T, paths project.Paths, reg *service.Registry, name string, services ...string) {
+func addProfile(t *testing.T, st *store.Store, reg *service.Registry, name string, services ...string) {
 	t.Helper()
 	prof, err := profilepkg.Scaffold(reg, services...)
 	if err != nil {
 		t.Fatalf("Scaffold profile %q: %v", name, err)
 	}
-	if err := prof.Save(paths.ProfilePath(name)); err != nil {
-		t.Fatalf("Save profile %q: %v", name, err)
+	if err := st.CreateProfile(activeWSID(t, st), name, prof.Services); err != nil {
+		t.Fatalf("CreateProfile %q: %v", name, err)
 	}
 }
 
@@ -223,10 +223,10 @@ func addProfile(t *testing.T, paths project.Paths, reg *service.Registry, name s
 // profile so the dialog can load the buckets the user actually wants to back up.
 func TestBackupOptionsTargetsRequestedProfile(t *testing.T) {
 	// Active profile "default" has only postgres (no minio).
-	paths, reg := initProject(t, "postgres")
+	st, reg := initProject(t, "postgres")
 	// The profile the user is viewing ("dev") defines minio.
-	addProfile(t, paths, reg, "dev", "minio")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	addProfile(t, st, reg, "dev", "minio")
+	srv := New(reg, st, emptyUI)
 
 	// Against the active profile, minio is not defined — the original failure.
 	rec := doRequest(t, srv, http.MethodGet, "/api/services/minio/backup-options", "")
@@ -245,8 +245,8 @@ func TestBackupOptionsTargetsRequestedProfile(t *testing.T) {
 // TestBackupOptionsUnknownProfile confirms an explicit but nonexistent profile is
 // reported as a 404 rather than silently falling back to the active profile.
 func TestBackupOptionsUnknownProfile(t *testing.T) {
-	paths, reg := initProject(t, "minio")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "minio")
+	srv := New(reg, st, emptyUI)
 
 	rec := doRequest(t, srv, http.MethodGet, "/api/services/minio/backup-options?profile=ghost", "")
 	if rec.Code != http.StatusNotFound {
@@ -258,8 +258,8 @@ func TestBackupOptionsUnknownProfile(t *testing.T) {
 // server cannot be reached, the endpoint still returns 200 with the failure
 // reported inline rather than failing the request.
 func TestBackupOptionsStoreUnreachable(t *testing.T) {
-	paths, reg := initProject(t, "minio")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "minio")
+	srv := New(reg, st, emptyUI)
 
 	rec := doRequest(t, srv, http.MethodGet, "/api/services/minio/backup-options", "")
 	if rec.Code != http.StatusOK {
@@ -288,8 +288,8 @@ func TestDefaultBucketSelection(t *testing.T) {
 }
 
 func TestBackupGetUnknownID(t *testing.T) {
-	paths, reg := initProject(t, "postgres")
-	srv := New(reg, regFrom(t, paths), emptyUI)
+	st, reg := initProject(t, "postgres")
+	srv := New(reg, st, emptyUI)
 	rec := doRequest(t, srv, http.MethodGet, "/api/backups/nope", "")
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("code = %d, want 404", rec.Code)

@@ -45,7 +45,7 @@ func (s *Server) handleStartFork(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	proj, err := project.Load(s.activePaths(), s.reg)
+	proj, err := s.activeProject()
 	if err != nil {
 		s.writeProjectError(w, err)
 		return
@@ -67,7 +67,7 @@ func (s *Server) handleStartFork(w http.ResponseWriter, r *http.Request) {
 	}
 	env := entry.Config
 	def := env
-	store, err := s.backupsForActive().Store()
+	store, err := s.backups.Store()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -81,7 +81,7 @@ func (s *Server) handleStartFork(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(lw, "forking %q to a local container is not supported yet\n", svcID)
 			return service.ErrNotImplemented
 		}
-		sess, err := s.backupsForActive().Start(store, svcID, project.LocalProfile, backup.KindFork, "", nil, run)
+		sess, err := s.backups.Start(store, proj.Workspace.ID, svcID, project.LocalProfile, backup.KindFork, "", nil, run)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -180,7 +180,7 @@ func (s *Server) handleStartFork(w http.ResponseWriter, r *http.Request) {
 		cleanup = func() { _ = os.RemoveAll(newBackupDir) }
 	}
 
-	sess, err := s.backupsForActive().Start(store, svcID, localProfile, backup.KindFork, snapshot, cleanup, run)
+	sess, err := s.backups.Start(store, proj.Workspace.ID, svcID, localProfile, backup.KindFork, snapshot, cleanup, run)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

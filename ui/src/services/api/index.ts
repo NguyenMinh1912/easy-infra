@@ -4,9 +4,9 @@ export { getStatus } from "./status";
 export {
   getWorkspaces,
   createWorkspace,
+  renameWorkspace,
   activateWorkspace,
   removeWorkspace,
-  browseDirs,
 } from "./workspaces";
 export {
   getServiceCatalog,

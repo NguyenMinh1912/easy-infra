@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/minhnc/easy-infra/internal/project"
 	"github.com/minhnc/easy-infra/internal/service"
 )
 
@@ -116,7 +115,7 @@ func (s *Server) resolveQuerier(w http.ResponseWriter, r *http.Request) (service
 	profileName := r.PathValue("name")
 	svcID := r.PathValue("service")
 
-	proj, err := project.Load(s.activePaths(), s.reg)
+	proj, err := s.activeProject()
 	if err != nil {
 		s.writeProjectError(w, err)
 		return nil, service.Spec{}, false

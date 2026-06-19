@@ -18,7 +18,7 @@ func openTemp(t *testing.T) *Store {
 func TestSessionLifecycle(t *testing.T) {
 	store := openTemp(t)
 
-	sess, err := store.CreateSession("postgres", "default", KindBackup)
+	sess, err := store.CreateSession(1, "postgres", "default", KindBackup)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -27,7 +27,7 @@ func TestSessionLifecycle(t *testing.T) {
 	}
 
 	// A running session is re-attachable; a second start should find it.
-	if got, ok, err := store.RunningForService("postgres", "default", KindBackup); err != nil || !ok {
+	if got, ok, err := store.RunningForService(1, "postgres", "default", KindBackup); err != nil || !ok {
 		t.Fatalf("RunningForService = (%v, %v, %v), want a running session", got, ok, err)
 	} else if got.ID != sess.ID {
 		t.Errorf("RunningForService id = %q, want %q", got.ID, sess.ID)
@@ -66,7 +66,7 @@ func TestSessionLifecycle(t *testing.T) {
 		t.Errorf("finished session = %+v, want success with snapshot", got)
 	}
 	// No longer running, so nothing to re-attach to.
-	if _, ok, _ := store.RunningForService("postgres", "default", KindBackup); ok {
+	if _, ok, _ := store.RunningForService(1, "postgres", "default", KindBackup); ok {
 		t.Error("RunningForService still reports a running session after Finish")
 	}
 }
@@ -78,26 +78,26 @@ func TestListAndDeleteSessions(t *testing.T) {
 
 	var ids []string
 	for _, svc := range []string{"postgres", "redis", "minio"} {
-		sess, err := store.CreateSession(svc, "default", KindBackup)
+		sess, err := store.CreateSession(1, svc, "default", KindBackup)
 		if err != nil {
 			t.Fatalf("CreateSession: %v", err)
 		}
 		ids = append(ids, sess.ID)
 	}
 
-	if n, err := store.CountSessions(); err != nil || n != 3 {
+	if n, err := store.CountSessions(1); err != nil || n != 3 {
 		t.Fatalf("CountSessions = (%d, %v), want 3", n, err)
 	}
 
 	// Newest first: the last created session leads the list.
-	page, err := store.ListSessions(2, 0)
+	page, err := store.ListSessions(1, 2, 0)
 	if err != nil {
 		t.Fatalf("ListSessions: %v", err)
 	}
 	if len(page) != 2 || page[0].Service != "minio" {
 		t.Fatalf("ListSessions(2,0) = %+v, want minio,redis", page)
 	}
-	rest, err := store.ListSessions(2, 2)
+	rest, err := store.ListSessions(1, 2, 2)
 	if err != nil {
 		t.Fatalf("ListSessions: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestListAndDeleteSessions(t *testing.T) {
 	if logs, err := store.Logs(ids[0], 0); err != nil || len(logs) != 0 {
 		t.Errorf("Logs after delete = (%v, %v), want none", logs, err)
 	}
-	if n, err := store.CountSessions(); err != nil || n != 2 {
+	if n, err := store.CountSessions(1); err != nil || n != 2 {
 		t.Errorf("CountSessions after delete = (%d, %v), want 2", n, err)
 	}
 	if err := store.Delete("nope"); err != ErrNotFound {
@@ -141,7 +141,7 @@ func TestReconcileRunningOnOpen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	sess, err := store.CreateSession("postgres", "default", KindBackup)
+	sess, err := store.CreateSession(1, "postgres", "default", KindBackup)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}

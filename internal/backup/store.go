@@ -3,9 +3,9 @@
 // launched it: the browser can disconnect and reconnect (by polling) without
 // losing progress, and finished runs remain inspectable.
 //
-// State elsewhere in easy-infra is tool-owned JSON; backup logs are append-heavy
-// and queried incrementally (by line cursor), which is what a tiny embedded SQL
-// store is good at. It lives at .easy-infra/backups.db alongside the JSON state.
+// Backup logs are append-heavy and queried incrementally (by line cursor),
+// which is what an embedded SQL store is good at. Sessions live in the same
+// central SQLite database as the rest of easy-infra's data, scoped by workspace.
 package backup
 
 import (
@@ -115,17 +115,18 @@ func (s *Store) Close() error { return s.db.Close() }
 func (s *Store) migrate() error {
 	const schema = `
 CREATE TABLE IF NOT EXISTS backup_sessions (
-	id         TEXT PRIMARY KEY,
-	service    TEXT NOT NULL,
-	profile    TEXT NOT NULL,
-	kind       TEXT NOT NULL DEFAULT 'backup',
-	status     TEXT NOT NULL,
-	snapshot   TEXT NOT NULL DEFAULT '',
-	error      TEXT NOT NULL DEFAULT '',
-	created_at INTEGER NOT NULL,
-	updated_at INTEGER NOT NULL
+	id           TEXT PRIMARY KEY,
+	workspace_id INTEGER NOT NULL DEFAULT 0,
+	service      TEXT NOT NULL,
+	profile      TEXT NOT NULL,
+	kind         TEXT NOT NULL DEFAULT 'backup',
+	status       TEXT NOT NULL,
+	snapshot     TEXT NOT NULL DEFAULT '',
+	error        TEXT NOT NULL DEFAULT '',
+	created_at   INTEGER NOT NULL,
+	updated_at   INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_sessions_service ON backup_sessions(service, profile, kind, created_at);
+CREATE INDEX IF NOT EXISTS idx_sessions_service ON backup_sessions(workspace_id, service, profile, kind, created_at);
 CREATE TABLE IF NOT EXISTS backup_logs (
 	session_id TEXT NOT NULL,
 	seq        INTEGER NOT NULL,
@@ -145,9 +146,9 @@ CREATE TABLE IF NOT EXISTS backup_logs (
 	return nil
 }
 
-// CreateSession inserts a new running session of kind for service/profile and
-// returns it with a fresh id and timestamps.
-func (s *Store) CreateSession(service, profile string, kind Kind) (Session, error) {
+// CreateSession inserts a new running session of kind for service/profile in the
+// given workspace and returns it with a fresh id and timestamps.
+func (s *Store) CreateSession(workspaceID int64, service, profile string, kind Kind) (Session, error) {
 	id, err := newID()
 	if err != nil {
 		return Session{}, err
@@ -163,9 +164,9 @@ func (s *Store) CreateSession(service, profile string, kind Kind) (Session, erro
 		UpdatedAt: now,
 	}
 	if _, err := s.db.Exec(
-		`INSERT INTO backup_sessions (id, service, profile, kind, status, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		sess.ID, sess.Service, sess.Profile, sess.Kind, sess.Status, sess.CreatedAt.UnixMilli(), sess.UpdatedAt.UnixMilli(),
+		`INSERT INTO backup_sessions (id, workspace_id, service, profile, kind, status, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		sess.ID, workspaceID, sess.Service, sess.Profile, sess.Kind, sess.Status, sess.CreatedAt.UnixMilli(), sess.UpdatedAt.UnixMilli(),
 	); err != nil {
 		return Session{}, fmt.Errorf("creating backup session: %w", err)
 	}
@@ -173,15 +174,15 @@ func (s *Store) CreateSession(service, profile string, kind Kind) (Session, erro
 }
 
 // RunningForService returns the most recent running session of kind for
-// service/profile, if any. It lets callers re-attach to an in-flight run instead
-// of starting a duplicate.
-func (s *Store) RunningForService(service, profile string, kind Kind) (*Session, bool, error) {
+// service/profile in the workspace, if any. It lets callers re-attach to an
+// in-flight run instead of starting a duplicate.
+func (s *Store) RunningForService(workspaceID int64, service, profile string, kind Kind) (*Session, bool, error) {
 	row := s.db.QueryRow(
 		`SELECT id, service, profile, kind, status, snapshot, error, created_at, updated_at
 		   FROM backup_sessions
-		  WHERE service = ? AND profile = ? AND kind = ? AND status = ?
+		  WHERE workspace_id = ? AND service = ? AND profile = ? AND kind = ? AND status = ?
 		  ORDER BY created_at DESC LIMIT 1`,
-		service, profile, kind, StatusRunning,
+		workspaceID, service, profile, kind, StatusRunning,
 	)
 	sess, err := scanSession(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -205,15 +206,16 @@ func (s *Store) Get(id string) (Session, error) {
 	return sess, err
 }
 
-// ListSessions returns sessions ordered newest-first, at most limit rows
-// starting at offset, for paginated listing in the UI.
-func (s *Store) ListSessions(limit, offset int) ([]Session, error) {
+// ListSessions returns the workspace's sessions ordered newest-first, at most
+// limit rows starting at offset, for paginated listing in the UI.
+func (s *Store) ListSessions(workspaceID int64, limit, offset int) ([]Session, error) {
 	rows, err := s.db.Query(
 		`SELECT id, service, profile, kind, status, snapshot, error, created_at, updated_at
 		   FROM backup_sessions
+		  WHERE workspace_id = ?
 		  ORDER BY created_at DESC, id DESC
 		  LIMIT ? OFFSET ?`,
-		limit, offset,
+		workspaceID, limit, offset,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("listing backup sessions: %w", err)
@@ -230,10 +232,13 @@ func (s *Store) ListSessions(limit, offset int) ([]Session, error) {
 	return out, rows.Err()
 }
 
-// CountSessions returns the total number of sessions, so the UI can paginate.
-func (s *Store) CountSessions() (int, error) {
+// CountSessions returns the number of sessions in the workspace, so the UI can
+// paginate.
+func (s *Store) CountSessions(workspaceID int64) (int, error) {
 	var n int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM backup_sessions`).Scan(&n); err != nil {
+	if err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM backup_sessions WHERE workspace_id = ?`, workspaceID,
+	).Scan(&n); err != nil {
 		return 0, fmt.Errorf("counting backup sessions: %w", err)
 	}
 	return n, nil
