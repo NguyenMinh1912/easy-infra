@@ -62,8 +62,7 @@ export function CreateProfileForm({
       <CardHeader>
         <CardTitle>New profile</CardTitle>
         <CardDescription>
-          Scaffolds a profile with default config for every service the project
-          defines.
+          Creates an empty profile. Add the services you need to it afterwards.
         </CardDescription>
       </CardHeader>
       <CardContent>
