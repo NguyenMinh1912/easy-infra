@@ -3,7 +3,30 @@ package service
 import "context"
 
 // LocalStack provisions a LocalStack service emulating AWS APIs locally.
-type LocalStack struct{}
+//
+// openSQS / openSES are seams for testing: when nil the cloud browser dials a
+// real endpoint via the AWS SDK (realSQSOpener / realSESOpener); tests set them
+// to inject fake clients.
+type LocalStack struct {
+	openSQS sqsOpener
+	openSES sesOpener
+}
+
+// sqsOpener returns the SQS client opener to use, defaulting to a real dial.
+func (l LocalStack) sqsOpener() sqsOpener {
+	if l.openSQS != nil {
+		return l.openSQS
+	}
+	return realSQSOpener
+}
+
+// sesOpener returns the SES client opener to use, defaulting to a real dial.
+func (l LocalStack) sesOpener() sesOpener {
+	if l.openSES != nil {
+		return l.openSES
+	}
+	return realSESOpener
+}
 
 // Name implements Service.
 func (LocalStack) Name() string { return "localstack" }
@@ -33,8 +56,9 @@ func (LocalStack) ValidateDefinition(cfg Config) error {
 // DefaultEnv implements Service.
 func (LocalStack) DefaultEnv() Config {
 	return Config{
-		"host": "localhost",
-		"port": 4566,
+		"host":   "localhost",
+		"port":   4566,
+		"region": "us-east-1",
 	}
 }
 
@@ -44,6 +68,9 @@ func (LocalStack) ValidateEnv(cfg Config) error {
 		return err
 	}
 	if _, err := optionalPort(cfg, "port", 4566); err != nil {
+		return err
+	}
+	if _, err := optionalString(cfg, "region", "us-east-1"); err != nil {
 		return err
 	}
 	return nil
