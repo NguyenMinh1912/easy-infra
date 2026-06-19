@@ -8,7 +8,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/sesv2"
+	"github.com/aws/aws-sdk-go-v2/service/ses"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 )
 
@@ -24,10 +24,13 @@ type sqsAPI interface {
 	PurgeQueue(ctx context.Context, params *sqs.PurgeQueueInput, optFns ...func(*sqs.Options)) (*sqs.PurgeQueueOutput, error)
 }
 
-// sesAPI is the subset of the SESv2 client the LocalStack cloud browser relies
-// on. *sesv2.Client satisfies it.
+// sesAPI is the subset of the SES (v1) client the LocalStack cloud browser
+// relies on. *ses.Client satisfies it. The v1 API is used rather than SESv2
+// because LocalStack's community edition does not implement sesv2 — its
+// endpoints return HTTP 501 ("not yet implemented or pro feature").
 type sesAPI interface {
-	ListEmailIdentities(ctx context.Context, params *sesv2.ListEmailIdentitiesInput, optFns ...func(*sesv2.Options)) (*sesv2.ListEmailIdentitiesOutput, error)
+	ListIdentities(ctx context.Context, params *ses.ListIdentitiesInput, optFns ...func(*ses.Options)) (*ses.ListIdentitiesOutput, error)
+	GetIdentityVerificationAttributes(ctx context.Context, params *ses.GetIdentityVerificationAttributesInput, optFns ...func(*ses.Options)) (*ses.GetIdentityVerificationAttributesOutput, error)
 }
 
 // sqsOpener / sesOpener establish a client for the LocalStack endpoint described
@@ -113,14 +116,14 @@ func realSQSOpener(env Config) (sqsAPI, error) {
 	}), nil
 }
 
-// realSESOpener builds an SESv2 client from the profile env, pinned to the
+// realSESOpener builds an SES (v1) client from the profile env, pinned to the
 // LocalStack endpoint.
 func realSESOpener(env Config) (sesAPI, error) {
 	p, err := localstackParamsFrom(env)
 	if err != nil {
 		return nil, err
 	}
-	return sesv2.NewFromConfig(awsConfig(p), func(o *sesv2.Options) {
+	return ses.NewFromConfig(awsConfig(p), func(o *ses.Options) {
 		o.BaseEndpoint = aws.String(p.endpoint())
 	}), nil
 }
