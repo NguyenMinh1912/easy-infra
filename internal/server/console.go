@@ -6,6 +6,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"strings"
 	"time"
@@ -22,9 +23,13 @@ const queryTimeout = 30 * time.Second
 // quickly and let the editor fall back to keyword completion.
 const schemaTimeout = 10 * time.Second
 
-// queryRequest carries the statement to execute.
+// queryRequest carries the statement to execute. DB optionally overrides the
+// logical database the statement runs against (Redis only), letting the console
+// target a database other than the one saved in the profile config — the way
+// the key browser's database selector does.
 type queryRequest struct {
 	SQL string `json:"sql"`
+	DB  *int   `json:"db,omitempty"`
 }
 
 // queryResponse is the JSON shape of a console execution. Like the connection
@@ -68,6 +73,19 @@ func (s *Server) handleConsoleQuery(w http.ResponseWriter, r *http.Request) {
 	querier, spec, ok := s.resolveQuerier(w, r)
 	if !ok {
 		return
+	}
+	if req.DB != nil {
+		if *req.DB < 0 {
+			writeError(w, http.StatusBadRequest, "db must be a non-negative whole number")
+			return
+		}
+		// Override the saved logical database without mutating the cached profile
+		// config: copy the env and set the db the querier reads (Redis honours it;
+		// services that key off other fields are unaffected).
+		env := make(service.Config, len(spec.Env)+1)
+		maps.Copy(env, spec.Env)
+		env["db"] = *req.DB
+		spec.Env = env
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), queryTimeout)

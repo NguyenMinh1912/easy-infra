@@ -100,6 +100,30 @@ func TestConsoleQueryHappyPath(t *testing.T) {
 	}
 }
 
+func TestConsoleQueryDBOverride(t *testing.T) {
+	stub := &stubQuerier{
+		stubService: stubService{name: "stub"},
+		result:      &service.QueryResult{Command: "GET"},
+	}
+	srv := newConsoleServer(t, stub)
+	db := 3
+	rec := doJSON(t, srv, http.MethodPost, "/api/profiles/default/services/stub/query",
+		queryRequest{SQL: "GET foo", DB: &db})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+	}
+	if got := stub.gotSpec.Env["db"]; got != 3 {
+		t.Errorf("spec env db = %v, want 3", got)
+	}
+
+	negative := -1
+	rec = doJSON(t, srv, http.MethodPost, "/api/profiles/default/services/stub/query",
+		queryRequest{SQL: "GET foo", DB: &negative})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("negative db: status = %d, want 400 (body %q)", rec.Code, rec.Body.String())
+	}
+}
+
 func TestConsoleQueryExecutionError(t *testing.T) {
 	stub := &stubQuerier{
 		stubService: stubService{name: "stub"},

@@ -1,5 +1,5 @@
 import { Zap } from "lucide-react";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,23 +25,48 @@ const RedisConsole = lazy(() =>
  * env) it falls back to a summary of the service's config.
  */
 export function RedisOverview({ service, profile }: OverviewProps) {
+  // Active tab, logical database, and the key to open are owned here so the two
+  // tabs stay consistent: the console runs against the same database the key
+  // browser shows, and clicking a key in a console result jumps to the Keys tab
+  // with that key selected.
+  const [tab, setTab] = useState("keys");
+  const [db, setDb] = useState(0);
+  const [openKey, setOpenKey] = useState<{ key: string; nonce: number } | null>(
+    null,
+  );
+
   if (!profile) {
     return <RedisSummary service={service} />;
   }
   return (
-    <Tabs defaultValue="keys">
+    <Tabs value={tab} onValueChange={setTab}>
       <TabsList variant="line">
         <TabsTrigger value="keys">Keys</TabsTrigger>
         <TabsTrigger value="console">Console</TabsTrigger>
       </TabsList>
       <TabsContent value="keys" className="mt-4">
         <Suspense fallback={<Skeleton className="h-48 w-full" />}>
-          <RedisKeyBrowser profile={profile} service={service.id} />
+          <RedisKeyBrowser
+            profile={profile}
+            service={service.id}
+            db={db}
+            onDbChange={setDb}
+            openKey={openKey}
+          />
         </Suspense>
       </TabsContent>
       <TabsContent value="console" className="mt-4">
         <Suspense fallback={<Skeleton className="h-40 w-full" />}>
-          <RedisConsole profile={profile} service={service.id} />
+          <RedisConsole
+            profile={profile}
+            service={service.id}
+            db={db}
+            onDbChange={setDb}
+            onOpenKey={(key) => {
+              setOpenKey((prev) => ({ key, nonce: (prev?.nonce ?? 0) + 1 }));
+              setTab("keys");
+            }}
+          />
         </Suspense>
       </TabsContent>
     </Tabs>

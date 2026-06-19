@@ -79,8 +79,10 @@ func redisRows(reply any) ([][]any, bool) {
 }
 
 // renderRedisScalar maps one reply element onto something that serialises
-// cleanly to JSON. Nested arrays are flattened to a space-joined string, the
-// way redis-cli renders them inline.
+// cleanly to JSON. A nested array is preserved as a JSON array (each element
+// rendered in turn) rather than flattened to a string, so structured replies
+// like SCAN's [cursor, [keys...]] reach the console losslessly — the keys stay
+// individually addressable even when a key name itself contains a space.
 func renderRedisScalar(v any) any {
 	switch x := v.(type) {
 	case nil:
@@ -92,11 +94,11 @@ func renderRedisScalar(v any) any {
 	case error:
 		return x.Error()
 	case []any:
-		parts := make([]string, len(x))
+		out := make([]any, len(x))
 		for i, e := range x {
-			parts[i] = fmt.Sprintf("%v", renderRedisScalar(e))
+			out[i] = renderRedisScalar(e)
 		}
-		return strings.Join(parts, " ")
+		return out
 	default:
 		return fmt.Sprintf("%v", x)
 	}
