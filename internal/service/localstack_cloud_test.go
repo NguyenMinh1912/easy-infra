@@ -20,6 +20,10 @@ type fakeSQS struct {
 	attrs   map[string]map[string]string
 	listErr error
 
+	messages   []sqstypes.Message
+	receiveErr error
+	received   *sqs.ReceiveMessageInput
+
 	created *sqs.CreateQueueInput
 	deleted *sqs.DeleteQueueInput
 	purged  *sqs.PurgeQueueInput
@@ -59,6 +63,14 @@ func (f *fakeSQS) PurgeQueue(_ context.Context, in *sqs.PurgeQueueInput, _ ...fu
 	}
 	f.purged = in
 	return &sqs.PurgeQueueOutput{}, nil
+}
+
+func (f *fakeSQS) ReceiveMessage(_ context.Context, in *sqs.ReceiveMessageInput, _ ...func(*sqs.Options)) (*sqs.ReceiveMessageOutput, error) {
+	if f.receiveErr != nil {
+		return nil, f.receiveErr
+	}
+	f.received = in
+	return &sqs.ReceiveMessageOutput{Messages: f.messages}, nil
 }
 
 // fakeSES is an in-memory sesAPI returning a fixed identity list and a per-name
@@ -219,6 +231,72 @@ func TestLocalStackPurgeQueue(t *testing.T) {
 	}
 	if fake.purged == nil || aws.ToString(fake.purged.QueueUrl) != url {
 		t.Fatalf("PurgeQueue input = %+v, want QueueUrl=%s", fake.purged, url)
+	}
+}
+
+func TestLocalStackMessages(t *testing.T) {
+	const url = "http://localhost:4566/000000000000/orders"
+	fake := &fakeSQS{messages: []sqstypes.Message{
+		{
+			MessageId: aws.String("m-1"),
+			Body:      aws.String(`{"order":1}`),
+			Attributes: map[string]string{
+				"SentTimestamp":           "1700000000000",
+				"ApproximateReceiveCount": "3",
+			},
+		},
+		// A message with no attributes: counts default to zero, not error.
+		{MessageId: aws.String("m-2"), Body: aws.String("hello")},
+	}}
+	ls := LocalStack{openSQS: func(Config) (sqsAPI, error) { return fake, nil }}
+
+	msgs, err := ls.Messages(context.Background(), Spec{Env: Config{"host": "localhost"}}, url, 0)
+	if err != nil {
+		t.Fatalf("Messages: %v", err)
+	}
+	// A zero/over-cap limit must clamp to the SQS per-call maximum, and the
+	// preview must be non-destructive (zero visibility timeout).
+	if aws.ToString(fake.received.QueueUrl) != url {
+		t.Errorf("QueueUrl = %q, want %q", aws.ToString(fake.received.QueueUrl), url)
+	}
+	if fake.received.MaxNumberOfMessages != maxQueueMessages {
+		t.Errorf("MaxNumberOfMessages = %d, want %d", fake.received.MaxNumberOfMessages, maxQueueMessages)
+	}
+	if fake.received.VisibilityTimeout != 0 {
+		t.Errorf("VisibilityTimeout = %d, want 0 (non-destructive peek)", fake.received.VisibilityTimeout)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("got %d messages, want 2", len(msgs))
+	}
+	if msgs[0].ID != "m-1" || msgs[0].Body != `{"order":1}` {
+		t.Errorf("msg[0] = %+v, want id=m-1 body={\"order\":1}", msgs[0])
+	}
+	if msgs[0].SentAt != 1700000000000 || msgs[0].ReceiveCount != 3 {
+		t.Errorf("msg[0] meta = (sentAt=%d, receiveCount=%d), want (1700000000000, 3)", msgs[0].SentAt, msgs[0].ReceiveCount)
+	}
+	if msgs[1].ID != "m-2" || msgs[1].SentAt != 0 || msgs[1].ReceiveCount != 0 {
+		t.Errorf("msg[1] = %+v, want id=m-2 with zero meta", msgs[1])
+	}
+}
+
+func TestLocalStackMessagesLimit(t *testing.T) {
+	fake := &fakeSQS{}
+	ls := LocalStack{openSQS: func(Config) (sqsAPI, error) { return fake, nil }}
+
+	if _, err := ls.Messages(context.Background(), Spec{Env: Config{"host": "localhost"}}, "url", 3); err != nil {
+		t.Fatalf("Messages: %v", err)
+	}
+	if fake.received.MaxNumberOfMessages != 3 {
+		t.Errorf("MaxNumberOfMessages = %d, want 3 (in-range limit honoured)", fake.received.MaxNumberOfMessages)
+	}
+}
+
+func TestLocalStackMessagesError(t *testing.T) {
+	ls := LocalStack{openSQS: func(Config) (sqsAPI, error) {
+		return &fakeSQS{receiveErr: errors.New("connection refused")}, nil
+	}}
+	if _, err := ls.Messages(context.Background(), Spec{Env: Config{"host": "localhost"}}, "url", 0); err == nil {
+		t.Fatal("expected an error when ReceiveMessage fails")
 	}
 }
 

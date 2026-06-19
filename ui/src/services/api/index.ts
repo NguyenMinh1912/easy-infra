@@ -41,6 +41,7 @@ export {
   createQueue,
   deleteQueue,
   purgeQueue,
+  listQueueMessages,
   listIdentities,
   createIdentity,
   deleteIdentity,

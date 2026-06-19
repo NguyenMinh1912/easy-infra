@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,6 +25,14 @@ const cloudTimeout = 15 * time.Second
 type queuesResponse struct {
 	Queues []service.QueueInfo `json:"queues"`
 	Error  string              `json:"error,omitempty"`
+}
+
+// messagesResponse is the JSON shape of an SQS queue's message preview. Like the
+// queue listing, an unreachable endpoint stays 200 with the reason in Error and
+// Messages empty.
+type messagesResponse struct {
+	Messages []service.MessageInfo `json:"messages"`
+	Error    string                `json:"error,omitempty"`
 }
 
 // identitiesResponse is the JSON shape of the SES identity listing.
@@ -155,6 +164,39 @@ func (s *Server) handleCloudPurgeQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleCloudQueueMessages previews the messages on the queue identified by the
+// `url` query parameter — a non-destructive peek for the queue's message list
+// view. An optional `limit` caps how many to return (SQS allows up to 10).
+func (s *Server) handleCloudQueueMessages(w http.ResponseWriter, r *http.Request) {
+	browser, spec, ok := s.resolveCloudBrowser(w, r)
+	if !ok {
+		return
+	}
+	url := r.URL.Query().Get("url")
+	if url == "" {
+		writeError(w, http.StatusBadRequest, "queue url must not be empty")
+		return
+	}
+	limit := 0
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "limit must be a number")
+			return
+		}
+		limit = n
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), cloudTimeout)
+	defer cancel()
+	messages, err := browser.Messages(ctx, spec, url, limit)
+	if err != nil {
+		writeJSON(w, http.StatusOK, messagesResponse{Messages: []service.MessageInfo{}, Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, messagesResponse{Messages: messages})
 }
 
 // handleCloudIdentities lists the named profile's SES identities with their

@@ -19,6 +19,28 @@ export interface QueuesResponse {
   error?: string;
 }
 
+/** One SQS message previewed from a queue. */
+export interface MessageInfo {
+  /** The message's MessageId. */
+  id: string;
+  /** The message payload. */
+  body: string;
+  /** SentTimestamp in Unix milliseconds, 0 when not reported. */
+  sentAt: number;
+  /** ApproximateReceiveCount — how many times the message has been received. */
+  receiveCount: number;
+}
+
+/**
+ * Response of GET …/queues/messages — a non-destructive preview of the messages
+ * on a queue. An unreachable endpoint comes back with `error` set and `messages`
+ * empty, mirroring the queue listing.
+ */
+export interface MessagesResponse {
+  messages: MessageInfo[];
+  error?: string;
+}
+
 /** One SES identity (an email address or a domain) and its status. */
 export interface IdentityInfo {
   identity: string;

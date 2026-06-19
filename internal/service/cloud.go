@@ -29,6 +29,12 @@ type CloudBrowser interface {
 	// leaving the queue itself in place.
 	PurgeQueue(ctx context.Context, spec Spec, url string) error
 
+	// Messages peeks at up to limit messages on the SQS queue identified by its
+	// URL — the backend of the queue's message list view. It is a non-destructive
+	// preview: messages are received with a zero visibility timeout so they stay
+	// available to real consumers.
+	Messages(ctx context.Context, spec Spec, url string, limit int) ([]MessageInfo, error)
+
 	// Identities lists the SES email/domain identities on the emulated account,
 	// with their verification status — the backend of the SES detail page.
 	Identities(ctx context.Context, spec Spec) ([]IdentityInfo, error)
@@ -68,6 +74,21 @@ type QueueInfo struct {
 	// InFlight is the approximate number of in-flight messages
 	// (ApproximateNumberOfMessagesNotVisible).
 	InFlight int64 `json:"inFlight"`
+}
+
+// MessageInfo is one SQS message previewed from a queue, shaped for JSON. It
+// carries the body and the metadata most useful for inspecting a queue, not the
+// receipt handle — the preview never deletes or mutates messages.
+type MessageInfo struct {
+	// ID is the message's MessageId.
+	ID string `json:"id"`
+	// Body is the message payload.
+	Body string `json:"body"`
+	// SentAt is the SentTimestamp in Unix milliseconds, 0 when not reported.
+	SentAt int64 `json:"sentAt"`
+	// ReceiveCount is the ApproximateReceiveCount — how many times the message
+	// has been received, a hint at redelivery/processing trouble.
+	ReceiveCount int64 `json:"receiveCount"`
 }
 
 // IdentityInfo is one SES identity (an email address or a domain) and whether
