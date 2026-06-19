@@ -5,6 +5,10 @@
 # (see scripts/ensure-go.sh).
 /.go/
 
+# Dev-mode build output: `make dev` runs the backend under air, which compiles
+# into ./tmp (see .air.toml) and writes build-errors.log.
+/tmp/
+
 # Tool-owned state and credential-bearing profile env files.
 # The project config (easy-infra.yml, service definitions) IS tracked;
 # profiles under .easy-infra/profiles/ hold secrets and are not.

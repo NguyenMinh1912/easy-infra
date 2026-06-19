@@ -102,8 +102,20 @@ make ui               # build the frontend into ui/dist (embedded in the binary)
 go run . ui           # open http://localhost:8080
 ```
 
-For frontend development run the Vite dev server alongside the backend
-(`make ui-dev` + `go run . ui`); see [`ui/README.md`](./ui/README.md).
+For development, one command runs both apps with hot reload — no build needed:
+
+```sh
+make dev              # backend (auto-restarts on .go changes) + Vite HMR
+```
+
+Then open the Vite URL it prints (<http://localhost:5173>). `make dev` runs the
+Go backend under [air](https://github.com/air-verse/air) — pinned as a Go `tool`
+dependency, so it doesn't affect the release binary — and the Vite dev server
+together, tearing both down on Ctrl+C. The frontend hot-reloads via Vite; the
+backend rebuilds and restarts on `.go` changes.
+
+To run the pieces manually instead, start the Vite dev server alongside the
+backend (`make ui-dev` + `go run . ui`); see [`ui/README.md`](./ui/README.md).
 
 ## Contributing
 

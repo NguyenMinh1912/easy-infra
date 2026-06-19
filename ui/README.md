@@ -27,14 +27,23 @@ src/
 
 ## Develop
 
-Run the Go backend and the Vite dev server side by side:
+The fastest path is a single command from the repo root that hot-reloads both
+the backend and the frontend:
+
+```sh
+make dev                # air-watched backend (:8080) + Vite dev server (:5173)
+```
+
+It rebuilds/reruns the Go backend on `.go` changes (via air) and serves the SPA
+with Vite HMR, shutting both down on Ctrl+C. Open the URL Vite prints (default
+<http://localhost:5173>).
+
+To run the two processes by hand instead:
 
 ```sh
 go run . ui             # backend API on :8080 (from the repo root)
 make ui-dev             # Vite dev server on :5173, proxying /api to :8080
 ```
-
-Open the URL Vite prints (default <http://localhost:5173>).
 
 ## Build & ship
 
