@@ -45,6 +45,59 @@ type EditableInfo struct {
 	Table      string   `json:"table"`
 	PrimaryKey []string `json:"primaryKey"`
 	Columns    []string `json:"columns"`
+	// Relations are the foreign-key paths from the source table to other tables,
+	// in both directions, so the UI can let a row link out to the data it refers
+	// to and the rows that refer back to it. Empty when the table has no foreign
+	// keys (or introspecting them failed).
+	Relations []Relation `json:"relations,omitempty"`
+}
+
+// Relation is one foreign-key path between the result's source table and a
+// related table. Direction is "references" when the source table's columns
+// point at the related table (follow to the parent row it refers to) or
+// "referencedBy" when the related table's columns point back at the source
+// (follow to the child rows that refer to it).
+type Relation struct {
+	Constraint string           `json:"constraint"`
+	Direction  string           `json:"direction"`
+	Schema     string           `json:"schema"`
+	Table      string           `json:"table"`
+	Columns    []RelationColumn `json:"columns"`
+}
+
+// RelationColumn pairs a column on the source table (Local) with the column on
+// the related table it joins to (Foreign). To follow the relation, the related
+// table is filtered where each Foreign column equals the source row's Local
+// value.
+type RelationColumn struct {
+	Local   string `json:"local"`
+	Foreign string `json:"foreign"`
+}
+
+// RelationBrowser is an optional capability a Service implements when it can
+// fetch the rows on the far side of a Relation. Callers type-assert for it and
+// hide the affordance when a service does not, mirroring Querier and RowEditor.
+type RelationBrowser interface {
+	// RelatedRows returns the rows of q.Table matching q.Filters (ANDed
+	// equality predicates), shaped like any other query result so they can be
+	// edited and explored further.
+	RelatedRows(ctx context.Context, spec Spec, q RelatedQuery) (*QueryResult, error)
+}
+
+// RelatedQuery selects the rows reachable through a Relation: the related table
+// and the equality predicates that join it to the originating row. A nil Value
+// matches NULL. Values travel as text so the database coerces them to each
+// column's type, matching how RowMutation values are bound.
+type RelatedQuery struct {
+	Schema  string
+	Table   string
+	Filters []RelationFilter
+}
+
+// RelationFilter is one column-equals-value predicate of a RelatedQuery.
+type RelationFilter struct {
+	Column string
+	Value  *string
 }
 
 // RowEditor is an optional capability a Service implements when the rows a query

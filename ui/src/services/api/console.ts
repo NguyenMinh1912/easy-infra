@@ -73,6 +73,34 @@ export async function deleteRow(
   );
 }
 
+/** One column-equals-value predicate joining a related table to a row. */
+export interface RelationFilter {
+  column: string;
+  /** The matching value as text, or null to match NULL. */
+  value: string | null;
+}
+
+/**
+ * Fetch the rows reachable through a foreign-key relation: the related table
+ * filtered to where its `foreign` columns equal the originating row's values.
+ * The result is shaped like any other query (it may itself be editable and
+ * carry relations), so callers can render and explore it the same way. Like
+ * {@link executeQuery}, statement failures resolve with `error` set.
+ */
+export async function relatedRows(
+  profile: string,
+  service: string,
+  query: { schema: string; table: string; filters: RelationFilter[] },
+  signal?: AbortSignal,
+): Promise<QueryResult> {
+  return apiSend<QueryResult>(
+    "POST",
+    `/profiles/${encodeURIComponent(profile)}/services/${encodeURIComponent(service)}/related`,
+    query,
+    signal,
+  );
+}
+
 /** Fetch the service's queryable tables/columns for autocomplete. */
 export async function getSchema(
   profile: string,
