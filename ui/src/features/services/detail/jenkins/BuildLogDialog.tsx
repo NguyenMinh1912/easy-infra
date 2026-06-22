@@ -88,7 +88,7 @@ export function BuildLogDialog({
 
   return (
     <Dialog open={build !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-[80vw]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ScrollText className="size-4" aria-hidden />
