@@ -1,4 +1,4 @@
-import { Pencil, Play, Trash2 } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,18 +15,17 @@ import type { TemplateSummary } from "@/types/templates";
 
 interface TemplateListProps {
   templates: TemplateSummary[];
-  onRun: (name: string) => void;
   onEdit: (name: string) => void;
   onDelete: (name: string) => void;
 }
 
 /**
  * The workspace's SQL templates, one row each: name, description, variable
- * count, last-updated, and run/edit/delete actions. Deleting confirms first.
+ * count, last-updated, and edit/delete actions. Deleting confirms first.
+ * Templates are run from the SQL console via the "/" mention menu.
  */
 export function TemplateList({
   templates,
-  onRun,
   onEdit,
   onDelete,
 }: TemplateListProps) {
@@ -60,10 +59,6 @@ export function TemplateList({
             </TableCell>
             <TableCell className="text-right">
               <div className="flex justify-end gap-1">
-                <Button size="sm" onClick={() => onRun(t.name)}>
-                  <Play aria-hidden />
-                  Run
-                </Button>
                 <Button
                   size="icon"
                   variant="ghost"

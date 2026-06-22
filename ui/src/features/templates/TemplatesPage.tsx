@@ -16,13 +16,13 @@ import { ApiError, deleteTemplate } from "@/services/api";
 
 import { TemplateEditor } from "./components/TemplateEditor";
 import { TemplateList } from "./components/TemplateList";
-import { TemplateRunDialog } from "./components/TemplateRunDialog";
 import { useTemplates } from "./hooks/useTemplates";
 
 /**
  * Container for the SQL Templates screen: owns data loading via
- * {@link useTemplates} and the create/edit/run dialogs, mapping each async state
- * to a view. The only place wiring data to view.
+ * {@link useTemplates} and the create/edit dialogs, mapping each async state to
+ * a view. The only place wiring data to view. Templates are run from the SQL
+ * console via its "/" mention menu, not from this screen.
  */
 export function TemplatesPage() {
   const { state, reload } = useTemplates();
@@ -30,9 +30,6 @@ export function TemplatesPage() {
   // Editor: editName undefined = create, a string = edit that template.
   const [editorOpen, setEditorOpen] = useState(false);
   const [editName, setEditName] = useState<string | undefined>(undefined);
-  // Run dialog target, or null when closed.
-  const [runOpen, setRunOpen] = useState(false);
-  const [runName, setRunName] = useState<string | null>(null);
 
   const openCreate = () => {
     setEditName(undefined);
@@ -41,10 +38,6 @@ export function TemplatesPage() {
   const openEdit = (name: string) => {
     setEditName(name);
     setEditorOpen(true);
-  };
-  const openRun = (name: string) => {
-    setRunName(name);
-    setRunOpen(true);
   };
   const remove = async (name: string) => {
     try {
@@ -110,7 +103,6 @@ export function TemplatesPage() {
         ) : (
           <TemplateList
             templates={state.data}
-            onRun={openRun}
             onEdit={openEdit}
             onDelete={(name) => void remove(name)}
           />
@@ -121,11 +113,6 @@ export function TemplatesPage() {
         onOpenChange={setEditorOpen}
         editName={editName}
         onSaved={reload}
-      />
-      <TemplateRunDialog
-        open={runOpen}
-        onOpenChange={setRunOpen}
-        templateName={runName}
       />
     </div>
   );

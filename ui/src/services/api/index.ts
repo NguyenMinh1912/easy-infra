@@ -43,7 +43,6 @@ export {
   createTemplate,
   updateTemplate,
   deleteTemplate,
-  runTemplate,
 } from "./templates";
 export { getDatabases, listKeys, getKeyValue } from "./redis";
 export {
