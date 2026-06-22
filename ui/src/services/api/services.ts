@@ -242,18 +242,23 @@ export function listSnapshots(
 /**
  * Start (or re-attach to) a background apply of a service for the given profile
  * (defaulting to the active one), restoring from `snapshot` (an empty string
- * means the latest). If one is already running for the service, the server
- * returns that session instead of starting a second.
+ * means the latest). By default the snapshot is read from the same service in
+ * `profile`; passing `sourceProfile` restores from the same service's backup in
+ * another profile instead. If one is already running for the service, the
+ * server returns that session instead of starting a second.
  */
 export function startServiceApply(
   name: string,
   snapshot: string,
   profile?: string,
+  sourceProfile?: string,
 ): Promise<BackupSession> {
   return apiSend<BackupSession>(
     "POST",
     withProfile(`/services/${encodeURIComponent(name)}/apply`, profile),
-    { snapshot },
+    sourceProfile && sourceProfile !== profile
+      ? { snapshot, sourceProfile }
+      : { snapshot },
   );
 }
 

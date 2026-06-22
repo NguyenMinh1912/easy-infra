@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAsync } from "@/hooks/useAsync";
-import { listSnapshots } from "@/services/api";
+import { listProfiles, listSnapshots } from "@/services/api";
 import { cn } from "@/lib/utils";
 
 interface SnapshotSelectDialogProps {
@@ -23,14 +23,21 @@ interface SnapshotSelectDialogProps {
   profile?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Called with the chosen snapshot once the user confirms. */
-  onApply: (snapshot: string) => void;
+  /**
+   * Called with the chosen snapshot and the profile it is restored from once the
+   * user confirms. `sourceProfile` equals the viewed profile for a same-profile
+   * restore, or another profile when restoring its backup of the same service.
+   */
+  onApply: (snapshot: string, sourceProfile: string) => void;
 }
 
 /**
  * Modal that lists a service's backup versions (newest first) and lets the user
- * pick which one to restore. Confirming hands the chosen snapshot to `onApply`,
- * which then streams the apply's progress; the picker itself does no applying.
+ * pick which one to restore. A "restore from profile" selector lets the user
+ * pull the same service's backup from another profile; the snapshot list tracks
+ * the chosen profile. Confirming hands the chosen snapshot and source profile to
+ * `onApply`, which then streams the apply's progress; the picker itself does no
+ * applying.
  */
 export function SnapshotSelectDialog({
   serviceName,
@@ -39,12 +46,33 @@ export function SnapshotSelectDialog({
   onOpenChange,
   onApply,
 }: SnapshotSelectDialogProps) {
-  // Fetch fresh each time the dialog opens; resolve to nothing while closed so
-  // the request only fires when the picker is actually shown.
+  // The profiles a backup may be restored from. Fetched when the dialog opens so
+  // the selector reflects the current set; resolves to nothing while closed.
+  const profiles = useAsync(
+    async (signal) => (open ? await listProfiles(signal) : null),
+    [open],
+  );
+
+  // Which profile's backups are listed. Defaults to the viewed profile (or the
+  // active one when unset), so the dialog opens on a same-profile restore.
+  const [source, setSource] = useState("");
+  useEffect(() => {
+    if (!open) return;
+    if (profile) {
+      setSource(profile);
+    } else if (profiles.status === "success" && profiles.data) {
+      setSource((current) => current || profiles.data!.activeProfile);
+    }
+  }, [open, profile, profiles]);
+
+  // Fetch snapshots for the chosen source profile; resolve to nothing until both
+  // the dialog is open and a source profile is known.
   const state = useAsync(
     async (signal) =>
-      open ? (await listSnapshots(serviceName, profile, signal)).snapshots : [],
-    [serviceName, profile, open],
+      open && source
+        ? (await listSnapshots(serviceName, source, signal)).snapshots
+        : [],
+    [serviceName, source, open],
   );
 
   const [selected, setSelected] = useState("");
@@ -55,8 +83,15 @@ export function SnapshotSelectDialog({
       setSelected((current) =>
         state.data.includes(current) ? current : state.data[0],
       );
+    } else {
+      setSelected("");
     }
   }, [state]);
+
+  const profileNames =
+    profiles.status === "success" && profiles.data
+      ? profiles.data.profiles.map((p) => p.name)
+      : [];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -64,17 +99,39 @@ export function SnapshotSelectDialog({
         <DialogHeader>
           <DialogTitle>Apply {serviceName}</DialogTitle>
           <DialogDescription>
-            Choose which backup version to restore into the active profile's{" "}
-            <span className="font-mono">{serviceName}</span>. You can follow the
-            progress in the next step.
+            Choose which backup version to restore into the viewed profile's{" "}
+            <span className="font-mono">{serviceName}</span>. By default it
+            restores this profile's own backup; pick another profile to restore
+            its backup of the same service. You can follow the progress in the
+            next step.
           </DialogDescription>
         </DialogHeader>
 
-        <SnapshotList
-          state={state}
-          selected={selected}
-          onSelect={setSelected}
-        />
+        <div className="space-y-1.5">
+          <label htmlFor="apply-source-profile" className="text-sm font-medium">
+            Restore from profile
+          </label>
+          <select
+            id="apply-source-profile"
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+            disabled={profileNames.length === 0}
+            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {/* While profiles load, show the current source so the field is not empty. */}
+            {profileNames.length === 0 && source && (
+              <option value={source}>{source}</option>
+            )}
+            {profileNames.map((name) => (
+              <option key={name} value={name}>
+                {name}
+                {name === profile ? " (current)" : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <SnapshotList state={state} selected={selected} onSelect={setSelected} />
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
@@ -84,7 +141,7 @@ export function SnapshotSelectDialog({
             disabled={!selected}
             onClick={() => {
               onOpenChange(false);
-              onApply(selected);
+              onApply(selected, source);
             }}
           >
             Apply
@@ -130,7 +187,8 @@ function SnapshotList({ state, selected, onSelect }: SnapshotListProps) {
             <div>
               <AlertTitle>No backups yet</AlertTitle>
               <AlertDescription>
-                Back this service up first — there is nothing to restore from.
+                This profile has no backups of the service — pick another
+                profile or back it up first.
               </AlertDescription>
             </div>
           </Alert>

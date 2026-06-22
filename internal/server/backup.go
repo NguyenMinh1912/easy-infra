@@ -359,13 +359,20 @@ func nonNil(xs []string) []string {
 // handleStartApply restores a single service for the active profile from a
 // chosen snapshot in the background, returning the (new or already-running)
 // session as JSON. The body selects which snapshot version to apply; an empty
-// snapshot applies the latest. The apply reads an existing snapshot, so a
-// failure leaves it in place (no cleanup), unlike a backup.
+// snapshot applies the latest. By default the snapshot is read from the same
+// service in the viewed profile, but an optional `sourceProfile` lets the
+// restore pull from the same service's backup in another profile — the snapshot
+// is located under the source profile while it is restored into the viewed
+// profile's service. The apply reads an existing snapshot, so a failure leaves
+// it in place (no cleanup), unlike a backup.
 func (s *Server) handleStartApply(w http.ResponseWriter, r *http.Request) {
 	svcID := r.PathValue("name")
 
 	var body struct {
 		Snapshot string `json:"snapshot"`
+		// SourceProfile names the profile whose backup is restored. When empty
+		// the viewed profile is used, preserving the same-profile restore.
+		SourceProfile string `json:"sourceProfile"`
 	}
 	if r.Body != nil {
 		// An empty body is allowed and means "latest"; only a malformed one errs.
@@ -397,16 +404,41 @@ func (s *Server) handleStartApply(w http.ResponseWriter, r *http.Request) {
 	}
 	env := entry.Config
 
-	// Validate the requested snapshot against the known list rather than trusting
-	// the client, so a crafted id cannot escape the backups directory.
+	// Resolve which profile the snapshot is read from. It defaults to the viewed
+	// profile (a same-profile restore); a different source must define the same
+	// service of the same type so the backup is compatible with what we restore
+	// into. Resolving it through LoadProfile also keeps a crafted profile name
+	// from escaping the backups directory.
+	sourceProfile := profileName
+	if body.SourceProfile != "" && body.SourceProfile != profileName {
+		sourceProfile = body.SourceProfile
+		srcProf, err := proj.LoadProfile(sourceProfile)
+		if err != nil {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		srcEntry, ok := srcProf.Services[svcID]
+		if !ok {
+			writeError(w, http.StatusNotFound, fmt.Sprintf("service %q is not defined in profile %q", svcID, sourceProfile))
+			return
+		}
+		if srcType := srcEntry.ResolveType(svcID); srcType != svcType {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("cannot restore %q from profile %q: it is %q there but %q in profile %q", svcID, sourceProfile, srcType, svcType, profileName))
+			return
+		}
+	}
+
+	// Validate the requested snapshot against the source profile's known list
+	// rather than trusting the client, so a crafted id cannot escape the backups
+	// directory.
 	if body.Snapshot != "" {
-		ids, err := service.ListSnapshots(profileName, svcID)
+		ids, err := service.ListSnapshots(sourceProfile, svcID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		if !contains(ids, body.Snapshot) {
-			writeError(w, http.StatusNotFound, fmt.Sprintf("snapshot %q not found for service %q in profile %q", body.Snapshot, svcID, profileName))
+			writeError(w, http.StatusNotFound, fmt.Sprintf("snapshot %q not found for service %q in profile %q", body.Snapshot, svcID, sourceProfile))
 			return
 		}
 	}
@@ -417,8 +449,10 @@ func (s *Server) handleStartApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Profile is the SOURCE so the snapshot is located under it; Env is the
+	// viewed profile's service so the restore lands there.
 	spec := service.Spec{
-		Profile:    profileName,
+		Profile:    sourceProfile,
 		Definition: env,
 		Env:        env,
 		Snapshot:   body.Snapshot,
@@ -428,7 +462,11 @@ func (s *Server) handleStartApply(w http.ResponseWriter, r *http.Request) {
 		if version == "" {
 			version = "latest snapshot"
 		}
-		fmt.Fprintf(lw, "Applying %q (profile %q) from %s\n", svcID, profileName, version)
+		if sourceProfile == profileName {
+			fmt.Fprintf(lw, "Applying %q (profile %q) from %s\n", svcID, profileName, version)
+		} else {
+			fmt.Fprintf(lw, "Applying %q (profile %q) from %s in profile %q\n", svcID, profileName, version, sourceProfile)
+		}
 		spec.Log = lw
 		err := svc.Apply(ctx, spec)
 		if errors.Is(err, service.ErrNotImplemented) {
