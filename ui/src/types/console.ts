@@ -41,36 +41,6 @@ export interface EditableInfo {
    * (an expression, or a column we couldn't resolve).
    */
   columns: string[];
-  /**
-   * Foreign-key paths from the source table to other tables, both directions,
-   * letting a row link out to the data it refers to and the rows that refer
-   * back. Absent when the table has no foreign keys.
-   */
-  relations?: Relation[];
-}
-
-/**
- * One foreign-key path between the result's source table and a related table.
- * `direction` is "references" when the source table points at the related one
- * (follow to the parent row), or "referencedBy" when the related table points
- * back at the source (follow to the child rows).
- */
-export interface Relation {
-  constraint: string;
-  direction: "references" | "referencedBy";
-  schema: string;
-  table: string;
-  columns: RelationColumn[];
-}
-
-/**
- * Pairs a column on the source table (`local`) with the related table column it
- * joins to (`foreign`). To follow the relation, the related table is filtered
- * where each `foreign` column equals the source row's `local` value.
- */
-export interface RelationColumn {
-  local: string;
-  foreign: string;
 }
 
 /** One queryable table and its columns, for editor autocomplete. */

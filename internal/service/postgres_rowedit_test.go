@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -101,28 +100,18 @@ func TestDeleteRow(t *testing.T) {
 }
 
 // catalogConn answers the catalog lookups editableInfo makes: QueryRow resolves
-// the table identity, Query lists its columns and primary key, and (for the
-// foreign-key introspection) its relations.
+// the table identity, Query lists its columns and primary key.
 type catalogConn struct {
 	fakeConn
 	schema, table string
 	cols          [][]any // {attnum int, name string, isPK bool}
-	// fks rows: {conname string, outgoing bool, schema string, table string,
-	// localCol string, foreignCol string}, the shape foreignKeys scans.
-	fks [][]any
 }
 
 func (c *catalogConn) QueryRow(context.Context, string, ...any) pgx.Row {
 	return identityRow{schema: c.schema, table: c.table}
 }
 
-func (c *catalogConn) Query(_ context.Context, sql string, _ ...any) (pgx.Rows, error) {
-	if strings.Contains(sql, "pg_constraint") {
-		return &fakeRows{
-			columns: []string{"conname", "outgoing", "schema", "table", "local", "foreign"},
-			data:    c.fks,
-		}, nil
-	}
+func (c *catalogConn) Query(context.Context, string, ...any) (pgx.Rows, error) {
 	return &fakeRows{columns: []string{"attnum", "attname", "is_pk"}, data: c.cols}, nil
 }
 
@@ -181,102 +170,5 @@ func TestEditableInfoNotEditable(t *testing.T) {
 				t.Errorf("editableInfo = %+v, want nil", got)
 			}
 		})
-	}
-}
-
-func TestEditableInfoRelations(t *testing.T) {
-	// orders.customer_id references customers.id (outgoing), and order_items.order_id
-	// references orders.id (incoming) — both oriented from orders' own column.
-	orders := &catalogConn{
-		schema: "public", table: "orders",
-		cols: [][]any{{1, "id", true}, {2, "customer_id", false}},
-		fks: [][]any{
-			{"orders_customer_id_fkey", true, "public", "customers", "customer_id", "id"},
-			{"order_items_order_id_fkey", false, "public", "order_items", "id", "order_id"},
-		},
-	}
-	got := editableInfo(context.Background(), orders, []colMeta{
-		{name: "id", tableOID: 100, attnum: 1},
-		{name: "customer_id", tableOID: 100, attnum: 2},
-	})
-	want := &EditableInfo{
-		Schema: "public", Table: "orders",
-		PrimaryKey: []string{"id"},
-		Columns:    []string{"id", "customer_id"},
-		Relations: []Relation{
-			{
-				Constraint: "orders_customer_id_fkey", Direction: "references",
-				Schema: "public", Table: "customers",
-				Columns: []RelationColumn{{Local: "customer_id", Foreign: "id"}},
-			},
-			{
-				Constraint: "order_items_order_id_fkey", Direction: "referencedBy",
-				Schema: "public", Table: "order_items",
-				Columns: []RelationColumn{{Local: "id", Foreign: "order_id"}},
-			},
-		},
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("editableInfo = %+v, want %+v", got, want)
-	}
-}
-
-func TestTableRelations(t *testing.T) {
-	cc := &catalogConn{
-		schema: "public", table: "orders",
-		fks: [][]any{
-			{"orders_customer_id_fkey", true, "public", "customers", "customer_id", "id"},
-		},
-	}
-	p := Postgres{open: func(context.Context, string) (pgConn, error) { return cc, nil }}
-	got, err := p.TableRelations(context.Background(), Spec{Env: Postgres{}.DefaultEnv()}, "public", "orders")
-	if err != nil {
-		t.Fatalf("TableRelations: %v", err)
-	}
-	want := []Relation{{
-		Constraint: "orders_customer_id_fkey", Direction: "references",
-		Schema: "public", Table: "customers",
-		Columns: []RelationColumn{{Local: "customer_id", Foreign: "id"}},
-	}}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("TableRelations = %+v, want %+v", got, want)
-	}
-}
-
-func TestRelatedRows(t *testing.T) {
-	qc := &queryConn{rows: &fakeRows{
-		columns: []string{"id", "order_id"},
-		data:    [][]any{{int64(5), int64(9)}},
-		tag:     pgconn.NewCommandTag("SELECT 1"),
-	}}
-	res, err := withQueryConn(qc).RelatedRows(context.Background(), Spec{Env: Postgres{}.DefaultEnv()}, RelatedQuery{
-		Schema: "public", Table: "order_items",
-		Filters: []RelationFilter{{Column: "order_id", Value: strptr("9")}},
-	})
-	if err != nil {
-		t.Fatalf("RelatedRows: %v", err)
-	}
-	if res.RowCount != 1 || res.Command != "SELECT 1" {
-		t.Errorf("result = %+v", res)
-	}
-	wantSQL := `SELECT * FROM "public"."order_items" WHERE "order_id" = $1`
-	if len(qc.queries) == 0 || qc.queries[0] != wantSQL {
-		t.Errorf("queries = %v, want first %q", qc.queries, wantSQL)
-	}
-}
-
-func TestRelatedRowsNullFilter(t *testing.T) {
-	qc := &queryConn{rows: &fakeRows{columns: []string{"id"}, tag: pgconn.NewCommandTag("SELECT 0")}}
-	_, err := withQueryConn(qc).RelatedRows(context.Background(), Spec{Env: Postgres{}.DefaultEnv()}, RelatedQuery{
-		Schema: "public", Table: "order_items",
-		Filters: []RelationFilter{{Column: "order_id", Value: nil}},
-	})
-	if err != nil {
-		t.Fatalf("RelatedRows: %v", err)
-	}
-	// A nil filter value matches NULL rather than binding a placeholder.
-	wantSQL := `SELECT * FROM "public"."order_items" WHERE "order_id" IS NULL`
-	if len(qc.queries) == 0 || qc.queries[0] != wantSQL {
-		t.Errorf("queries = %v, want first %q", qc.queries, wantSQL)
 	}
 }
