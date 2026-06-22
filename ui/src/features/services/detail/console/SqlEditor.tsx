@@ -7,8 +7,13 @@ import CodeMirror, {
 import { useMemo, useRef, type MutableRefObject } from "react";
 
 import { useTheme } from "@/components/theme/ThemeProvider";
+import type { TemplateSummary } from "@/types/templates";
 
 import { columnCompletionSource } from "./sqlCompletion";
+import {
+  slashTemplateTrigger,
+  templateCompletionSource,
+} from "./templateCompletion";
 
 interface SqlEditorProps {
   value: string;
@@ -19,6 +24,11 @@ interface SqlEditorProps {
    * failed — the editor then offers keyword completion only.
    */
   schema?: Record<string, string[]>;
+  /**
+   * SQL templates offered via the "/" mention menu. Typing "/" lists them and
+   * choosing one inserts its SQL body. Omitted (or empty) disables the menu.
+   */
+  templates?: TemplateSummary[];
   /** Invoked on Ctrl/Cmd-Enter; the same action as the Run button. */
   onRun: () => void;
   /**
@@ -44,6 +54,7 @@ export function SqlEditor({
   value,
   onChange,
   schema,
+  templates,
   onRun,
   viewRef,
   height,

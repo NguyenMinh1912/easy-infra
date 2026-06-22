@@ -167,12 +167,11 @@ export function columnCompletionSource(
     if (!word) return null;
     // Don't pop the menu on a bare separator unless the user asked for it.
     if (word.from === word.to && !context.explicit) return null;
-    // Qualified completions (`alias.col`) belong to lang-sql's own source.
-    if (
-      word.from > 0 &&
-      context.state.sliceDoc(word.from - 1, word.from) === "."
-    ) {
-      return null;
+    // Qualified completions (`alias.col`) belong to lang-sql's own source; a
+    // leading "/" belongs to the template-mention source.
+    if (word.from > 0) {
+      const before = context.state.sliceDoc(word.from - 1, word.from);
+      if (before === "." || before === "/") return null;
     }
 
     const doc = context.state.doc;
