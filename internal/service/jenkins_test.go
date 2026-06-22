@@ -23,6 +23,14 @@ func TestJenkinsValidateEnv(t *testing.T) {
 	if err := j.ValidateEnv(env); err == nil {
 		t.Error("expected out-of-range port to fail validation")
 	}
+
+	// Optional credentials are accepted when present and well-typed.
+	env = j.DefaultEnv()
+	env["user"] = "admin"
+	env["token"] = "11aa22bb"
+	if err := j.ValidateEnv(env); err != nil {
+		t.Errorf("expected credentials to validate: %v", err)
+	}
 }
 
 func TestJenkinsHealth(t *testing.T) {

@@ -52,12 +52,20 @@ func (Jenkins) DefaultEnv() Config {
 	}
 }
 
-// ValidateEnv implements Service.
+// ValidateEnv implements Service. Credentials are optional: an anonymous-read
+// Jenkins needs none, while a secured one is reached with a username and an API
+// token (Jenkins's recommended alternative to a password for REST access).
 func (Jenkins) ValidateEnv(cfg Config) error {
 	if _, err := requireString(cfg, "host"); err != nil {
 		return err
 	}
 	if _, err := optionalPort(cfg, "port", 8080); err != nil {
+		return err
+	}
+	if _, err := optionalString(cfg, "user", ""); err != nil {
+		return err
+	}
+	if _, err := optionalString(cfg, "token", ""); err != nil {
 		return err
 	}
 	return nil
