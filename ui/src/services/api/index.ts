@@ -37,6 +37,13 @@ export type {
 } from "./services";
 export { executeQuery, getSchema, updateRow, deleteRow } from "./console";
 export type { RowKey } from "./console";
+export {
+  listTemplates,
+  getTemplate,
+  createTemplate,
+  updateTemplate,
+  deleteTemplate,
+} from "./templates";
 export { getDatabases, listKeys, getKeyValue } from "./redis";
 export {
   getLocalstackHealth,
