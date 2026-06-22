@@ -191,6 +191,28 @@ func editableInfo(ctx context.Context, conn pgConn, metas []colMeta) *EditableIn
 	}
 }
 
+// TableRelations implements SchemaGrapher: resolve the named table to its OID
+// and return its foreign-key relations in both directions. An unknown table is
+// an error; introspection that finds no relations is simply an empty result.
+func (p Postgres) TableRelations(ctx context.Context, spec Spec, schema, table string) ([]Relation, error) {
+	conn, err := p.connect(ctx, spec.Env, "")
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close(ctx)
+
+	var oid uint32
+	err = conn.QueryRow(ctx, `
+		SELECT c.oid
+		FROM pg_class c
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = $1 AND c.relname = $2`, schema, table).Scan(&oid)
+	if err != nil {
+		return nil, fmt.Errorf("resolving table %s.%s: %w", schema, table, err)
+	}
+	return foreignKeys(ctx, conn, oid), nil
+}
+
 // foreignKeys returns the foreign-key relations touching the table identified
 // by oid, in both directions: constraints it declares (it references another
 // table) and constraints that target it (another table references it). Each

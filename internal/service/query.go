@@ -100,6 +100,17 @@ type RelationFilter struct {
 	Value  *string
 }
 
+// SchemaGrapher is an optional capability a Service implements when its schema
+// can be explored as a graph: the foreign-key relations of a single table,
+// addressed by name, independent of any query result (so it works even for
+// tables without a primary key). Postgres implements it; the relationship
+// canvas uses it to grow the graph one node at a time.
+type SchemaGrapher interface {
+	// TableRelations returns the foreign-key relations touching the named table,
+	// in both directions, oriented from that table's own columns.
+	TableRelations(ctx context.Context, spec Spec, schema, table string) ([]Relation, error)
+}
+
 // RowEditor is an optional capability a Service implements when the rows a query
 // returned can be edited in place — updating a single cell or deleting a row,
 // each addressed by the result's primary key. Postgres implements it; callers

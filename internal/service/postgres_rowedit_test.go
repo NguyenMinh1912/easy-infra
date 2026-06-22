@@ -221,6 +221,28 @@ func TestEditableInfoRelations(t *testing.T) {
 	}
 }
 
+func TestTableRelations(t *testing.T) {
+	cc := &catalogConn{
+		schema: "public", table: "orders",
+		fks: [][]any{
+			{"orders_customer_id_fkey", true, "public", "customers", "customer_id", "id"},
+		},
+	}
+	p := Postgres{open: func(context.Context, string) (pgConn, error) { return cc, nil }}
+	got, err := p.TableRelations(context.Background(), Spec{Env: Postgres{}.DefaultEnv()}, "public", "orders")
+	if err != nil {
+		t.Fatalf("TableRelations: %v", err)
+	}
+	want := []Relation{{
+		Constraint: "orders_customer_id_fkey", Direction: "references",
+		Schema: "public", Table: "customers",
+		Columns: []RelationColumn{{Local: "customer_id", Foreign: "id"}},
+	}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("TableRelations = %+v, want %+v", got, want)
+	}
+}
+
 func TestRelatedRows(t *testing.T) {
 	qc := &queryConn{rows: &fakeRows{
 		columns: []string{"id", "order_id"},

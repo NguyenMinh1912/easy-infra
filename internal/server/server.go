@@ -71,6 +71,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/profiles/{name}/services/{service}/check", s.handleCheckConnection)
 	mux.HandleFunc("POST /api/profiles/{name}/services/{service}/query", s.handleConsoleQuery)
 	mux.HandleFunc("GET /api/profiles/{name}/services/{service}/schema", s.handleConsoleSchema)
+	mux.HandleFunc("GET /api/profiles/{name}/services/{service}/table-relations", s.handleTableRelations)
 	mux.HandleFunc("PATCH /api/profiles/{name}/services/{service}/row", s.handleRowUpdate)
 	mux.HandleFunc("DELETE /api/profiles/{name}/services/{service}/row", s.handleRowDelete)
 	mux.HandleFunc("POST /api/profiles/{name}/services/{service}/related", s.handleRelatedRows)

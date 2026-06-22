@@ -4,6 +4,7 @@ import { lazy, Suspense } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { DefinitionSummary } from "./DefinitionSummary";
 import type { OverviewProps } from "./types";
@@ -16,20 +17,39 @@ const PostgresConsoleTabs = lazy(() =>
   })),
 );
 
+// Loaded on demand: the relationship canvas pulls in React Flow, kept out of
+// the main bundle for users who never open it.
+const RelationGraph = lazy(() =>
+  import("./graph/RelationGraph").then((m) => ({ default: m.RelationGraph })),
+);
+
 /**
  * Postgres-specific overview. Surfaces the image version prominently and lists
  * the profile's raw config (version plus connection settings). On a
- * profile-scoped page it shows the SQL console directly — a client against that
- * profile's connection, defaulting to the profile's configured schema.
+ * profile-scoped page it offers two views against the profile's connection: the
+ * SQL console and a relationship canvas for exploring foreign keys visually.
  */
 export function PostgresOverview({ service, profile }: OverviewProps) {
   if (!profile) {
     return <PostgresSummary service={service} />;
   }
   return (
-    <Suspense fallback={<Skeleton className="h-40 w-full" />}>
-      <PostgresConsoleTabs profile={profile} service={service.id} />
-    </Suspense>
+    <Tabs defaultValue="console" className="space-y-4">
+      <TabsList>
+        <TabsTrigger value="console">SQL Console</TabsTrigger>
+        <TabsTrigger value="graph">Relationships</TabsTrigger>
+      </TabsList>
+      <TabsContent value="console">
+        <Suspense fallback={<Skeleton className="h-40 w-full" />}>
+          <PostgresConsoleTabs profile={profile} service={service.id} />
+        </Suspense>
+      </TabsContent>
+      <TabsContent value="graph">
+        <Suspense fallback={<Skeleton className="h-[70vh] w-full" />}>
+          <RelationGraph profile={profile} service={service.id} />
+        </Suspense>
+      </TabsContent>
+    </Tabs>
   );
 }
 

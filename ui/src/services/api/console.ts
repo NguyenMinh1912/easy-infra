@@ -1,7 +1,7 @@
 // Console endpoints: execute SQL against a profile's service and fetch its
 // schema for editor autocomplete.
 
-import type { QueryResult, SchemaInfo } from "@/types/console";
+import type { QueryResult, Relation, SchemaInfo } from "@/types/console";
 
 import { apiGet, apiSend } from "./client";
 
@@ -97,6 +97,25 @@ export async function relatedRows(
     "POST",
     `/profiles/${encodeURIComponent(profile)}/services/${encodeURIComponent(service)}/related`,
     query,
+    signal,
+  );
+}
+
+/**
+ * Fetch the foreign-key relations of one table, by name, for the relationship
+ * canvas. Works independently of any query result (including tables without a
+ * primary key). Introspection failures resolve with `error` set.
+ */
+export async function getTableRelations(
+  profile: string,
+  service: string,
+  schema: string,
+  table: string,
+  signal?: AbortSignal,
+): Promise<{ relations: Relation[]; error?: string }> {
+  const query = `?schema=${encodeURIComponent(schema)}&table=${encodeURIComponent(table)}`;
+  return apiGet<{ relations: Relation[]; error?: string }>(
+    `/profiles/${encodeURIComponent(profile)}/services/${encodeURIComponent(service)}/table-relations${query}`,
     signal,
   );
 }

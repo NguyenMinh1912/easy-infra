@@ -263,6 +263,47 @@ func (s *Server) handleRelatedRows(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// tableRelationsResponse is the JSON shape of a table's relations lookup.
+// Introspection failing (e.g. unknown table, database unreachable) is reported
+// in Error on a 200, like the other console endpoints, so the canvas can show
+// the reason without treating it as a transport failure.
+type tableRelationsResponse struct {
+	Relations []service.Relation `json:"relations"`
+	Error     string             `json:"error,omitempty"`
+}
+
+// handleTableRelations returns the foreign-key relations of one table, by name,
+// feeding the relationship canvas as it expands a node into its neighbours.
+func (s *Server) handleTableRelations(w http.ResponseWriter, r *http.Request) {
+	schema := strings.TrimSpace(r.URL.Query().Get("schema"))
+	table := strings.TrimSpace(r.URL.Query().Get("table"))
+	if schema == "" || table == "" {
+		writeError(w, http.StatusBadRequest, "schema and table query parameters are required")
+		return
+	}
+	svc, spec, ok := s.resolveConsoleService(w, r)
+	if !ok {
+		return
+	}
+	grapher, ok := svc.(service.SchemaGrapher)
+	if !ok {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("service %q does not support a relationship graph", r.PathValue("service")))
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), schemaTimeout)
+	defer cancel()
+	rels, err := grapher.TableRelations(ctx, spec, schema, table)
+	if err != nil {
+		writeJSON(w, http.StatusOK, tableRelationsResponse{Relations: []service.Relation{}, Error: err.Error()})
+		return
+	}
+	if rels == nil {
+		rels = []service.Relation{}
+	}
+	writeJSON(w, http.StatusOK, tableRelationsResponse{Relations: rels})
+}
+
 // resolveQuerier maps the {name}/{service} path onto a console-capable service
 // and the Spec for the profile's saved env. On failure it writes the error
 // response and returns ok=false.

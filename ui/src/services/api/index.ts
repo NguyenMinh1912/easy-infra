@@ -38,6 +38,7 @@ export type {
 export {
   executeQuery,
   getSchema,
+  getTableRelations,
   updateRow,
   deleteRow,
   relatedRows,
