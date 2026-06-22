@@ -56,6 +56,25 @@ Pin a version with `EASY_INFRA_VERSION=v1.2.3` or change the target directory
 with `EASY_INFRA_BIN_DIR`. Releases are published automatically from a version
 tag by [`.github/workflows/release.yml`](./.github/workflows/release.yml).
 
+### Windows
+
+Windows ships as a self-contained `easy-infra.exe` (no install, no Go toolchain,
+no extra runtime). Download `easy-infra_windows_amd64.zip` — or
+`easy-infra_windows_arm64.zip` on ARM devices — from the
+[latest release](https://github.com/NguyenMinh1912/easy-infra/releases/latest),
+unzip it, and run the executable:
+
+```powershell
+.\easy-infra.exe            # serve the web UI + JSON API on http://localhost:8080
+.\easy-infra.exe --port 9000
+```
+
+Double-clicking `easy-infra.exe` works too: it opens a console window serving
+the app — leave it running and open <http://localhost:8080> in your browser.
+Data lives in `%AppData%\easy-infra\easy-infra.db`. (Windows Defender
+SmartScreen may warn about an unsigned binary on first run; choose *More info →
+Run anyway*.)
+
 ### Build from source
 
 Install `easy-infra` as a global command (drops the binary in `go env GOPATH`'s

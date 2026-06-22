@@ -41,17 +41,25 @@ jobs:
           LDFLAGS="-s -w -X github.com/minhnc/easy-infra/cmd.version=${VERSION}"
           mkdir -p dist
           # OS/arch matrix — keep in sync with the detection table in install.sh.
-          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
             GOOS="${target%/*}"
             GOARCH="${target#*/}"
             echo "Building ${GOOS}/${GOARCH} ..."
+            # Windows binaries need the .exe suffix and ship as a .zip (the
+            # archive Windows users can extract without extra tooling); every
+            # other target ships as the .tar.gz that install.sh downloads.
+            if [ "$GOOS" = "windows" ]; then bin="easy-infra.exe"; else bin="easy-infra"; fi
             CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
-              go build -trimpath -ldflags "$LDFLAGS" -o easy-infra .
-            tar -czf "dist/easy-infra_${GOOS}_${GOARCH}.tar.gz" easy-infra
-            rm -f easy-infra
+              go build -trimpath -ldflags "$LDFLAGS" -o "$bin" .
+            if [ "$GOOS" = "windows" ]; then
+              zip -q "dist/easy-infra_${GOOS}_${GOARCH}.zip" "$bin"
+            else
+              tar -czf "dist/easy-infra_${GOOS}_${GOARCH}.tar.gz" "$bin"
+            fi
+            rm -f "$bin"
           done
           # Checksums so install.sh (and users) can verify downloads.
-          ( cd dist && sha256sum easy-infra_*.tar.gz > checksums.txt )
+          ( cd dist && sha256sum easy-infra_* > checksums.txt )
           ls -l dist
 
       - name: Publish GitHub Release
@@ -60,4 +68,5 @@ jobs:
           generate_release_notes: true
           files: |
             dist/easy-infra_*.tar.gz
+            dist/easy-infra_*.zip
             dist/checksums.txt
