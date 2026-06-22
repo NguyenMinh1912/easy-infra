@@ -30,7 +30,14 @@ func (p Postgres) Query(ctx context.Context, spec Spec, sql string) (*QueryResul
 		return nil, fmt.Errorf("executing query: %w", err)
 	}
 	defer rows.Close()
+	return collectResult(ctx, conn, rows)
+}
 
+// collectResult reads a pgx row set into a QueryResult, capping at maxQueryRows
+// and resolving how (if at all) the rows map back to a single editable table.
+// It is shared by Query and RelatedRows so a result reached by following a
+// relation behaves exactly like one typed into the console.
+func collectResult(ctx context.Context, conn pgConn, rows pgx.Rows) (*QueryResult, error) {
 	// Capture the field descriptions' source-table metadata now: it drives
 	// editability detection below and may be reset once rows is closed.
 	fds := rows.FieldDescriptions()
@@ -87,6 +94,40 @@ func (p Postgres) Query(ctx context.Context, spec Spec, sql string) (*QueryResul
 	return result, nil
 }
 
+// RelatedRows implements RelationBrowser: select the rows of q.Table that match
+// q.Filters, joined by value to the originating row. Identifiers are quoted and
+// values bound via the simple protocol so each text value is coerced to its
+// column's type, mirroring UpdateRow.
+func (p Postgres) RelatedRows(ctx context.Context, spec Spec, q RelatedQuery) (*QueryResult, error) {
+	conn, err := p.connect(ctx, spec.Env, "")
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close(ctx)
+
+	conds := make([]string, len(q.Filters))
+	args := []any{pgx.QueryExecModeSimpleProtocol}
+	for i, f := range q.Filters {
+		if f.Value == nil {
+			conds[i] = fmt.Sprintf("%s IS NULL", quoteIdent(f.Column))
+			continue
+		}
+		conds[i] = fmt.Sprintf("%s = $%d", quoteIdent(f.Column), len(args))
+		args = append(args, *f.Value)
+	}
+	sql := fmt.Sprintf("SELECT * FROM %s.%s", quoteIdent(q.Schema), quoteIdent(q.Table))
+	if len(conds) > 0 {
+		sql += " WHERE " + strings.Join(conds, " AND ")
+	}
+
+	rows, err := conn.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("executing query: %w", err)
+	}
+	defer rows.Close()
+	return collectResult(ctx, conn, rows)
+}
+
 // colMeta is the source-table provenance of one result column, taken from its
 // pgx field description: the table it came from and its attribute number there,
 // both zero for expressions and other non-column results.
@@ -141,7 +182,102 @@ func editableInfo(ctx context.Context, conn pgConn, metas []colMeta) *EditableIn
 			return nil
 		}
 	}
-	return &EditableInfo{Schema: schema, Table: table, PrimaryKey: pk, Columns: cols}
+	return &EditableInfo{
+		Schema:     schema,
+		Table:      table,
+		PrimaryKey: pk,
+		Columns:    cols,
+		Relations:  foreignKeys(ctx, conn, oid),
+	}
+}
+
+// TableRelations implements SchemaGrapher: resolve the named table to its OID
+// and return its foreign-key relations in both directions. An unknown table is
+// an error; introspection that finds no relations is simply an empty result.
+func (p Postgres) TableRelations(ctx context.Context, spec Spec, schema, table string) ([]Relation, error) {
+	conn, err := p.connect(ctx, spec.Env, "")
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close(ctx)
+
+	var oid uint32
+	err = conn.QueryRow(ctx, `
+		SELECT c.oid
+		FROM pg_class c
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = $1 AND c.relname = $2`, schema, table).Scan(&oid)
+	if err != nil {
+		return nil, fmt.Errorf("resolving table %s.%s: %w", schema, table, err)
+	}
+	return foreignKeys(ctx, conn, oid), nil
+}
+
+// foreignKeys returns the foreign-key relations touching the table identified
+// by oid, in both directions: constraints it declares (it references another
+// table) and constraints that target it (another table references it). Each
+// relation's column pairs are oriented from the table's own column (Local) to
+// the related table's column (Foreign). Best-effort: a failed lookup yields no
+// relations and the result is simply not linkable.
+func foreignKeys(ctx context.Context, conn pgConn, oid uint32) []Relation {
+	rows, err := conn.Query(ctx, `
+		SELECT con.conname,
+		       con.conrelid = $1 AS outgoing,
+		       CASE WHEN con.conrelid = $1 THEN tn.nspname ELSE sn.nspname END AS other_schema,
+		       CASE WHEN con.conrelid = $1 THEN t.relname  ELSE s.relname  END AS other_table,
+		       CASE WHEN con.conrelid = $1 THEN sa.attname ELSE ta.attname END AS local_column,
+		       CASE WHEN con.conrelid = $1 THEN ta.attname ELSE sa.attname END AS foreign_column
+		FROM pg_constraint con
+		JOIN pg_class s ON s.oid = con.conrelid
+		JOIN pg_namespace sn ON sn.oid = s.relnamespace
+		JOIN pg_class t ON t.oid = con.confrelid
+		JOIN pg_namespace tn ON tn.oid = t.relnamespace
+		JOIN LATERAL unnest(con.conkey, con.confkey) WITH ORDINALITY AS k(src, tgt, ord) ON true
+		JOIN pg_attribute sa ON sa.attrelid = con.conrelid AND sa.attnum = k.src
+		JOIN pg_attribute ta ON ta.attrelid = con.confrelid AND ta.attnum = k.tgt
+		WHERE con.contype = 'f' AND (con.conrelid = $1 OR con.confrelid = $1)
+		ORDER BY con.conname, k.ord`, oid)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	// A self-referential constraint shows up once per direction, so group by the
+	// constraint name and its direction rather than the name alone.
+	type relKey struct {
+		name     string
+		outgoing bool
+	}
+	byKey := make(map[relKey]*Relation)
+	order := make([]relKey, 0)
+	for rows.Next() {
+		var name, otherSchema, otherTable, local, foreign string
+		var outgoing bool
+		if err := rows.Scan(&name, &outgoing, &otherSchema, &otherTable, &local, &foreign); err != nil {
+			return nil
+		}
+		key := relKey{name: name, outgoing: outgoing}
+		rel, ok := byKey[key]
+		if !ok {
+			direction := "referencedBy"
+			if outgoing {
+				direction = "references"
+			}
+			rel = &Relation{Constraint: name, Direction: direction, Schema: otherSchema, Table: otherTable}
+			byKey[key] = rel
+			order = append(order, key)
+		}
+		rel.Columns = append(rel.Columns, RelationColumn{Local: local, Foreign: foreign})
+	}
+	if rows.Err() != nil || len(order) == 0 {
+		return nil
+	}
+
+	relations := make([]Relation, 0, len(order))
+	for _, key := range order {
+		relations = append(relations, *byKey[key])
+	}
+	return relations
 }
 
 // tableIdentity resolves a table OID to its schema and name.

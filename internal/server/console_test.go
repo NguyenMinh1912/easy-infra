@@ -57,6 +57,38 @@ func (s *stubRowEditor) DeleteRow(_ context.Context, spec service.Spec, m servic
 	return s.cmd, s.editErr
 }
 
+// stubRelationBrowser is a console stub that also follows relations, recording
+// the query it was handed and serving a canned result.
+type stubRelationBrowser struct {
+	stubQuerier
+	related    *service.QueryResult
+	relErr     error
+	gotRelated service.RelatedQuery
+}
+
+func (s *stubRelationBrowser) RelatedRows(_ context.Context, spec service.Spec, q service.RelatedQuery) (*service.QueryResult, error) {
+	s.gotSpec = spec
+	s.gotRelated = q
+	return s.related, s.relErr
+}
+
+// stubSchemaGrapher is a console stub that also exposes a relationship graph,
+// recording the table it was asked about and serving canned relations.
+type stubSchemaGrapher struct {
+	stubQuerier
+	relations []service.Relation
+	graphErr  error
+	gotSchema string
+	gotTable  string
+}
+
+func (s *stubSchemaGrapher) TableRelations(_ context.Context, spec service.Spec, schema, table string) ([]service.Relation, error) {
+	s.gotSpec = spec
+	s.gotSchema = schema
+	s.gotTable = table
+	return s.relations, s.graphErr
+}
+
 // newConsoleServer scaffolds a project whose single service is the given stub,
 // with a "default" profile, and returns a server over it.
 func newConsoleServer(t *testing.T, svc service.Service) *Server {
@@ -281,6 +313,134 @@ func TestRowEditUnsupportedService(t *testing.T) {
 	srv := newConsoleServer(t, &stubQuerier{stubService: stubService{name: "stub"}})
 	rec := doJSON(t, srv, http.MethodDelete, "/api/profiles/default/services/stub/row",
 		rowMutationRequest{Schema: "public", Table: "users", Key: map[string]string{"id": "7"}})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body %q)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRelatedRowsHappyPath(t *testing.T) {
+	stub := &stubRelationBrowser{
+		stubQuerier: stubQuerier{stubService: stubService{name: "stub"}},
+		related: &service.QueryResult{
+			Columns: []string{"id", "order_id"}, Rows: [][]any{{int64(5), int64(9)}},
+			RowCount: 1, Command: "SELECT 1",
+		},
+	}
+	srv := newConsoleServer(t, stub)
+	order := "9"
+	rec := doJSON(t, srv, http.MethodPost, "/api/profiles/default/services/stub/related",
+		relatedRequest{Schema: "public", Table: "order_items", Filters: []relatedFilterIn{{Column: "order_id", Value: &order}}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+	}
+	got := decodeQuery(t, rec.Body.Bytes())
+	if got.Command != "SELECT 1" || got.RowCount != 1 {
+		t.Errorf("response = %+v", got)
+	}
+	if stub.gotRelated.Table != "order_items" || len(stub.gotRelated.Filters) != 1 {
+		t.Fatalf("query = %+v", stub.gotRelated)
+	}
+	f := stub.gotRelated.Filters[0]
+	if f.Column != "order_id" || f.Value == nil || *f.Value != "9" {
+		t.Errorf("filter = %+v", f)
+	}
+}
+
+func TestRelatedRowsExecutionError(t *testing.T) {
+	stub := &stubRelationBrowser{
+		stubQuerier: stubQuerier{stubService: stubService{name: "stub"}},
+		relErr:      errors.New("relation does not exist"),
+	}
+	srv := newConsoleServer(t, stub)
+	// A failing lookup is an expected outcome: 200 with the reason in error.
+	rec := doJSON(t, srv, http.MethodPost, "/api/profiles/default/services/stub/related",
+		relatedRequest{Schema: "public", Table: "order_items", Filters: []relatedFilterIn{{Column: "order_id", Value: nil}}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+	}
+	if got := decodeQuery(t, rec.Body.Bytes()); got.Error == "" {
+		t.Errorf("expected error in response, got %+v", got)
+	}
+}
+
+func TestRelatedRowsValidation(t *testing.T) {
+	stub := &stubRelationBrowser{stubQuerier: stubQuerier{stubService: stubService{name: "stub"}}}
+	srv := newConsoleServer(t, stub)
+	rec := doJSON(t, srv, http.MethodPost, "/api/profiles/default/services/stub/related",
+		relatedRequest{Schema: "public"})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body %q)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRelatedRowsUnsupportedService(t *testing.T) {
+	// A plain stubQuerier supports a console but not following relations.
+	srv := newConsoleServer(t, &stubQuerier{stubService: stubService{name: "stub"}})
+	rec := doJSON(t, srv, http.MethodPost, "/api/profiles/default/services/stub/related",
+		relatedRequest{Schema: "public", Table: "order_items"})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body %q)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestTableRelationsHappyPath(t *testing.T) {
+	stub := &stubSchemaGrapher{
+		stubQuerier: stubQuerier{stubService: stubService{name: "stub"}},
+		relations: []service.Relation{{
+			Constraint: "orders_customer_id_fkey", Direction: "references",
+			Schema: "public", Table: "customers",
+			Columns: []service.RelationColumn{{Local: "customer_id", Foreign: "id"}},
+		}},
+	}
+	srv := newConsoleServer(t, stub)
+	rec := doJSON(t, srv, http.MethodGet, "/api/profiles/default/services/stub/table-relations?schema=public&table=orders", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+	}
+	var got tableRelationsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.Relations) != 1 || got.Relations[0].Table != "customers" {
+		t.Errorf("relations = %+v", got.Relations)
+	}
+	if stub.gotSchema != "public" || stub.gotTable != "orders" {
+		t.Errorf("asked about %s.%s, want public.orders", stub.gotSchema, stub.gotTable)
+	}
+}
+
+func TestTableRelationsValidation(t *testing.T) {
+	stub := &stubSchemaGrapher{stubQuerier: stubQuerier{stubService: stubService{name: "stub"}}}
+	srv := newConsoleServer(t, stub)
+	rec := doJSON(t, srv, http.MethodGet, "/api/profiles/default/services/stub/table-relations?schema=public", nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body %q)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestTableRelationsError(t *testing.T) {
+	stub := &stubSchemaGrapher{
+		stubQuerier: stubQuerier{stubService: stubService{name: "stub"}},
+		graphErr:    errors.New("resolving table: not found"),
+	}
+	srv := newConsoleServer(t, stub)
+	rec := doJSON(t, srv, http.MethodGet, "/api/profiles/default/services/stub/table-relations?schema=public&table=nope", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+	}
+	var got tableRelationsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Error == "" {
+		t.Errorf("expected error in response, got %+v", got)
+	}
+}
+
+func TestTableRelationsUnsupportedService(t *testing.T) {
+	// A plain stubQuerier supports a console but not a relationship graph.
+	srv := newConsoleServer(t, &stubQuerier{stubService: stubService{name: "stub"}})
+	rec := doJSON(t, srv, http.MethodGet, "/api/profiles/default/services/stub/table-relations?schema=public&table=orders", nil)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 (body %q)", rec.Code, rec.Body.String())
 	}
