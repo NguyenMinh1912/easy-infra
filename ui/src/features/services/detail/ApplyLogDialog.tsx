@@ -25,8 +25,13 @@ import { useBackupSession, type SessionState } from "./useBackupSession";
 interface ApplyLogDialogProps {
   /** Service to apply; also drives the stream once the dialog opens. */
   serviceName: string;
-  /** Profile the service is viewed under; scopes the apply to it. */
+  /** Profile the service is viewed under; the restore lands in it. */
   profile?: string;
+  /**
+   * Profile the snapshot is read from. Equals `profile` for a same-profile
+   * restore, or another profile when restoring its backup of the same service.
+   */
+  sourceProfile?: string;
   /** Snapshot version to restore; an empty string applies the latest. */
   snapshot: string;
   open: boolean;
@@ -72,13 +77,14 @@ const STATUS_META: Record<
 export function ApplyLogDialog({
   serviceName,
   profile,
+  sourceProfile,
   snapshot,
   open,
   onOpenChange,
 }: ApplyLogDialogProps) {
   const starter = useCallback(
-    () => startServiceApply(serviceName, snapshot, profile),
-    [serviceName, snapshot, profile],
+    () => startServiceApply(serviceName, snapshot, profile, sourceProfile),
+    [serviceName, snapshot, profile, sourceProfile],
   );
   const { state, start, cancel, reset } = useBackupSession(starter);
   const logRef = useRef<HTMLDivElement>(null);
@@ -104,6 +110,10 @@ export function ApplyLogDialog({
   const meta = STATUS_META[state.status];
   const Icon = meta.icon;
   const version = snapshot || "the latest snapshot";
+  // Surface the source profile only when it differs from the viewed one, so a
+  // same-profile restore reads exactly as before.
+  const fromProfile =
+    sourceProfile && sourceProfile !== profile ? sourceProfile : undefined;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -119,8 +129,14 @@ export function ApplyLogDialog({
           <DialogDescription>
             Restoring <span className="font-mono">{serviceName}</span> for the
             active profile from{" "}
-            <span className="font-mono">{version}</span>. This runs in the
-            background — closing keeps it going.
+            <span className="font-mono">{version}</span>
+            {fromProfile && (
+              <>
+                {" "}
+                in profile <span className="font-mono">{fromProfile}</span>
+              </>
+            )}
+            . This runs in the background — closing keeps it going.
           </DialogDescription>
         </DialogHeader>
 

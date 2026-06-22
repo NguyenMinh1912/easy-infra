@@ -73,6 +73,7 @@ export function ServiceActions({ service, profile, onChanged }: ServiceActionsPr
   const [snapshotOpen, setSnapshotOpen] = useState(false);
   const [applyOpen, setApplyOpen] = useState(false);
   const [applySnapshot, setApplySnapshot] = useState("");
+  const [applySource, setApplySource] = useState<string | undefined>(undefined);
   const [forkOpen, setForkOpen] = useState(false);
   const [forkLogOpen, setForkLogOpen] = useState(false);
   const [forkSnapshot, setForkSnapshot] = useState("");
@@ -156,8 +157,9 @@ export function ServiceActions({ service, profile, onChanged }: ServiceActionsPr
         profile={profile}
         open={snapshotOpen}
         onOpenChange={setSnapshotOpen}
-        onApply={(snapshot) => {
+        onApply={(snapshot, sourceProfile) => {
           setApplySnapshot(snapshot);
+          setApplySource(sourceProfile);
           setApplyOpen(true);
         }}
       />
@@ -165,6 +167,7 @@ export function ServiceActions({ service, profile, onChanged }: ServiceActionsPr
       <ApplyLogDialog
         serviceName={service.id}
         profile={profile}
+        sourceProfile={applySource}
         snapshot={applySnapshot}
         open={applyOpen}
         onOpenChange={setApplyOpen}
