@@ -16,6 +16,7 @@ import (
 type Jenkins struct {
 	ping jenkinsPinger
 	get  jenkinsGetter
+	post jenkinsPoster
 }
 
 // getter returns the REST fetcher to use, defaulting to a real authed GET.
@@ -24,6 +25,14 @@ func (j Jenkins) getter() jenkinsGetter {
 		return j.get
 	}
 	return realJenkinsGetter
+}
+
+// poster returns the REST mutator to use, defaulting to a real authed POST.
+func (j Jenkins) poster() jenkinsPoster {
+	if j.post != nil {
+		return j.post
+	}
+	return realJenkinsPoster
 }
 
 // jenkinsPinger probes a Jenkins server's base URL and reports whether it is
@@ -221,6 +230,20 @@ func (j Jenkins) Builds(ctx context.Context, spec Spec, job string) ([]BuildInfo
 		raw.Builds = []BuildInfo{}
 	}
 	return raw.Builds, nil
+}
+
+// TriggerBuild implements JenkinsBrowser: POST to the named job's build endpoint
+// to schedule a new (parameterless) build.
+func (j Jenkins) TriggerBuild(ctx context.Context, spec Spec, job string) error {
+	p, err := jenkinsParamsFrom(spec.Env)
+	if err != nil {
+		return err
+	}
+	path := "/job/" + url.PathEscape(job) + "/build"
+	if err := j.poster()(ctx, p, path); err != nil {
+		return fmt.Errorf("triggering build of %q: %w", job, err)
+	}
+	return nil
 }
 
 // Lifecycle provisioning (Apply/Backup/Clean) is the per-service seam for

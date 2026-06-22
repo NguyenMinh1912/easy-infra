@@ -94,6 +94,38 @@ func (s *Server) handleJenkinsBuilds(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, jenkinsBuildsResponse{Builds: builds})
 }
 
+// triggerBuildRequest is the JSON body of a trigger-build request.
+type triggerBuildRequest struct {
+	Job string `json:"job"`
+}
+
+// handleJenkinsTriggerBuild schedules a new build of the job named in the
+// request body. Unlike the read endpoints a mutation reports failure with an
+// error status (mirroring the cloud create/delete handlers), so the UI can
+// surface it as a failed action rather than a page state.
+func (s *Server) handleJenkinsTriggerBuild(w http.ResponseWriter, r *http.Request) {
+	browser, spec, ok := s.resolveJenkinsBrowser(w, r)
+	if !ok {
+		return
+	}
+	var req triggerBuildRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	job := strings.TrimSpace(req.Job)
+	if job == "" {
+		writeError(w, http.StatusBadRequest, "job name must not be empty")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), jenkinsTimeout)
+	defer cancel()
+	if err := browser.TriggerBuild(ctx, spec, job); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // resolveJenkinsBrowser maps the {name}/{service} path onto a Jenkins-browse-
 // capable service and the Spec for the profile's saved env. On failure it
 // writes the error response and returns ok=false. It mirrors resolveCloudBrowser.

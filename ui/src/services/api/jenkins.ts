@@ -8,7 +8,7 @@ import type {
   JobsResponse,
 } from "@/types/jenkins";
 
-import { apiGet } from "./client";
+import { apiGet, apiSend } from "./client";
 
 const base = (profile: string, service: string) =>
   `/profiles/${encodeURIComponent(profile)}/services/${encodeURIComponent(service)}`;
@@ -40,4 +40,18 @@ export async function listBuilds(
 ): Promise<BuildsResponse> {
   const query = new URLSearchParams({ job });
   return apiGet<BuildsResponse>(`${base(profile, service)}/builds?${query}`, signal);
+}
+
+/**
+ * Trigger a new (parameterless) build of `job`. The build is enqueued
+ * asynchronously, so this resolves once Jenkins accepts the request (204), not
+ * when the build finishes; it rejects with an {@link ApiError} otherwise.
+ */
+export async function triggerBuild(
+  profile: string,
+  service: string,
+  job: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return apiSend<void>("POST", `${base(profile, service)}/build`, { job }, signal);
 }

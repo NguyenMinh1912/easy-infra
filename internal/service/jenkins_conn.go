@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -83,4 +84,76 @@ func realJenkinsGetter(ctx context.Context, p jenkinsParams, path string) (jenki
 		return jenkinsResult{}, err
 	}
 	return jenkinsResult{body: body, version: resp.Header.Get("X-Jenkins")}, nil
+}
+
+// jenkinsPoster performs an authenticated POST against a Jenkins path (e.g.
+// "/job/x/build"), handling the CSRF crumb. It is a seam like jenkinsGetter:
+// the zero-value Jenkins POSTs against a real server (realJenkinsPoster), while
+// tests supply a fake without a live server.
+type jenkinsPoster func(ctx context.Context, p jenkinsParams, path string) error
+
+// realJenkinsPoster fetches a CSRF crumb (when the server requires one) and
+// POSTs to the path with Basic auth. Jenkins answers a successful trigger with
+// 201 Created (the queued item's Location), so 2xx and 3xx are all accepted.
+func realJenkinsPoster(ctx context.Context, p jenkinsParams, path string) error {
+	crumbField, crumbValue, err := jenkinsCrumb(ctx, p)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL()+path, nil)
+	if err != nil {
+		return err
+	}
+	if p.user != "" {
+		req.SetBasicAuth(p.user, p.token)
+	}
+	if crumbField != "" {
+		req.Header.Set(crumbField, crumbValue)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("%s returned %s", path, resp.Status)
+	}
+	return nil
+}
+
+// jenkinsCrumb fetches a CSRF crumb from the server's crumb issuer, returning
+// the header field name and value to attach to a mutating request. CSRF
+// protection can be disabled, in which case the issuer answers 404; that is not
+// an error — empty values are returned and the caller sends no crumb.
+func jenkinsCrumb(ctx context.Context, p jenkinsParams) (field, value string, err error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.baseURL()+"/crumbIssuer/api/json", nil)
+	if err != nil {
+		return "", "", err
+	}
+	if p.user != "" {
+		req.SetBasicAuth(p.user, p.token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return "", "", nil // CSRF protection disabled.
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("fetching crumb: %s", resp.Status)
+	}
+	var crumb struct {
+		Crumb             string `json:"crumb"`
+		CrumbRequestField string `json:"crumbRequestField"`
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+	if err != nil {
+		return "", "", err
+	}
+	if err := json.Unmarshal(body, &crumb); err != nil {
+		return "", "", fmt.Errorf("parsing crumb: %w", err)
+	}
+	return crumb.CrumbRequestField, crumb.Crumb, nil
 }

@@ -8,10 +8,10 @@ import "context"
 // does not provide it, mirroring how CloudBrowser models the LocalStack detail
 // page and KeyBrowser the Redis keyspace. Jenkins is the only implementer today.
 //
-// Every method is read-only: it queries the Jenkins REST API (`/api/json`) and
-// shapes the result for JSON. Mutations (triggering builds) are deliberately
-// out of scope for now — they require a CSRF crumb and stronger auth guarantees,
-// so they are kept off the read path.
+// The listing methods query the Jenkins REST API (`/api/json`) and shape the
+// result for JSON; TriggerBuild is the one mutation, fetching a CSRF crumb and
+// POSTing to the job's build endpoint — bundling reads and writes in one
+// capability the way CloudBrowser groups its queue listing with create/delete.
 type JenkinsBrowser interface {
 	// Info reports the server's identity: its running version (from the
 	// X-Jenkins response header), node description, mode and job count — the
@@ -25,6 +25,12 @@ type JenkinsBrowser interface {
 	// Builds lists the recent builds of the named job, most recent first — the
 	// backend of a job's build history.
 	Builds(ctx context.Context, spec Spec, job string) ([]BuildInfo, error)
+
+	// TriggerBuild schedules a new build of the named job. It is parameterless:
+	// the job runs with its default parameters, if any. The build is enqueued
+	// asynchronously, so this returns once Jenkins accepts the request, not when
+	// the build finishes.
+	TriggerBuild(ctx context.Context, spec Spec, job string) error
 }
 
 // JenkinsInfo is a Jenkins server's identity and summary state, shaped for JSON.

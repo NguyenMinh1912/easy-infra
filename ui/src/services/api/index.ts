@@ -65,7 +65,7 @@ export {
   uploadObject,
   deleteObjects,
 } from "./browse";
-export { getJenkinsInfo, listJobs, listBuilds } from "./jenkins";
+export { getJenkinsInfo, listJobs, listBuilds, triggerBuild } from "./jenkins";
 export {
   activateProfile,
   checkServiceConnection,

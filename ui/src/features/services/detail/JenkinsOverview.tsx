@@ -1,12 +1,13 @@
-import { AlertCircle, ChevronRight, Hammer, RotateCw } from "lucide-react";
+import { AlertCircle, ChevronRight, Hammer, Loader2, Play, RotateCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getJenkinsInfo, listJobs } from "@/services/api";
+import { getJenkinsInfo, listJobs, triggerBuild } from "@/services/api";
 import type { JenkinsInfo, JobInfo } from "@/types/jenkins";
 
 import { DefinitionSummary } from "./DefinitionSummary";
@@ -87,6 +88,7 @@ function JenkinsLive({
             onToggle={(name) =>
               setOpenJob((prev) => (prev === name ? null : name))
             }
+            onTriggered={retry}
             profile={profile}
             service={service.id}
           />
@@ -136,15 +138,40 @@ function JobsTable({
   jobs,
   openJob,
   onToggle,
+  onTriggered,
   profile,
   service,
 }: {
   jobs: JobInfo[];
   openJob: string | null;
   onToggle: (name: string) => void;
+  onTriggered: () => void;
   profile: string;
   service: string;
 }) {
+  // Jobs with an in-flight trigger request, so the button shows a spinner and
+  // can't be double-clicked while the request is pending.
+  const [pending, setPending] = useState<Set<string>>(new Set());
+
+  const build = async (job: string) => {
+    setPending((prev) => new Set(prev).add(job));
+    try {
+      await triggerBuild(profile, service, job);
+      toast.success(`Build of "${job}" started`);
+      onTriggered();
+    } catch (cause) {
+      toast.error(`Couldn't start build of "${job}"`, {
+        description: cause instanceof Error ? cause.message : String(cause),
+      });
+    } finally {
+      setPending((prev) => {
+        const next = new Set(prev);
+        next.delete(job);
+        return next;
+      });
+    }
+  };
+
   if (jobs.length === 0) {
     return (
       <Card>
@@ -159,36 +186,54 @@ function JobsTable({
       {jobs.map((job) => {
         const status = jobStatusFor(job.color);
         const open = openJob === job.name;
+        const building = pending.has(job.name);
         return (
-          <Card key={job.name}>
-            <button
-              type="button"
-              onClick={() => onToggle(job.name)}
-              aria-expanded={open}
-              className="flex w-full items-center gap-3 p-4 text-left transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-            >
-              <span
-                className={`size-2.5 shrink-0 rounded-full ${status.dotClass} ${
-                  status.building ? "motion-safe:animate-pulse" : ""
-                }`}
-                aria-hidden
-              />
-              <div className="min-w-0 flex-1">
-                <span className="font-medium text-foreground">{job.name}</span>
-              </div>
-              <span className="text-xs text-muted-foreground">{status.label}</span>
-              {job.lastBuild ? (
-                <span className="font-mono text-xs text-muted-foreground">
-                  #{job.lastBuild}
-                </span>
-              ) : null}
-              <ChevronRight
-                className={`size-4 shrink-0 text-muted-foreground transition-transform ${
-                  open ? "rotate-90" : ""
-                }`}
-                aria-hidden
-              />
-            </button>
+          <Card key={job.name} className="overflow-hidden">
+            <div className="flex items-center gap-3 pr-3">
+              <button
+                type="button"
+                onClick={() => onToggle(job.name)}
+                aria-expanded={open}
+                className="flex flex-1 items-center gap-3 p-4 text-left transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              >
+                <span
+                  className={`size-2.5 shrink-0 rounded-full ${status.dotClass} ${
+                    status.building ? "motion-safe:animate-pulse" : ""
+                  }`}
+                  aria-hidden
+                />
+                <div className="min-w-0 flex-1">
+                  <span className="font-medium text-foreground">{job.name}</span>
+                </div>
+                <span className="text-xs text-muted-foreground">{status.label}</span>
+                {job.lastBuild ? (
+                  <span className="font-mono text-xs text-muted-foreground">
+                    #{job.lastBuild}
+                  </span>
+                ) : null}
+                <ChevronRight
+                  className={`size-4 shrink-0 text-muted-foreground transition-transform ${
+                    open ? "rotate-90" : ""
+                  }`}
+                  aria-hidden
+                />
+              </button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={building}
+                onClick={() => void build(job.name)}
+                aria-label={`Build ${job.name} now`}
+              >
+                {building ? (
+                  <Loader2 className="animate-spin" aria-hidden />
+                ) : (
+                  <Play aria-hidden />
+                )}
+                Build now
+              </Button>
+            </div>
             {open && (
               <div className="border-t px-4 py-3">
                 <BuildList profile={profile} service={service} job={job.name} />

@@ -158,6 +158,38 @@ func TestJenkinsBuilds(t *testing.T) {
 	}
 }
 
+func TestJenkinsTriggerBuild(t *testing.T) {
+	var seen struct {
+		params jenkinsParams
+		path   string
+	}
+	j := Jenkins{post: func(_ context.Context, p jenkinsParams, path string) error {
+		seen.params = p
+		seen.path = path
+		return nil
+	}}
+	spec := Spec{Env: Config{"host": "localhost", "port": 8080, "user": "admin", "token": "tok"}}
+
+	if err := j.TriggerBuild(context.Background(), spec, "my job"); err != nil {
+		t.Fatalf("TriggerBuild: %v", err)
+	}
+	if seen.path != "/job/my%20job/build" {
+		t.Errorf("path = %q, want /job/my%%20job/build", seen.path)
+	}
+	if seen.params.user != "admin" || seen.params.token != "tok" {
+		t.Errorf("poster saw creds %q/%q, want admin/tok", seen.params.user, seen.params.token)
+	}
+}
+
+func TestJenkinsTriggerBuildError(t *testing.T) {
+	boom := errors.New("403 Forbidden")
+	j := Jenkins{post: func(context.Context, jenkinsParams, string) error { return boom }}
+	err := j.TriggerBuild(context.Background(), Spec{Env: Jenkins{}.DefaultEnv()}, "x")
+	if err == nil || !errors.Is(err, boom) {
+		t.Errorf("got %v, want wrapped %v", err, boom)
+	}
+}
+
 func TestJenkinsBuildsEscapesJobName(t *testing.T) {
 	var path string
 	j := Jenkins{get: func(_ context.Context, _ jenkinsParams, p string) (jenkinsResult, error) {

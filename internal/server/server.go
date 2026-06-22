@@ -95,6 +95,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/profiles/{name}/services/{service}/info", s.handleJenkinsInfo)
 	mux.HandleFunc("GET /api/profiles/{name}/services/{service}/jobs", s.handleJenkinsJobs)
 	mux.HandleFunc("GET /api/profiles/{name}/services/{service}/builds", s.handleJenkinsBuilds)
+	mux.HandleFunc("POST /api/profiles/{name}/services/{service}/build", s.handleJenkinsTriggerBuild)
 	mux.HandleFunc("GET /api/templates", s.handleListTemplates)
 	mux.HandleFunc("POST /api/templates", s.handleCreateTemplate)
 	mux.HandleFunc("GET /api/templates/{name}", s.handleGetTemplate)
