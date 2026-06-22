@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
+	"strings"
 )
 
 // jenkinsParams is a profile's Jenkins connection settings, normalised out of
@@ -95,8 +97,18 @@ type jenkinsPoster func(ctx context.Context, p jenkinsParams, path string) error
 // realJenkinsPoster fetches a CSRF crumb (when the server requires one) and
 // POSTs to the path with Basic auth. Jenkins answers a successful trigger with
 // 201 Created (the queued item's Location), so 2xx and 3xx are all accepted.
+//
+// The crumb and the POST share one client with a cookie jar: Jenkins binds the
+// crumb to the session it sets via a JSESSIONID cookie on the crumb response,
+// so the POST must carry that cookie back or the crumb is rejected with 403.
 func realJenkinsPoster(ctx context.Context, p jenkinsParams, path string) error {
-	crumbField, crumbValue, err := jenkinsCrumb(ctx, p)
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return err
+	}
+	client := &http.Client{Jar: jar}
+
+	crumbField, crumbValue, err := jenkinsCrumb(ctx, client, p)
 	if err != nil {
 		return err
 	}
@@ -110,22 +122,44 @@ func realJenkinsPoster(ctx context.Context, p jenkinsParams, path string) error 
 	if crumbField != "" {
 		req.Header.Set(crumbField, crumbValue)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("%s returned %s", path, resp.Status)
+		return fmt.Errorf("%s returned %s%s", path, resp.Status, jenkinsErrorDetail(resp))
 	}
 	return nil
 }
 
-// jenkinsCrumb fetches a CSRF crumb from the server's crumb issuer, returning
-// the header field name and value to attach to a mutating request. CSRF
-// protection can be disabled, in which case the issuer answers 404; that is not
-// an error — empty values are returned and the caller sends no crumb.
-func jenkinsCrumb(ctx context.Context, p jenkinsParams) (field, value string, err error) {
+// jenkinsErrorDetail extracts a short, human-readable reason from a failed
+// Jenkins response so a bare "403 Forbidden" carries why it failed (e.g. a
+// missing crumb or a missing Build permission). Jenkins reports the reason in
+// the X-Error header, or in the body as plain text; HTML error pages are
+// skipped since they carry no concise message.
+func jenkinsErrorDetail(resp *http.Response) string {
+	if msg := strings.TrimSpace(resp.Header.Get("X-Error")); msg != "" {
+		return ": " + msg
+	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<12))
+	msg := strings.TrimSpace(string(body))
+	if msg == "" || strings.HasPrefix(msg, "<") {
+		return ""
+	}
+	if len(msg) > 200 {
+		msg = msg[:200]
+	}
+	return ": " + msg
+}
+
+// jenkinsCrumb fetches a CSRF crumb from the server's crumb issuer using the
+// given client, returning the header field name and value to attach to a
+// mutating request. The client's cookie jar captures the session cookie the
+// crumb is bound to. CSRF protection can be disabled, in which case the issuer
+// answers 404; that is not an error — empty values are returned and the caller
+// sends no crumb.
+func jenkinsCrumb(ctx context.Context, client *http.Client, p jenkinsParams) (field, value string, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.baseURL()+"/crumbIssuer/api/json", nil)
 	if err != nil {
 		return "", "", err
@@ -133,7 +167,7 @@ func jenkinsCrumb(ctx context.Context, p jenkinsParams) (field, value string, er
 	if p.user != "" {
 		req.SetBasicAuth(p.user, p.token)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", "", err
 	}

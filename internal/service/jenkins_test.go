@@ -158,6 +158,24 @@ func TestJenkinsBuilds(t *testing.T) {
 	}
 }
 
+func TestJenkinsBuildLog(t *testing.T) {
+	var path string
+	j := Jenkins{get: func(_ context.Context, _ jenkinsParams, p string) (jenkinsResult, error) {
+		path = p
+		return jenkinsResult{body: []byte("Started by user admin\nFinished: SUCCESS\n")}, nil
+	}}
+	log, err := j.BuildLog(context.Background(), Spec{Env: Jenkins{}.DefaultEnv()}, "my job", 42)
+	if err != nil {
+		t.Fatalf("BuildLog: %v", err)
+	}
+	if path != "/job/my%20job/42/consoleText" {
+		t.Errorf("path = %q, want /job/my%%20job/42/consoleText", path)
+	}
+	if !strings.Contains(log, "Finished: SUCCESS") {
+		t.Errorf("unexpected log: %q", log)
+	}
+}
+
 func TestJenkinsTriggerBuild(t *testing.T) {
 	var seen struct {
 		params jenkinsParams

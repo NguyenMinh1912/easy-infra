@@ -232,6 +232,21 @@ func (j Jenkins) Builds(ctx context.Context, spec Spec, job string) ([]BuildInfo
 	return raw.Builds, nil
 }
 
+// BuildLog implements JenkinsBrowser: fetch the plain-text console output of a
+// job's build from Jenkins's `consoleText` endpoint.
+func (j Jenkins) BuildLog(ctx context.Context, spec Spec, job string, number int64) (string, error) {
+	p, err := jenkinsParamsFrom(spec.Env)
+	if err != nil {
+		return "", err
+	}
+	path := fmt.Sprintf("/job/%s/%d/consoleText", url.PathEscape(job), number)
+	res, err := j.getter()(ctx, p, path)
+	if err != nil {
+		return "", fmt.Errorf("reaching jenkins: %w", err)
+	}
+	return string(res.body), nil
+}
+
 // TriggerBuild implements JenkinsBrowser: POST to the named job's build endpoint
 // to schedule a new (parameterless) build.
 func (j Jenkins) TriggerBuild(ctx context.Context, spec Spec, job string) error {

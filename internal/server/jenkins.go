@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -92,6 +93,39 @@ func (s *Server) handleJenkinsBuilds(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, jenkinsBuildsResponse{Builds: builds})
+}
+
+// jenkinsLogResponse is the JSON shape of a build's console log.
+type jenkinsLogResponse struct {
+	Log   string `json:"log"`
+	Error string `json:"error,omitempty"`
+}
+
+// handleJenkinsBuildLog returns the console output of the build identified by
+// the `job` and `number` query parameters, for the build-log dialog.
+func (s *Server) handleJenkinsBuildLog(w http.ResponseWriter, r *http.Request) {
+	browser, spec, ok := s.resolveJenkinsBrowser(w, r)
+	if !ok {
+		return
+	}
+	job := strings.TrimSpace(r.URL.Query().Get("job"))
+	if job == "" {
+		writeError(w, http.StatusBadRequest, "job name must not be empty")
+		return
+	}
+	number, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("number")), 10, 64)
+	if err != nil || number <= 0 {
+		writeError(w, http.StatusBadRequest, "build number must be a positive integer")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), jenkinsTimeout)
+	defer cancel()
+	log, err := browser.BuildLog(ctx, spec, job, number)
+	if err != nil {
+		writeJSON(w, http.StatusOK, jenkinsLogResponse{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, jenkinsLogResponse{Log: log})
 }
 
 // triggerBuildRequest is the JSON body of a trigger-build request.

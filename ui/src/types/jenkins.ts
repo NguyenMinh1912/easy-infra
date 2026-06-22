@@ -61,3 +61,9 @@ export interface BuildsResponse {
   builds: BuildInfo[];
   error?: string;
 }
+
+/** Response of GET …/log — a build's console output. */
+export interface BuildLogResponse {
+  log: string;
+  error?: string;
+}

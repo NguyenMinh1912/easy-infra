@@ -26,6 +26,11 @@ type JenkinsBrowser interface {
 	// backend of a job's build history.
 	Builds(ctx context.Context, spec Spec, job string) ([]BuildInfo, error)
 
+	// BuildLog returns the full console output of the named job's build number —
+	// the backend of the build-log dialog. For a build still running it returns
+	// the log captured so far.
+	BuildLog(ctx context.Context, spec Spec, job string, number int64) (string, error)
+
 	// TriggerBuild schedules a new build of the named job. It is parameterless:
 	// the job runs with its default parameters, if any. The build is enqueued
 	// asynchronously, so this returns once Jenkins accepts the request, not when

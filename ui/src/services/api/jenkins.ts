@@ -3,6 +3,7 @@
 // with `error` set on the result — only transport/protocol problems reject.
 
 import type {
+  BuildLogResponse,
   BuildsResponse,
   JenkinsInfoResponse,
   JobsResponse,
@@ -40,6 +41,18 @@ export async function listBuilds(
 ): Promise<BuildsResponse> {
   const query = new URLSearchParams({ job });
   return apiGet<BuildsResponse>(`${base(profile, service)}/builds?${query}`, signal);
+}
+
+/** Read the console output of build `number` of `job`. */
+export async function getBuildLog(
+  profile: string,
+  service: string,
+  job: string,
+  number: number,
+  signal?: AbortSignal,
+): Promise<BuildLogResponse> {
+  const query = new URLSearchParams({ job, number: String(number) });
+  return apiGet<BuildLogResponse>(`${base(profile, service)}/log?${query}`, signal);
 }
 
 /**
