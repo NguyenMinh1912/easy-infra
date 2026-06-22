@@ -1,6 +1,10 @@
 # Compiled binary
 /easy-infra
 
+# Release artifacts: cross-platform archives + checksums produced by the release
+# build (see .github/workflows/release.yml); built locally they land here too.
+/dist/
+
 # Go toolchain bootstrapped by `make install` when the user has no system `go`
 # (see scripts/ensure-go.sh).
 /.go/
