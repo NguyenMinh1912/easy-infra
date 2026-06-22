@@ -5,9 +5,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAsync } from "@/hooks/useAsync";
 import { useResizableHeight } from "@/hooks/useResizableHeight";
-import { executeQuery } from "@/services/api";
+import { executeQuery, listTemplates } from "@/services/api";
 import type { QueryResult } from "@/types/console";
+import type { TemplateSummary } from "@/types/templates";
 
 import { QueryResultTable } from "./QueryResultTable";
 import { SqlEditor } from "./SqlEditor";
@@ -40,6 +42,9 @@ interface PostgresConsoleProps {
   onAutoRun?: () => void;
 }
 
+/** Stable empty list so the editor's extensions don't rebuild each render. */
+const NO_TEMPLATES: TemplateSummary[] = [];
+
 /** State of the current (or last) statement execution. */
 type RunState =
   | { status: "idle" }
@@ -68,6 +73,15 @@ export function PostgresConsole({
   onAutoRun,
 }: PostgresConsoleProps) {
   const [run, setRun] = useState<RunState>({ status: "idle" });
+
+  // The workspace's SQL templates, offered via the editor's "/" mention menu.
+  // Loaded once; failure is non-fatal — the console just omits the menu.
+  const templatesState = useAsync<TemplateSummary[]>(
+    (signal) => listTemplates(signal),
+    [],
+  );
+  const templates =
+    templatesState.status === "success" ? templatesState.data : NO_TEMPLATES;
 
   // The editor's height is user-draggable (handle on its bottom edge) and
   // remembered across reloads. Shrinking it grows the result table below, which
@@ -153,6 +167,7 @@ export function PostgresConsole({
             value={sql}
             onChange={onSqlChange}
             schema={completionSchema}
+            templates={templates}
             onRun={runQuery}
             viewRef={viewRef}
             height={editorHeight}
@@ -175,6 +190,16 @@ export function PostgresConsole({
               (completionSchema
                 ? " · table & column suggestions on"
                 : " · schema unavailable, keyword suggestions only")}
+            {templates.length > 0 && (
+              <>
+                {" "}
+                · type{" "}
+                <kbd className="rounded border border-border px-1 font-mono">
+                  /
+                </kbd>{" "}
+                to insert a template
+              </>
+            )}
           </p>
           <Button
             size="sm"

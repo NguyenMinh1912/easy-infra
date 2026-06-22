@@ -93,8 +93,18 @@ export function SqlEditor({
         }),
       );
     }
+    // "/" template mentions: a trigger that opens the menu on "/" plus the
+    // source that lists templates and inserts the chosen body.
+    if (templates && templates.length > 0) {
+      exts.push(
+        slashTemplateTrigger,
+        PostgreSQL.language.data.of({
+          autocomplete: templateCompletionSource(templates),
+        }),
+      );
+    }
     return exts;
-  }, [schema]);
+  }, [schema, templates]);
 
   return (
     <CodeMirror
