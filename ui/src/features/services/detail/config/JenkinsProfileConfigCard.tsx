@@ -32,10 +32,10 @@ const TEXT_FIELDS: readonly TextField[] = [
   { key: "user", label: "Username", placeholder: "(optional)" },
   {
     key: "token",
-    label: "API token",
+    label: "Password / API token",
     placeholder: "(optional)",
     type: "password",
-    hint: "Jenkins API token for secured instances. Leave blank for anonymous read.",
+    hint: "API token (recommended) or password for secured instances. Leave blank for anonymous read.",
   },
 ];
 

@@ -2,16 +2,28 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 )
 
 // Jenkins manages a Jenkins continuous-integration automation server.
 //
-// ping is a seam for testing: when nil Health does a real HTTP GET against the
-// server (realJenkinsPinger); tests set it to inject a canned result.
+// ping and get are seams for testing: when nil Health does a real HTTP GET
+// against the login page (realJenkinsPinger) and the browser methods query the
+// real REST API (realJenkinsGetter); tests set them to inject canned results.
 type Jenkins struct {
 	ping jenkinsPinger
+	get  jenkinsGetter
+}
+
+// getter returns the REST fetcher to use, defaulting to a real authed GET.
+func (j Jenkins) getter() jenkinsGetter {
+	if j.get != nil {
+		return j.get
+	}
+	return realJenkinsGetter
 }
 
 // jenkinsPinger probes a Jenkins server's base URL and reports whether it is
@@ -117,6 +129,98 @@ func realJenkinsPinger(ctx context.Context, baseURL string) error {
 		return fmt.Errorf("%s did not identify as a Jenkins server (status %s)", baseURL, resp.Status)
 	}
 	return nil
+}
+
+// Info implements JenkinsBrowser: read the controller's summary from
+// `/api/json` and the running version from the X-Jenkins response header.
+func (j Jenkins) Info(ctx context.Context, spec Spec) (JenkinsInfo, error) {
+	p, err := jenkinsParamsFrom(spec.Env)
+	if err != nil {
+		return JenkinsInfo{}, err
+	}
+	res, err := j.getter()(ctx, p, "/api/json?tree=nodeName,nodeDescription,mode,quietingDown,jobs[name]")
+	if err != nil {
+		return JenkinsInfo{}, fmt.Errorf("reaching jenkins: %w", err)
+	}
+	var raw struct {
+		NodeName        string `json:"nodeName"`
+		NodeDescription string `json:"nodeDescription"`
+		Mode            string `json:"mode"`
+		QuietingDown    bool   `json:"quietingDown"`
+		Jobs            []struct {
+			Name string `json:"name"`
+		} `json:"jobs"`
+	}
+	if err := json.Unmarshal(res.body, &raw); err != nil {
+		return JenkinsInfo{}, fmt.Errorf("parsing jenkins info: %w", err)
+	}
+	return JenkinsInfo{
+		Version:      res.version,
+		NodeName:     raw.NodeName,
+		Description:  raw.NodeDescription,
+		Mode:         raw.Mode,
+		QuietingDown: raw.QuietingDown,
+		JobCount:     len(raw.Jobs),
+	}, nil
+}
+
+// Jobs implements JenkinsBrowser: list the controller's top-level jobs with the
+// status color and last-build number Jenkins reports for each.
+func (j Jenkins) Jobs(ctx context.Context, spec Spec) ([]JobInfo, error) {
+	p, err := jenkinsParamsFrom(spec.Env)
+	if err != nil {
+		return nil, err
+	}
+	res, err := j.getter()(ctx, p, "/api/json?tree=jobs[name,url,color,lastBuild[number]]")
+	if err != nil {
+		return nil, fmt.Errorf("reaching jenkins: %w", err)
+	}
+	var raw struct {
+		Jobs []struct {
+			Name      string `json:"name"`
+			URL       string `json:"url"`
+			Color     string `json:"color"`
+			LastBuild *struct {
+				Number int64 `json:"number"`
+			} `json:"lastBuild"`
+		} `json:"jobs"`
+	}
+	if err := json.Unmarshal(res.body, &raw); err != nil {
+		return nil, fmt.Errorf("parsing jenkins jobs: %w", err)
+	}
+	jobs := make([]JobInfo, 0, len(raw.Jobs))
+	for _, jb := range raw.Jobs {
+		info := JobInfo{Name: jb.Name, URL: jb.URL, Color: jb.Color}
+		if jb.LastBuild != nil {
+			info.LastBuild = jb.LastBuild.Number
+		}
+		jobs = append(jobs, info)
+	}
+	return jobs, nil
+}
+
+// Builds implements JenkinsBrowser: list the named job's recent builds, most
+// recent first (the order Jenkins returns them).
+func (j Jenkins) Builds(ctx context.Context, spec Spec, job string) ([]BuildInfo, error) {
+	p, err := jenkinsParamsFrom(spec.Env)
+	if err != nil {
+		return nil, err
+	}
+	path := "/job/" + url.PathEscape(job) + "/api/json?tree=builds[number,result,building,timestamp,duration]"
+	res, err := j.getter()(ctx, p, path)
+	if err != nil {
+		return nil, fmt.Errorf("reaching jenkins: %w", err)
+	}
+	var raw struct {
+		Builds []BuildInfo `json:"builds"`
+	}
+	if err := json.Unmarshal(res.body, &raw); err != nil {
+		return nil, fmt.Errorf("parsing jenkins builds: %w", err)
+	}
+	if raw.Builds == nil {
+		raw.Builds = []BuildInfo{}
+	}
+	return raw.Builds, nil
 }
 
 // Lifecycle provisioning (Apply/Backup/Clean) is the per-service seam for

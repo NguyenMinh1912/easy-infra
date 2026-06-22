@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 
+import { JenkinsOverview } from "./JenkinsOverview";
 import { LocalstackOverview } from "./LocalstackOverview";
 import { MinioOverview } from "./MinioOverview";
 import { OverviewPanel } from "./OverviewPanel";
@@ -19,6 +20,7 @@ const OVERVIEWS: Record<string, ComponentType<OverviewProps>> = {
   minio: MinioOverview,
   redis: RedisOverview,
   localstack: LocalstackOverview,
+  jenkins: JenkinsOverview,
 };
 
 /** The overview component for a service name, or the generic fallback. */
