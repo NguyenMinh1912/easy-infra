@@ -1,4 +1,4 @@
-import { Box, Cloud, Database, HardDrive, Zap } from "lucide-react";
+import { Box, Cloud, Database, HardDrive, Hammer, Zap } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 /**
@@ -41,6 +41,11 @@ const META: Record<string, ServiceMeta> = {
     label: "LocalStack",
     blurb: "AWS cloud emulator",
     icon: Cloud,
+  },
+  jenkins: {
+    label: "Jenkins",
+    blurb: "CI/CD automation server",
+    icon: Hammer,
   },
 };
 

@@ -8,7 +8,7 @@ import (
 
 func TestDefaultRegistryHasBuiltins(t *testing.T) {
 	reg := DefaultRegistry()
-	want := []string{"localstack", "minio", "postgres", "redis"}
+	want := []string{"jenkins", "localstack", "minio", "postgres", "redis"}
 	got := reg.Names()
 	if len(got) != len(want) {
 		t.Fatalf("Names() = %v, want %v", got, want)
@@ -86,10 +86,11 @@ func TestLifecycleSeam(t *testing.T) {
 			"backup": svc.Backup,
 			"clean":  svc.Clean,
 		}
-		// Redis and localstack implement Health (a PING / SQS list against the
-		// configured server), so they no longer report ErrNotImplemented for that
-		// op; only their provisioning lifecycle remains unimplemented.
-		if name == "redis" || name == "localstack" {
+		// Redis, localstack and jenkins implement Health (a PING / SQS list / HTTP
+		// probe against the configured server), so they no longer report
+		// ErrNotImplemented for that op; only their provisioning lifecycle remains
+		// unimplemented.
+		if name == "redis" || name == "localstack" || name == "jenkins" {
 			delete(ops, "health")
 		}
 		for op, fn := range ops {
