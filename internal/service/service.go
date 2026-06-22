@@ -174,6 +174,7 @@ func DefaultRegistry() *Registry {
 		MinIO{},
 		Redis{},
 		LocalStack{},
+		Jenkins{},
 	} {
 		// Built-in services are known-good, so a registration failure is a
 		// programming error rather than a runtime condition.
