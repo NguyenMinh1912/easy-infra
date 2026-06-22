@@ -1,12 +1,5 @@
 import { useState } from "react";
-import {
-  Check,
-  CheckCircle2,
-  Expand,
-  Trash2,
-  Waypoints,
-  X,
-} from "lucide-react";
+import { Check, CheckCircle2, Expand, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -39,8 +32,6 @@ import { useRemainingHeight } from "@/hooks/useRemainingHeight";
 import { cn } from "@/lib/utils";
 import { ApiError, deleteRow, updateRow, type RowKey } from "@/services/api";
 import type { EditableInfo, QueryResult } from "@/types/console";
-
-import { RelationsDialog } from "./RelationsDialog";
 
 /** Above this many characters a cell is collapsed behind a preview dialog. */
 const MAX_CELL_LENGTH = 120;
@@ -98,21 +89,6 @@ export function QueryResultTable({
   // A staged mutation awaiting confirmation in the dialog, or null.
   const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
-  // The row whose relations are being explored in the dialog, or null.
-  const [relationRow, setRelationRow] = useState<number | null>(null);
-
-  const relations = editable?.relations ?? [];
-
-  // The relations dialog resolves a source-table column to its value in the
-  // row being explored, or undefined when that column isn't in the result (so
-  // a relation needing it can't be followed).
-  const localValue = (column: string): string | null | undefined => {
-    if (!editable || relationRow === null) return undefined;
-    const j = editable.columns.indexOf(column);
-    if (j < 0) return undefined;
-    const value = result.rows[relationRow][j];
-    return isNull(value) ? null : formatValue(value);
-  };
 
   // The primary-key values identifying row `i`, or null if any key column is
   // missing (then the row can't be edited and its affordances are hidden).
@@ -245,33 +221,18 @@ export function QueryResultTable({
                   })}
                   {editable && (
                     <TableCell className="w-0 pr-2">
-                      <div className="flex items-center justify-end gap-1">
-                        {relations.length > 0 && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="size-7 text-muted-foreground hover:text-primary"
-                            aria-label="Show related data"
-                            title="Show related data"
-                            onClick={() => setRelationRow(i)}
-                          >
-                            <Waypoints aria-hidden />
-                          </Button>
-                        )}
-                        {rowKey(i) && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="size-7 text-muted-foreground hover:text-destructive"
-                            aria-label="Delete row"
-                            onClick={() => stageDelete(i)}
-                          >
-                            <Trash2 aria-hidden />
-                          </Button>
-                        )}
-                      </div>
+                      {rowKey(i) && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-7 text-muted-foreground hover:text-destructive"
+                          aria-label="Delete row"
+                          onClick={() => stageDelete(i)}
+                        >
+                          <Trash2 aria-hidden />
+                        </Button>
+                      )}
                     </TableCell>
                   )}
                 </TableRow>
@@ -293,7 +254,6 @@ export function QueryResultTable({
         )}{" "}
         · {result.durationMs} ms
         {editable && <span> · click a cell to edit · rows deletable</span>}
-        {relations.length > 0 && <span> · explore related rows</span>}
       </p>
 
       <AlertDialog
@@ -338,19 +298,6 @@ export function QueryResultTable({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {editable && relations.length > 0 && (
-        <RelationsDialog
-          relations={relations}
-          localValue={localValue}
-          profile={profile}
-          service={service}
-          open={relationRow !== null}
-          onOpenChange={(open) => {
-            if (!open) setRelationRow(null);
-          }}
-        />
-      )}
     </div>
   );
 }

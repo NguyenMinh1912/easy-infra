@@ -35,15 +35,8 @@ export type {
   BackupOptions,
   SnapshotsResponse,
 } from "./services";
-export {
-  executeQuery,
-  getSchema,
-  getTableRelations,
-  updateRow,
-  deleteRow,
-  relatedRows,
-} from "./console";
-export type { RowKey, RelationFilter } from "./console";
+export { executeQuery, getSchema, updateRow, deleteRow } from "./console";
+export type { RowKey } from "./console";
 export { getDatabases, listKeys, getKeyValue } from "./redis";
 export {
   getLocalstackHealth,
