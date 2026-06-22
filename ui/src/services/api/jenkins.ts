@@ -43,15 +43,24 @@ export async function listBuilds(
   return apiGet<BuildsResponse>(`${base(profile, service)}/builds?${query}`, signal);
 }
 
-/** Read the console output of build `number` of `job`. */
+/**
+ * Read a chunk of build `number`'s console output starting at byte `start`
+ * (default 0). Poll repeatedly from the returned `offset` until `more` is false
+ * to follow a running build's log live.
+ */
 export async function getBuildLog(
   profile: string,
   service: string,
   job: string,
   number: number,
+  start = 0,
   signal?: AbortSignal,
 ): Promise<BuildLogResponse> {
-  const query = new URLSearchParams({ job, number: String(number) });
+  const query = new URLSearchParams({
+    job,
+    number: String(number),
+    start: String(start),
+  });
   return apiGet<BuildLogResponse>(`${base(profile, service)}/log?${query}`, signal);
 }
 

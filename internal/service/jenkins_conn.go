@@ -47,12 +47,14 @@ func jenkinsParamsFrom(env Config) (jenkinsParams, error) {
 	return jenkinsParams{host: host, port: port, user: user, token: token}, nil
 }
 
-// jenkinsResult is one Jenkins REST response: the JSON body plus the running
-// server version read from the X-Jenkins response header (the only place
-// Jenkins reports it).
+// jenkinsResult is one Jenkins REST response: the JSON body, the running server
+// version read from the X-Jenkins response header (the only place Jenkins
+// reports it), and the full response header for callers that need others (the
+// progressive log reads X-Text-Size / X-More-Data from it).
 type jenkinsResult struct {
 	body    []byte
 	version string
+	header  http.Header
 }
 
 // jenkinsGetter performs an authenticated GET against a Jenkins REST path
@@ -85,7 +87,7 @@ func realJenkinsGetter(ctx context.Context, p jenkinsParams, path string) (jenki
 	if err != nil {
 		return jenkinsResult{}, err
 	}
-	return jenkinsResult{body: body, version: resp.Header.Get("X-Jenkins")}, nil
+	return jenkinsResult{body: body, version: resp.Header.Get("X-Jenkins"), header: resp.Header}, nil
 }
 
 // jenkinsPoster performs an authenticated POST against a Jenkins path (e.g.

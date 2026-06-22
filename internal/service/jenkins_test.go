@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -162,17 +163,48 @@ func TestJenkinsBuildLog(t *testing.T) {
 	var path string
 	j := Jenkins{get: func(_ context.Context, _ jenkinsParams, p string) (jenkinsResult, error) {
 		path = p
-		return jenkinsResult{body: []byte("Started by user admin\nFinished: SUCCESS\n")}, nil
+		return jenkinsResult{
+			body: []byte("...more output\n"),
+			header: http.Header{
+				"X-Text-Size": []string{"5120"},
+				"X-More-Data": []string{"true"},
+			},
+		}, nil
 	}}
-	log, err := j.BuildLog(context.Background(), Spec{Env: Jenkins{}.DefaultEnv()}, "my job", 42)
+	chunk, err := j.BuildLog(context.Background(), Spec{Env: Jenkins{}.DefaultEnv()}, "my job", 42, 100)
 	if err != nil {
 		t.Fatalf("BuildLog: %v", err)
 	}
-	if path != "/job/my%20job/42/consoleText" {
-		t.Errorf("path = %q, want /job/my%%20job/42/consoleText", path)
+	if path != "/job/my%20job/42/logText/progressiveText?start=100" {
+		t.Errorf("path = %q, want …/logText/progressiveText?start=100", path)
 	}
-	if !strings.Contains(log, "Finished: SUCCESS") {
-		t.Errorf("unexpected log: %q", log)
+	if !strings.Contains(chunk.Text, "more output") {
+		t.Errorf("unexpected text: %q", chunk.Text)
+	}
+	// The next offset comes from X-Text-Size, and More from X-More-Data.
+	if chunk.Offset != 5120 {
+		t.Errorf("Offset = %d, want 5120 (from X-Text-Size)", chunk.Offset)
+	}
+	if !chunk.More {
+		t.Error("More = false, want true (build still running)")
+	}
+}
+
+func TestJenkinsBuildLogFinished(t *testing.T) {
+	// A finished build: no X-More-Data header, and no X-Text-Size, so the next
+	// offset falls back to start plus the bytes read.
+	j := Jenkins{get: func(_ context.Context, _ jenkinsParams, _ string) (jenkinsResult, error) {
+		return jenkinsResult{body: []byte("done"), header: http.Header{}}, nil
+	}}
+	chunk, err := j.BuildLog(context.Background(), Spec{Env: Jenkins{}.DefaultEnv()}, "x", 1, 10)
+	if err != nil {
+		t.Fatalf("BuildLog: %v", err)
+	}
+	if chunk.More {
+		t.Error("More = true, want false (build finished)")
+	}
+	if chunk.Offset != 14 {
+		t.Errorf("Offset = %d, want 14 (start 10 + 4 bytes)", chunk.Offset)
 	}
 }
 

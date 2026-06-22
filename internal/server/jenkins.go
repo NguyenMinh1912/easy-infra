@@ -95,14 +95,16 @@ func (s *Server) handleJenkinsBuilds(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, jenkinsBuildsResponse{Builds: builds})
 }
 
-// jenkinsLogResponse is the JSON shape of a build's console log.
+// jenkinsLogResponse is the JSON shape of a build's progressive console log: the
+// new output, the next offset to poll from, and whether more output may follow.
 type jenkinsLogResponse struct {
-	Log   string `json:"log"`
+	service.LogChunk
 	Error string `json:"error,omitempty"`
 }
 
-// handleJenkinsBuildLog returns the console output of the build identified by
-// the `job` and `number` query parameters, for the build-log dialog.
+// handleJenkinsBuildLog returns a chunk of the build's console output for the
+// `job`/`number` query parameters, starting at the `start` byte offset (default
+// 0) — the backend of the build-log dialog's long-polling updates.
 func (s *Server) handleJenkinsBuildLog(w http.ResponseWriter, r *http.Request) {
 	browser, spec, ok := s.resolveJenkinsBrowser(w, r)
 	if !ok {
@@ -118,14 +120,21 @@ func (s *Server) handleJenkinsBuildLog(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "build number must be a positive integer")
 		return
 	}
+	var start int64
+	if raw := strings.TrimSpace(r.URL.Query().Get("start")); raw != "" {
+		if start, err = strconv.ParseInt(raw, 10, 64); err != nil || start < 0 {
+			writeError(w, http.StatusBadRequest, "start must be a non-negative integer")
+			return
+		}
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), jenkinsTimeout)
 	defer cancel()
-	log, err := browser.BuildLog(ctx, spec, job, number)
+	chunk, err := browser.BuildLog(ctx, spec, job, number, start)
 	if err != nil {
 		writeJSON(w, http.StatusOK, jenkinsLogResponse{Error: err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, jenkinsLogResponse{Log: log})
+	writeJSON(w, http.StatusOK, jenkinsLogResponse{LogChunk: chunk})
 }
 
 // triggerBuildRequest is the JSON body of a trigger-build request.

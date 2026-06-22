@@ -26,10 +26,12 @@ type JenkinsBrowser interface {
 	// backend of a job's build history.
 	Builds(ctx context.Context, spec Spec, job string) ([]BuildInfo, error)
 
-	// BuildLog returns the full console output of the named job's build number —
-	// the backend of the build-log dialog. For a build still running it returns
-	// the log captured so far.
-	BuildLog(ctx context.Context, spec Spec, job string, number int64) (string, error)
+	// BuildLog returns a chunk of the named job's build console output starting
+	// at byte offset start — the backend of the build-log dialog's incremental
+	// (long-polling) updates. The chunk carries the next offset to request and
+	// whether the build may still produce more output, so a viewer can append
+	// new lines and keep polling until the build finishes.
+	BuildLog(ctx context.Context, spec Spec, job string, number, start int64) (LogChunk, error)
 
 	// TriggerBuild schedules a new build of the named job. It is parameterless:
 	// the job runs with its default parameters, if any. The build is enqueued
@@ -68,6 +70,19 @@ type JobInfo struct {
 	Color string `json:"color"`
 	// LastBuild is the most recent build number, 0 when the job has never built.
 	LastBuild int64 `json:"lastBuild,omitempty"`
+}
+
+// LogChunk is a slice of a build's console output, shaped for JSON. It is the
+// unit of the progressive log the dialog polls: Text is the new output since the
+// requested offset, Offset is where the next poll should resume, and More
+// reports whether the build may still append output.
+type LogChunk struct {
+	// Text is the console output appended since the requested start offset.
+	Text string `json:"text"`
+	// Offset is the byte offset to pass as start on the next poll.
+	Offset int64 `json:"offset"`
+	// More is true while the build is still producing output.
+	More bool `json:"more"`
 }
 
 // BuildInfo is one build of a Jenkins job, shaped for JSON.

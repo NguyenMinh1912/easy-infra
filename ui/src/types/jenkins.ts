@@ -62,8 +62,17 @@ export interface BuildsResponse {
   error?: string;
 }
 
-/** Response of GET …/log — a build's console output. */
+/**
+ * Response of GET …/log — a chunk of a build's progressive console output. The
+ * dialog long-polls: it appends `text`, then re-requests from `offset` until
+ * `more` is false (the build has finished producing output).
+ */
 export interface BuildLogResponse {
-  log: string;
+  /** Console output appended since the requested start offset. */
+  text: string;
+  /** Byte offset to pass as `start` on the next poll. */
+  offset: number;
+  /** True while the build is still producing output. */
+  more: boolean;
   error?: string;
 }

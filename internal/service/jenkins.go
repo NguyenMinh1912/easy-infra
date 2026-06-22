@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 )
 
 // Jenkins manages a Jenkins continuous-integration automation server.
@@ -232,19 +234,31 @@ func (j Jenkins) Builds(ctx context.Context, spec Spec, job string) ([]BuildInfo
 	return raw.Builds, nil
 }
 
-// BuildLog implements JenkinsBrowser: fetch the plain-text console output of a
-// job's build from Jenkins's `consoleText` endpoint.
-func (j Jenkins) BuildLog(ctx context.Context, spec Spec, job string, number int64) (string, error) {
+// BuildLog implements JenkinsBrowser: fetch a chunk of a build's console output
+// from Jenkins's progressive-text endpoint, starting at byte offset start. The
+// response carries the new output in the body, the total size so far in the
+// X-Text-Size header (the next offset), and whether the build is still running
+// in X-More-Data — the three pieces a long-polling viewer needs.
+func (j Jenkins) BuildLog(ctx context.Context, spec Spec, job string, number, start int64) (LogChunk, error) {
 	p, err := jenkinsParamsFrom(spec.Env)
 	if err != nil {
-		return "", err
+		return LogChunk{}, err
 	}
-	path := fmt.Sprintf("/job/%s/%d/consoleText", url.PathEscape(job), number)
+	path := fmt.Sprintf("/job/%s/%d/logText/progressiveText?start=%d", url.PathEscape(job), number, start)
 	res, err := j.getter()(ctx, p, path)
 	if err != nil {
-		return "", fmt.Errorf("reaching jenkins: %w", err)
+		return LogChunk{}, fmt.Errorf("reaching jenkins: %w", err)
 	}
-	return string(res.body), nil
+	// Default the next offset to start plus what we read, in case the server
+	// omits X-Text-Size; prefer the header when present as it is authoritative.
+	chunk := LogChunk{Text: string(res.body), Offset: start + int64(len(res.body))}
+	if res.header != nil {
+		if size, err := strconv.ParseInt(res.header.Get("X-Text-Size"), 10, 64); err == nil {
+			chunk.Offset = size
+		}
+		chunk.More = strings.EqualFold(res.header.Get("X-More-Data"), "true")
+	}
+	return chunk, nil
 }
 
 // TriggerBuild implements JenkinsBrowser: POST to the named job's build endpoint
