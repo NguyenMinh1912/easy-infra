@@ -1,4 +1,4 @@
-import { Database, Server, type LucideIcon } from "lucide-react";
+import { Database, FileCode, Server, type LucideIcon } from "lucide-react";
 
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { ProfileNav } from "@/features/profiles";
@@ -21,6 +21,7 @@ interface NavItem {
  * routing; the rest are placeholders for future screens.
  */
 const navItems: NavItem[] = [
+  { label: "SQL Templates", icon: FileCode, route: "/templates" },
   { label: "Backups", icon: Database, route: "/backups" },
 ];
 

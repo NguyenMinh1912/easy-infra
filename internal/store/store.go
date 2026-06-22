@@ -27,6 +27,7 @@ import (
 
 	"github.com/minhnc/easy-infra/internal/profile"
 	"github.com/minhnc/easy-infra/internal/service"
+	"github.com/minhnc/easy-infra/internal/sqltemplate"
 	_ "modernc.org/sqlite" // pure-Go driver, registered as "sqlite"
 )
 
@@ -49,6 +50,10 @@ var (
 	ErrProfileNotFound = errors.New("profile not found")
 	// ErrProfileExists means the workspace already has a profile with that name.
 	ErrProfileExists = errors.New("profile already exists")
+	// ErrTemplateNotFound means the workspace has no SQL template with that name.
+	ErrTemplateNotFound = errors.New("template not found")
+	// ErrTemplateExists means the workspace already has a SQL template with that name.
+	ErrTemplateExists = errors.New("template already exists")
 )
 
 // Workspace is one known workspace: a named bundle of profiles. ActiveProfile is
@@ -144,6 +149,16 @@ CREATE TABLE IF NOT EXISTS services (
 	name       TEXT NOT NULL,
 	config     TEXT NOT NULL,
 	UNIQUE (profile_id, svc_id)
+);
+CREATE TABLE IF NOT EXISTS sql_templates (
+	id           INTEGER PRIMARY KEY AUTOINCREMENT,
+	workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+	name         TEXT NOT NULL,
+	description  TEXT NOT NULL DEFAULT '',
+	sql          TEXT NOT NULL,
+	created_at   INTEGER NOT NULL,
+	updated_at   INTEGER NOT NULL,
+	UNIQUE (workspace_id, name)
 );`
 	if _, err := s.db.Exec(schema); err != nil {
 		return fmt.Errorf("migrating database: %w", err)
@@ -417,6 +432,103 @@ func (s *Store) profileID(wsID int64, name string) (int64, error) {
 		return 0, fmt.Errorf("looking up profile: %w", err)
 	}
 	return id, nil
+}
+
+// --- SQL templates ----------------------------------------------------------
+
+// ListTemplates returns the workspace's SQL templates, sorted by name.
+func (s *Store) ListTemplates(wsID int64) ([]sqltemplate.Template, error) {
+	rows, err := s.db.Query(
+		`SELECT name, description, sql, created_at, updated_at
+		   FROM sql_templates WHERE workspace_id = ? ORDER BY name`, wsID)
+	if err != nil {
+		return nil, fmt.Errorf("listing templates: %w", err)
+	}
+	defer rows.Close()
+	var out []sqltemplate.Template
+	for rows.Next() {
+		t, err := scanTemplate(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// GetTemplate returns the named template in the workspace, or
+// ErrTemplateNotFound.
+func (s *Store) GetTemplate(wsID int64, name string) (sqltemplate.Template, error) {
+	row := s.db.QueryRow(
+		`SELECT name, description, sql, created_at, updated_at
+		   FROM sql_templates WHERE workspace_id = ? AND name = ?`, wsID, name)
+	t, err := scanTemplate(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return sqltemplate.Template{}, fmt.Errorf("%q: %w", name, ErrTemplateNotFound)
+	}
+	return t, err
+}
+
+// CreateTemplate inserts a new template. A duplicate name yields
+// ErrTemplateExists; an unknown workspace yields ErrWorkspaceNotFound.
+func (s *Store) CreateTemplate(wsID int64, t sqltemplate.Template) error {
+	if _, err := s.GetWorkspace(wsID); err != nil {
+		return err
+	}
+	now := time.Now().UTC().UnixMilli()
+	_, err := s.db.Exec(
+		`INSERT INTO sql_templates (workspace_id, name, description, sql, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		wsID, t.Name, t.Description, t.SQL, now, now,
+	)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return fmt.Errorf("%q: %w", t.Name, ErrTemplateExists)
+		}
+		return fmt.Errorf("creating template: %w", err)
+	}
+	return nil
+}
+
+// UpdateTemplate replaces the description and SQL of the named template,
+// refreshing its updated_at. An unknown template yields ErrTemplateNotFound.
+func (s *Store) UpdateTemplate(wsID int64, name string, t sqltemplate.Template) error {
+	now := time.Now().UTC().UnixMilli()
+	res, err := s.db.Exec(
+		`UPDATE sql_templates SET description = ?, sql = ?, updated_at = ?
+		  WHERE workspace_id = ? AND name = ?`,
+		t.Description, t.SQL, now, wsID, name,
+	)
+	if err != nil {
+		return fmt.Errorf("updating template: %w", err)
+	}
+	return mustAffectOne(res, ErrTemplateNotFound)
+}
+
+// RemoveTemplate deletes the named template. An unknown template yields
+// ErrTemplateNotFound.
+func (s *Store) RemoveTemplate(wsID int64, name string) error {
+	res, err := s.db.Exec(
+		`DELETE FROM sql_templates WHERE workspace_id = ? AND name = ?`, wsID, name)
+	if err != nil {
+		return fmt.Errorf("removing template: %w", err)
+	}
+	return mustAffectOne(res, ErrTemplateNotFound)
+}
+
+// scanTemplate reads one template row, converting the stored millisecond
+// timestamps back to time.Time.
+func scanTemplate(row interface{ Scan(...any) error }) (sqltemplate.Template, error) {
+	var (
+		t                sqltemplate.Template
+		created, updated int64
+	)
+	if err := row.Scan(&t.Name, &t.Description, &t.SQL, &created, &updated); err != nil {
+		return sqltemplate.Template{}, err
+	}
+	t.CreatedAt = time.UnixMilli(created).UTC()
+	t.UpdatedAt = time.UnixMilli(updated).UTC()
+	return t, nil
 }
 
 // --- helpers ----------------------------------------------------------------

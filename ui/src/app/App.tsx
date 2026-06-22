@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { BackupsPage } from "@/features/backups";
 import { ProfilesPage } from "@/features/profiles";
 import { metaFor, ServiceDetailPage } from "@/features/services";
+import { TemplatesPage } from "@/features/templates";
 import { useHashRoute } from "@/hooks/useHashRoute";
 
 interface Screen {
@@ -25,6 +26,13 @@ function screenForRoute(route: string): Screen {
       title: "Backups",
       subtitle: "Browse, inspect, and remove backup sessions",
       content: <BackupsPage />,
+    };
+  }
+  if (route.startsWith("/templates")) {
+    return {
+      title: "SQL Templates",
+      subtitle: "Reusable, parameterized SQL scripts for this workspace",
+      content: <TemplatesPage />,
     };
   }
   // Match the profile + service segments; a trailing sub-route (e.g. the
